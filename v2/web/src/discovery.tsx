@@ -99,9 +99,10 @@ function CredentialsTab({csrf,onExpired}:{csrf:string;onExpired:()=>void}){
  useEffect(load,[]);
  return <div className="stack">
   {!available?<div className="error" role="alert">Хранилище секретов центра не настроено — учётки сохранить нельзя.</div>:null}
+  {error&&!creating?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   <div className="table-panel"><div className="table-toolbar"><h2>Учётки сбора <span>{items.length}</span></h2><button className="button small" disabled={!available} onClick={()=>setCreating(true)}>+ Новая учётка</button></div>
    {items.length===0?<div className="empty"><span>⚿</span><h3>Учёток пока нет</h3><p>Учётка нужна, чтобы собирать данные с найденных узлов по SSH, WinRM или SNMPv3. Пароли и ключи хранятся в хранилище секретов центра и больше нигде не показываются.</p></div>:
-   <div className="table-scroll"><table><thead><tr><th>Название</th><th>Способ</th><th>Логин</th><th>Целей</th><th>Секрет сменён</th></tr></thead><tbody>{items.map(c=><tr key={c.credential_id} className={c.active?'':'muted'}><td><strong>{c.name}</strong></td><td>{kindName[c.kind]}</td><td className="mono">{c.username}</td><td>{c.targets}</td><td className="time">{time(c.secret_changed_at)}</td></tr>)}</tbody></table></div>}
+   <div className="table-scroll"><table><thead><tr><th>Название</th><th>Способ</th><th>Логин</th><th>Целей</th><th>Секрет сменён</th><th/></tr></thead><tbody>{items.map(c=><tr key={c.credential_id} className={c.active?'':'muted'}><td><strong>{c.name}</strong></td><td>{kindName[c.kind]}</td><td className="mono">{c.username}</td><td>{c.targets}</td><td className="time">{time(c.secret_changed_at)}</td><td className="actions"><button className="text-link" disabled={busy} onClick={()=>{if(c.active&&c.targets&&!confirm('Отключить учётку «'+c.name+'»? Её цели ('+c.targets+') перестанут собираться, пока учётка выключена.'))return;setBusy(true);api.patchCollectCredential(c.credential_id,csrf,{revision:c.revision,active:!c.active}).then(load).catch(e=>{setError(e);expired(e,onExpired)}).finally(()=>setBusy(false))}}>{c.active?'Отключить':'Включить'}</button></td></tr>)}</tbody></table></div>}
    <p className="panel-note">Сборщик получает учётку у центра по защищённому каналу перед каждым сбором и держит её только в памяти.</p>
   </div>
   <DomainCAPanel csrf={csrf} onExpired={onExpired}/>
