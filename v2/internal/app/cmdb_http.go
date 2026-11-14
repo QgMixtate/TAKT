@@ -12,6 +12,7 @@ import (
 
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/access"
 	accessport "github.com/QgMixtate/surveyscan/v2/internal/modules/access/port"
+	"github.com/QgMixtate/surveyscan/v2/internal/modules/assets"
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/cmdb"
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/inventory"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/domain"
@@ -40,6 +41,22 @@ type AssetCMDB struct {
 	SoftwareCount    int             `json:"software_count"`
 	ComponentCount   int             `json:"component_count"`
 	Relations        []cmdb.Relation `json:"relations"`
+	// C42 (частично): вывод из учёта; null — актив в учёте
+	Retired *assets.Retirement `json:"retired"`
+}
+
+// RetiredAsset — строка списка выведенных из учёта активов.
+type RetiredAsset struct {
+	Asset         string            `json:"asset_uid"`
+	DisplayName   *string           `json:"display_name"`
+	Hostname      *string           `json:"observed_hostname"`
+	LastInventory *time.Time        `json:"last_inventory_at"`
+	Retired       assets.Retirement `json:"retired"`
+}
+
+type RetiredAssetList struct {
+	Tenant string         `json:"tenant_id"`
+	Items  []RetiredAsset `json:"items"`
 }
 
 type SoftwarePage struct {
@@ -124,6 +141,78 @@ func (r *Registry) AssetCMDB(ctx context.Context, id accessport.Identity, uid st
 	}
 	if out.Relations, e = r.CMDB.RelationsOf(ctx, tx, id.TenantID, cmdb.End{Kind: "asset", ID: uid}); e != nil {
 		return out, e
+	}
+	if out.Retired, e = r.Assets.Retirement(ctx, tx, id.TenantID, uid); e != nil {
+		return out, e
+	}
+	return out, tx.Commit(ctx)
+}
+
+// SetAssetRetired выводит актив из учёта (reason) или возвращает (restore); аудит asset.retired / asset.restored.
+func (r *Registry) SetAssetRetired(ctx context.Context, id accessport.Identity, uid string, retire bool, reason string) (AssetCMDB, error) {
+	if !identifier.Valid(uid) {
+		return AssetCMDB{}, domain.NotFound
+	}
+	tx, e := r.assetOperationTx(ctx, id)
+	if e != nil {
+		return AssetCMDB{}, e
+	}
+	defer tx.Rollback(ctx)
+	// изменение актива — с историей, событием outbox (существующий тип C03) и аудитом в той же транзакции (C06);
+	// версия поднимается до изменения, чтобы каждая запись строки имела историю своей версии
+	if _, e = r.Assets.Get(ctx, tx, id.TenantID, uid); e != nil {
+		return AssetCMDB{}, e
+	}
+	version, e := r.Assets.Bump(ctx, tx, id.TenantID, uid)
+	if e != nil {
+		return AssetCMDB{}, e
+	}
+	action := "asset.restored"
+	if retire {
+		action = "asset.retired"
+		e = r.Assets.Retire(ctx, tx, id.TenantID, uid, reason, id.UserID)
+	} else {
+		e = r.Assets.Restore(ctx, tx, id.TenantID, uid)
+	}
+	if e != nil {
+		return AssetCMDB{}, e
+	}
+	reasonCode := map[bool]string{true: "ASSET_RETIRED", false: "ASSET_RESTORED"}[retire]
+	if e = r.assetEvent(ctx, tx, id.TenantID, uid, version, "asset.facts_changed.v1", "Assets", reasonCode, id.UserID, identifier.New()); e != nil {
+		return AssetCMDB{}, e
+	}
+	if e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, action, "asset", uid); e != nil {
+		return AssetCMDB{}, e
+	}
+	if e = tx.Commit(ctx); e != nil {
+		return AssetCMDB{}, e
+	}
+	return r.AssetCMDB(ctx, id, uid)
+}
+
+func (r *Registry) RetiredAssets(ctx context.Context, id accessport.Identity) (RetiredAssetList, error) {
+	out := RetiredAssetList{Tenant: id.TenantID, Items: []RetiredAsset{}}
+	tx, e := r.readTx(ctx, id)
+	if e != nil {
+		return out, e
+	}
+	defer tx.Rollback(ctx)
+	ids, e := r.Assets.RetiredIDs(ctx, tx, id.TenantID, 500)
+	if e != nil {
+		return out, e
+	}
+	items, _, e := r.readAssets(ctx, tx, id.TenantID, ids)
+	if e != nil {
+		return out, e
+	}
+	for _, a := range items {
+		ret, e := r.Assets.Retirement(ctx, tx, id.TenantID, a.UID)
+		if e != nil {
+			return out, e
+		}
+		if ret != nil {
+			out.Items = append(out.Items, RetiredAsset{Asset: a.UID, DisplayName: a.Business.DisplayName, Hostname: a.Hostname, LastInventory: a.LastInventory, Retired: *ret})
+		}
 	}
 	return out, tx.Commit(ctx)
 }
@@ -528,6 +617,49 @@ func (r *Registry) cmdbHandlers() map[string]http.Handler {
 		ctx, cancel, id := cmdbContext(req)
 		defer cancel()
 		out, e := r.Services(ctx, id, cursor, limit, retired)
+		if e != nil {
+			cmdbError(w, req, e)
+			return
+		}
+		registryJSON(w, out)
+	})
+	h["POST /api/v1/assets/{asset_uid}/retire"] = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Reason string `json:"reason"`
+		}
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		ctx, cancel, id := cmdbContext(req)
+		defer cancel()
+		out, e := r.SetAssetRetired(ctx, id, req.PathValue("asset_uid"), true, body.Reason)
+		if e != nil {
+			cmdbError(w, req, e)
+			return
+		}
+		registryJSON(w, out)
+	})
+	h["POST /api/v1/assets/{asset_uid}/restore"] = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct{}
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		ctx, cancel, id := cmdbContext(req)
+		defer cancel()
+		out, e := r.SetAssetRetired(ctx, id, req.PathValue("asset_uid"), false, "")
+		if e != nil {
+			cmdbError(w, req, e)
+			return
+		}
+		registryJSON(w, out)
+	})
+	h["GET /api/v1/retired-assets"] = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if _, ok := queryOnly(w, req); !ok {
+			return
+		}
+		ctx, cancel, id := cmdbContext(req)
+		defer cancel()
+		out, e := r.RetiredAssets(ctx, id)
 		if e != nil {
 			cmdbError(w, req, e)
 			return

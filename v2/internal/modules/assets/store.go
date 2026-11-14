@@ -359,7 +359,7 @@ func (Store) Get(ctx context.Context, tx pgx.Tx, tenant, uid string) (contracts.
 	return a, e
 }
 func (Store) IDs(ctx context.Context, tx pgx.Tx, tenant, after string, limit int) ([]string, error) {
-	rows, e := tx.Query(ctx, "SELECT asset_uid::text FROM assets.assets WHERE tenant_id=$1 AND merged_into IS NULL AND ($2='' OR asset_uid>NULLIF($2,'')::uuid) ORDER BY asset_uid LIMIT $3", tenant, after, limit)
+	rows, e := tx.Query(ctx, "SELECT asset_uid::text FROM assets.assets WHERE tenant_id=$1 AND merged_into IS NULL AND retired_at IS NULL AND ($2='' OR asset_uid>NULLIF($2,'')::uuid) ORDER BY asset_uid LIMIT $3", tenant, after, limit)
 	if e != nil {
 		return nil, e
 	}

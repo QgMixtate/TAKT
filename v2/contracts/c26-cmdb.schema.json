@@ -229,6 +229,16 @@
      "items": {
       "$ref": "#/$defs/Relation"
      }
+    },
+    "retired": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/Retirement"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -238,7 +248,8 @@
     "business_revision",
     "software_count",
     "component_count",
-    "relations"
+    "relations",
+    "retired"
    ],
    "additionalProperties": false
   },
@@ -727,6 +738,88 @@
     "retired_at",
     "tenant_id",
     "relations"
+   ],
+   "additionalProperties": false
+  },
+  "Retirement": {
+   "type": "object",
+   "description": "C42 (частично): вывод актива из учёта",
+   "properties": {
+    "retired_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "reason": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 500
+    },
+    "retired_by": {
+     "$ref": "#/$defs/uuid"
+    }
+   },
+   "required": [
+    "retired_at",
+    "reason",
+    "retired_by"
+   ],
+   "additionalProperties": false
+  },
+  "RetiredAssetList": {
+   "type": "object",
+   "description": "GET /api/v1/retired-assets — выведенные из учёта активы (до 500, новые сверху)",
+   "properties": {
+    "tenant_id": {
+     "$ref": "#/$defs/uuid"
+    },
+    "items": {
+     "type": "array",
+     "maxItems": 500,
+     "items": {
+      "type": "object",
+      "properties": {
+       "asset_uid": {
+        "$ref": "#/$defs/uuid"
+       },
+       "display_name": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "maxLength": 256
+       },
+       "observed_hostname": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "maxLength": 1024
+       },
+       "last_inventory_at": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time"
+       },
+       "retired": {
+        "$ref": "#/$defs/Retirement"
+       }
+      },
+      "required": [
+       "asset_uid",
+       "display_name",
+       "observed_hostname",
+       "last_inventory_at",
+       "retired"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "tenant_id",
+    "items"
    ],
    "additionalProperties": false
   }

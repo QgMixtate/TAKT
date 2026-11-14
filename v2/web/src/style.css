@@ -51,3 +51,5 @@
 .field .checks label{display:inline-flex;align-items:center;gap:6px}
 .form-stack .button.primary{margin-top:6px}
 
+
+.retired-note{margin-top:10px;padding:10px 12px;border:1px solid #eed9cf;background:#fbf0eb;border-radius:5px;font-size:11px;color:#8a4b3c;display:grid;gap:6px}.retired-note small{color:#a0745f}.retired-note .button{justify-self:start}.retire-link{margin-top:8px;font-size:11px;color:#a8483a}.retired-panel{margin-top:18px}

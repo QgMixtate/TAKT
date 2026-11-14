@@ -303,6 +303,37 @@ func TestC26CMDB(t *testing.T) {
 	if _, err = f.pool.Exec(f.ctx, "INSERT INTO cmdb.relations(tenant_id,relation_id,relation_type,from_service_uid,to_asset_uid,origin,confidence,actor_ref) VALUES($1,$2,'runs_on',$3,$4,'manual','confirmed','test')", otherTenant, identifier.New(), mine.Items[0].UID, a); err == nil {
 		t.Fatal("cross-tenant relation must violate foreign keys")
 	}
+	// C42 (частично): вывод актива из учёта — скрыт из реестра и экспорта, виден в списке выведенных, возвращается
+	hostB := send(newHost(), "host:cmdb-retire", mu(), 3, "PowerEdge")
+	send2("POST", "/api/v1/assets/"+hostB+"/retire", `{"reason":"   "}`, 422)
+	retired := send2("POST", "/api/v1/assets/"+hostB+"/retire", `{"reason":"Пустой актив цели DC (решение пользователя)"}`, 200)
+	valid("AssetCMDB", retired)
+	var rc app.AssetCMDB
+	_ = json.Unmarshal(retired, &rc)
+	if rc.Retired == nil || rc.Retired.Reason != "Пустой актив цели DC (решение пользователя)" {
+		t.Fatalf("retired %s", retired)
+	}
+	send2("POST", "/api/v1/assets/"+hostB+"/retire", `{"reason":"ещё раз"}`, 409)
+	if strings.Contains(string(get("/api/v1/assets?limit=200", 200)), hostB) {
+		t.Fatal("retired asset must not be listed in the registry")
+	}
+	list := get("/api/v1/retired-assets", 200)
+	valid("RetiredAssetList", list)
+	if !strings.Contains(string(list), hostB) {
+		t.Fatal("retired asset must be in the retired list", string(list))
+	}
+	get("/api/v1/assets/"+hostB, 200) // карточка открывается
+	restored := send2("POST", "/api/v1/assets/"+hostB+"/restore", `{}`, 200)
+	_ = json.Unmarshal(restored, &rc)
+	if rc.Retired != nil || !strings.Contains(string(get("/api/v1/assets?limit=200", 200)), hostB) {
+		t.Fatal("restored asset must be back in the registry", string(restored))
+	}
+	send2("POST", "/api/v1/assets/"+hostB+"/restore", `{}`, 409)
+	var lifecycle int
+	_ = f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action IN ('asset.retired','asset.restored') AND object_id=$2", tenant, hostB).Scan(&lifecycle)
+	if lifecycle != 2 {
+		t.Fatal("retire/restore must be audited", lifecycle)
+	}
 	// история и аудит модуля
 	var history, audits int
 	_ = f.pool.QueryRow(f.ctx, "SELECT count(*) FROM cmdb.changes WHERE tenant_id=$1", tenant).Scan(&history)

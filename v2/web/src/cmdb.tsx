@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {api,ApiError,errorMessage,type AssetCMDB,type AssetClassName,type CIEnd,type CIService,type Component,type Evidence,type Installation,type Product,type Relation,type ServiceDetail} from './api';
+import {api,ApiError,errorMessage,type AssetCMDB,type AssetClassName,type CIEnd,type CIService,type Component,type Evidence,type Installation,type RetiredAsset,type Product,type Relation,type ServiceDetail} from './api';
 
 // C26 — CMDB в Web: класс актива, ПО и компоненты с provenance, связи; сервисы и поиск ПО по реестру.
 export const classNames:Record<AssetClassName,string>={server:'Сервер',workstation:'Рабочая станция',network_device:'Сетевое устройство',printer:'Принтер',virtual_machine:'Виртуальная машина',unknown:'Не определён'};
@@ -27,10 +27,18 @@ export function AssetClassBlock({asset,csrf,onExpired}:{asset:string;csrf:string
   if(!confirmAction(next?'установить класс «'+classNames[next]+'»':'снять ручной класс (будет использоваться наблюдаемый)'))return;
   setBusy(true);setFailure(null);try{await api.setAssetClass(asset,csrf,{asset_class:next,revision:data!.business_revision});reload()}catch(e){setFailure(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setBusy(false)}
  }
+ async function lifecycle(retire:boolean){
+  let reason='';
+  if(retire){reason=(window.prompt('Причина вывода из учёта (обязательно): списан, дубль, пустой актив…')??'').trim();if(!reason)return}
+  else if(!confirmAction('вернуть актив в учёт'))return;
+  setBusy(true);setFailure(null);try{retire?await api.retireAsset(asset,csrf,reason):await api.restoreAsset(asset,csrf);reload()}catch(e){setFailure(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setBusy(false)}
+ }
  return <div className="class-block"><div><span className="muted">Класс</span><strong>{classNames[data.class.effective]}</strong><small>{data.class.manual?'задан вручную · по фактам: '+classNames[data.class.observed]:'по фактам: '+(reasons[data.class.observed_reason]??data.class.observed_reason)}</small></div>
   <label>Изменить<select aria-label="Класс актива" disabled={busy} value={data.class.manual??''} onChange={e=>void set(e.target.value)}><option value="">Как в фактах</option>{Object.entries(classNames).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
   {failure?<div className="error" role="alert">{errorMessage(failure)}</div>:null}
-  <span className="class-counts">ПО: {data.software_count} · компонентов: {data.component_count} · связей: {data.relations.length}</span></div>;
+  <span className="class-counts">ПО: {data.software_count} · компонентов: {data.component_count} · связей: {data.relations.length}</span>
+  {data.retired?<div className="retired-note" role="status"><strong>Выведен из учёта</strong> {new Date(data.retired.retired_at).toLocaleString('ru-RU')}: {data.retired.reason}<small>Не показывается в реестре и экспорте, не учитывается в свежести. Новые данные источников сохраняются.</small><button className="button small" disabled={busy} onClick={()=>void lifecycle(false)}>Вернуть в учёт</button></div>
+   :<button className="text-link retire-link" disabled={busy} onClick={()=>void lifecycle(true)}>Вывести из учёта…</button>}</div>;
 }
 
 export function SoftwareTab({asset,onExpired}:{asset:string;onExpired:()=>void}){
@@ -122,3 +130,13 @@ export function SoftwareSearchView({onOpenAsset,onExpired}:{onOpenAsset:(uid:str
  </div>;
 }
 export type {AssetCMDB};
+
+// Выведенные из учёта активы (C42, частично): список с причиной; карточка открывается по щелчку.
+export function RetiredPanel({onOpenAsset,onExpired}:{onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
+ const [open,setOpen]=useState(false),[items,setItems]=useState<RetiredAsset[]|null>(null),[error,setError]=useState<unknown>(null);
+ useEffect(()=>{if(!open)return;let live=true;api.retiredAssets().then(p=>{if(live)setItems(p.items)}).catch(e=>{if(live){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}});return()=>{live=false}},[open]);
+ return <section className="table-panel retired-panel"><div className="table-toolbar"><h2>Выведенные из учёта {items?<span>{items.length}</span>:null}</h2><button className="button small" aria-expanded={open} onClick={()=>setOpen(v=>!v)}>{open?'Скрыть':'Показать'}</button></div>
+  {open?error?<div className="error" role="alert">{errorMessage(error)}</div>:!items?<div className="empty" role="status">Загружаем…</div>:items.length===0?<div className="empty"><p>Выведенных из учёта активов нет.</p></div>:
+   <div className="table-scroll"><table><thead><tr><th>Актив</th><th>Выведен</th><th>Причина</th><th>Последний сбор</th></tr></thead><tbody>{items.map(a=><tr key={a.asset_uid}><td><button className="asset-link" onClick={()=>onOpenAsset(a.asset_uid)}><span><strong>{a.display_name??a.observed_hostname??'Без имени'}</strong><small className="mono">{a.asset_uid.slice(0,8)}</small></span></button></td><td className="time">{new Date(a.retired.retired_at).toLocaleString('ru-RU')}</td><td>{a.retired.reason}</td><td className="time">{a.last_inventory_at?new Date(a.last_inventory_at).toLocaleString('ru-RU'):'—'}{a.last_inventory_at&&a.last_inventory_at>a.retired.retired_at?<small>есть данные после вывода</small>:null}</td></tr>)}</tbody></table></div>:null}
+ </section>;
+}
