@@ -29,11 +29,16 @@ const locName=(r:Ref,id:string|null)=>{if(!id)return '—';const l=r.locations.f
 const subjName=(r:Ref,id:string|null)=>id?(r.subjects.find(s=>s.subject_id===id)?.name??id.slice(0,8)):'—';
 
 function Units({ref_:r,onOpenAsset,onFail}:{ref_:Ref;onOpenAsset:(uid:string)=>void;onFail:(e:unknown)=>void}){
- const [state,setState]=useState(''),[q,setQ]=useState(''),[items,setItems]=useState<WUnit[]|null>(null);
- useEffect(()=>{const t=setTimeout(()=>api.wUnits({state,q}).then(p=>setItems(p.items)).catch(onFail),250);return()=>clearTimeout(t)},[state,q]);
+ const [state,setState]=useState(''),[q,setQ]=useState(''),[holder,setHolder]=useState(''),[items,setItems]=useState<WUnit[]|null>(null);
+ useEffect(()=>{const t=setTimeout(()=>api.wUnits({state,q,holder}).then(p=>setItems(p.items)).catch(onFail),250);return()=>clearTimeout(t)},[state,q,holder]);
+ // отчёт C45.02: текущая выборка в CSV (Excel открывает UTF-8 с BOM; разделитель «;»)
+ function csv(){const cell=(v:string)=>'"'+v.replace(/"/g,'""')+'"';const rows=[['Модель','Серийный','Инв. №','Состояние','Где / у кого','Актив'],...(items??[]).map(u=>[u.item_name,u.serial,u.inventory_no??'',stateName[u.state][0],u.location_id?locName(r,u.location_id):u.holder_id?subjName(r,u.holder_id):u.installed_on?'на активе '+u.installed_on:'',u.asset_uid??''])];
+  const blob=new Blob(['\ufeff'+rows.map(x=>x.map(cell).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='склад-экземпляры.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
  return <div className="table-panel"><div className="table-toolbar"><h2>Серийные экземпляры <span>{items?.length??'…'}</span></h2><div className="filters">
   <label className="search-field"><span>⌕</span><input aria-label="Поиск экземпляра" placeholder="Серийный, инвентарный, модель…" value={q} onChange={e=>setQ(e.target.value)}/></label>
-  <select aria-label="Состояние" value={state} onChange={e=>setState(e.target.value)}><option value="">Все состояния</option>{Object.entries(stateName).map(([k,[n]])=><option key={k} value={k}>{n}</option>)}</select></div></div>
+  <select aria-label="Состояние" value={state} onChange={e=>setState(e.target.value)}><option value="">Все состояния</option>{Object.entries(stateName).map(([k,[n]])=><option key={k} value={k}>{n}</option>)}</select>
+  <select aria-label="За кем числится" value={holder} onChange={e=>setHolder(e.target.value)}><option value="">За всеми</option>{r.subjects.map(s=><option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}</select>
+  <button className="button small" disabled={!items?.length} onClick={csv}>CSV</button></div></div>
   {items&&items.length===0?<div className="empty"><span>▦</span><h3>Экземпляров нет</h3><p>Оформите приход на вкладке «Операция».</p></div>:
   <div className="table-scroll"><table><thead><tr><th>Модель</th><th>Серийный / инв.</th><th>Состояние</th><th>Где / у кого</th><th>Актив</th></tr></thead><tbody>{(items??[]).map(u=><tr key={u.unit_id}>
    <td>{u.item_name}</td><td className="mono">{u.serial}{u.inventory_no?<small>{u.inventory_no}</small>:null}</td><td><span className={'badge '+stateName[u.state][1]}><i/>{stateName[u.state][0]}</span></td>
