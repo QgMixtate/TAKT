@@ -87,6 +87,15 @@
     },
     "active": {
      "type": "boolean"
+    },
+    "compatible_models": {
+     "type": "array",
+     "maxItems": 100,
+     "items": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 128
+     }
     }
    },
    "required": [
@@ -95,7 +104,8 @@
     "kind",
     "unit",
     "category",
-    "active"
+    "active",
+    "compatible_models"
    ],
    "additionalProperties": false
   },
@@ -440,6 +450,9 @@
        "type": "null"
       }
      ]
+    },
+    "compat_override": {
+     "type": "boolean"
     }
    },
    "required": [
@@ -457,6 +470,7 @@
     "to_holder",
     "asset_uid",
     "reverses",
+    "compat_override",
     "lines"
    ],
    "additionalProperties": false
@@ -955,6 +969,29 @@
    },
    "required": [
     "items"
+   ],
+   "additionalProperties": false
+  },
+  "Compatibility": {
+   "type": "object",
+   "properties": {
+    "compatible": {
+     "oneOf": [
+      {
+       "type": "boolean"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "asset_model": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "compatible",
+    "asset_model"
    ],
    "additionalProperties": false
   }

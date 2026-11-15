@@ -403,3 +403,81 @@ func TestW2Inventory(t *testing.T) {
 		t.Fatal("inventory list", list.Items)
 	}
 }
+
+// C44.01: совместимость комплектующих — установка на актив неподходящей модели отклоняется (INCOMPATIBLE_COMPONENT),
+// с пометкой «под ответственность» проходит и остаётся в журнале; без правил — подходит ко всему.
+func TestW2Compatibility(t *testing.T) {
+	f := registrySetup(t)
+	if _, err := f.registry.ConfigureInventoryProtocol12(true); err != nil {
+		t.Fatal(err)
+	}
+	o := testObservation12(t, f, "1")
+	for i := range o.Sections {
+		if o.Sections[i].Name == "hardware" {
+			o.Sections[i].Records = []map[string]any{{"kind": "bios", "name": "System firmware", "vendor": "LENOVO", "model": "ThinkPad T14 Gen 3"}}
+			o.Sections[i].Count = 1
+		}
+	}
+	res := f.ingest(t, o)
+	if res.AssetID == nil {
+		t.Fatalf("asset: %+v", res)
+	}
+	asset := *res.AssetID
+	auth, err := access.NewHTTP(f.users, "https://ui.example", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.NewHTTP(auth, health.Handler(func(context.Context) error { return nil }), f.registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(handler)
+	defer server.Close()
+	b := newBrowser(t, server)
+	csrf := b.login(t, "admin").CSRFToken
+	call := func(method, path, body string, want int, out any) []byte {
+		t.Helper()
+		code, raw, _ := b.request(t, method, path, body, csrf, "https://ui.example", nil)
+		if code != want {
+			t.Fatalf("%s %s: %d (want %d) %s", method, path, code, want, raw)
+		}
+		if out != nil {
+			_ = json.Unmarshal(raw, out)
+		}
+		return raw
+	}
+	var loc warehouse.Location
+	call("POST", "/api/v1/warehouse/locations", fmt.Sprintf(`{"site_id":%q,"kind":"warehouse","name":"Запчасти"}`, siteID), 201, &loc)
+	var ram, dellRam, ssd warehouse.Item
+	call("POST", "/api/v1/warehouse/items", `{"name":"Память SODIMM 16 ГБ","kind":"serial"}`, 201, &ram)
+	call("POST", "/api/v1/warehouse/items", `{"name":"Память для Dell","kind":"serial"}`, 201, &dellRam)
+	call("POST", "/api/v1/warehouse/items", `{"name":"SSD универсальный","kind":"serial"}`, 201, &ssd)
+	call("PUT", "/api/v1/warehouse/items/"+ram.ID+"/compatibility", `{"compatible_models":["ThinkPad T14","ThinkPad X1"]}`, 200, &ram)
+	call("PUT", "/api/v1/warehouse/items/"+dellRam.ID+"/compatibility", `{"compatible_models":["Latitude"]}`, 200, nil)
+	if len(ram.Compatible) != 2 {
+		t.Fatalf("compatibility list: %+v", ram)
+	}
+	var in warehouse.Movement
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"receive","basis":"Приход","to_location":%q,"lines":[{"item_id":%q,"serial":"RAM-1"},{"item_id":%q,"serial":"DRAM-1"},{"item_id":%q,"serial":"SSD-1"}]}`, loc.ID, ram.ID, dellRam.ID, ssd.ID), 201, &in)
+	var c struct {
+		Compatible *bool  `json:"compatible"`
+		Model      string `json:"asset_model"`
+	}
+	call("GET", "/api/v1/warehouse/compatibility?item="+dellRam.ID+"&asset="+asset, "", 200, &c)
+	if c.Compatible == nil || *c.Compatible || !strings.Contains(c.Model, "ThinkPad T14") {
+		t.Fatalf("Dell memory must not fit a ThinkPad: %+v", c)
+	}
+	install := func(unit string, override bool, want int) []byte {
+		return call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"install","basis":"Апгрейд","from_location":%q,"asset_uid":%q,"compat_override":%v,"lines":[{"unit_id":%q}]}`, loc.ID, asset, override, unit), want, nil)
+	}
+	install(*in.Lines[0].UnitID, false, 201) // подходит
+	install(*in.Lines[2].UnitID, false, 201) // без правил — ко всему
+	if raw := install(*in.Lines[1].UnitID, false, 409); !strings.Contains(string(raw), "INCOMPATIBLE_COMPONENT") {
+		t.Fatalf("incompatible: %s", raw)
+	}
+	var forced warehouse.Movement
+	_ = json.Unmarshal(install(*in.Lines[1].UnitID, true, 201), &forced)
+	if !forced.Override {
+		t.Fatal("override must be recorded in the journal")
+	}
+}

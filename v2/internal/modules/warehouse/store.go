@@ -35,6 +35,8 @@ type Item struct {
 	Unit     string  `json:"unit"`
 	Category *string `json:"category"`
 	Active   bool    `json:"active"`
+	// Compatible — модели оборудования, к которым подходит комплектующее (пусто — ко всему), C44.01
+	Compatible []string `json:"compatible_models"`
 }
 
 type Unit struct {
@@ -83,6 +85,8 @@ type Operation struct {
 	Lines        []Line `json:"lines"`
 	// Reservation — выдача по резерву (количество): берётся из зарезервированного, резерв закрывается
 	Reservation string `json:"reservation_id,omitempty"`
+	// CompatOverride — установка комплектующего, не подходящего к модели актива, под ответственность оформившего
+	CompatOverride bool `json:"compat_override,omitempty"`
 }
 
 type MovementLine struct {
@@ -111,6 +115,7 @@ type Movement struct {
 	ToHolder     *string        `json:"to_holder"`
 	Asset        *string        `json:"asset_uid"`
 	Reverses     *string        `json:"reverses"`
+	Override     bool           `json:"compat_override"`
 	Lines        []MovementLine `json:"lines"`
 }
 
@@ -162,19 +167,21 @@ func (Store) CreateItem(ctx context.Context, tx pgx.Tx, tenant string, it Item) 
 	if !text(it.Name, 1, 256) || (it.Kind != "serial" && it.Kind != "quantity") || !text(it.Unit, 1, 16) || (it.Category != nil && !text(*it.Category, 0, 64)) || (it.Kind == "serial" && it.Unit != "шт") {
 		return it, domain.Invalid
 	}
-	it.ID, it.Active = identifier.New(), true
+	it.ID, it.Active, it.Compatible = identifier.New(), true, []string{}
 	_, e := tx.Exec(ctx, "INSERT INTO warehouse.items(tenant_id,item_id,name,kind,unit,category) VALUES($1,$2,$3,$4,$5,$6)", tenant, it.ID, it.Name, it.Kind, it.Unit, it.Category)
 	return it, conflict(e)
 }
 
 func (Store) Items(ctx context.Context, tx pgx.Tx, tenant string) ([]Item, error) {
-	rows, e := tx.Query(ctx, "SELECT item_id::text,name,kind,unit,category,active FROM warehouse.items WHERE tenant_id=$1 ORDER BY lower(name) LIMIT 2000", tenant)
+	rows, e := tx.Query(ctx, `SELECT i.item_id::text,i.name,i.kind,i.unit,i.category,i.active,
+COALESCE((SELECT array_agg(c.model ORDER BY lower(c.model)) FROM warehouse.item_compatibility c WHERE c.tenant_id=i.tenant_id AND c.item_id=i.item_id),'{}')
+FROM warehouse.items i WHERE i.tenant_id=$1 ORDER BY lower(i.name) LIMIT 2000`, tenant)
 	if e != nil {
 		return nil, e
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Item, error) {
 		var it Item
-		return it, r.Scan(&it.ID, &it.Name, &it.Kind, &it.Unit, &it.Category, &it.Active)
+		return it, r.Scan(&it.ID, &it.Name, &it.Kind, &it.Unit, &it.Category, &it.Active, &it.Compatible)
 	})
 }
 
@@ -342,8 +349,8 @@ ON CONFLICT (tenant_id,year) DO UPDATE SET last=warehouse.act_counters.last+1 RE
 		return m, e
 	}
 	m.ActNo = fmt.Sprintf("%d-%06d", m.At.Year(), no)
-	if _, e = tx.Exec(ctx, `INSERT INTO warehouse.movements(tenant_id,movement_id,kind,act_no,occurred_at,actor_ref,basis,note,from_location,to_location,from_holder,to_holder,asset_uid,reverses)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, tenant, m.ID, m.Kind, m.ActNo, m.At, actor, m.Basis, m.Note, m.FromLocation, m.ToLocation, m.FromHolder, m.ToHolder, m.Asset, m.Reverses); e != nil {
+	if _, e = tx.Exec(ctx, `INSERT INTO warehouse.movements(tenant_id,movement_id,kind,act_no,occurred_at,actor_ref,basis,note,from_location,to_location,from_holder,to_holder,asset_uid,reverses,compat_override)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`, tenant, m.ID, m.Kind, m.ActNo, m.At, actor, m.Basis, m.Note, m.FromLocation, m.ToLocation, m.FromHolder, m.ToHolder, m.Asset, m.Reverses, op.CompatOverride && op.Kind == "install"); e != nil {
 		return m, conflict(e)
 	}
 	seen := map[string]bool{}
@@ -434,6 +441,15 @@ AND (state='in_stock' OR (state='reserved' AND EXISTS(SELECT 1 FROM warehouse.re
 		if e != nil {
 			return "", "", 0, conflict(e)
 		}
+		if op.Kind == "install" && !op.CompatOverride {
+			fits, model, e := Store{}.Compatible(ctx, tx, tenant, item, op.Asset)
+			if e != nil {
+				return "", "", 0, e
+			}
+			if fits != nil && !*fits {
+				return "", "", 0, &IncompatibleError{Model: model}
+			}
+		}
 		if op.Kind == "issue" {
 			if _, e = tx.Exec(ctx, "UPDATE warehouse.reservations SET state='fulfilled' WHERE tenant_id=$1 AND unit_id=$2 AND state='active'", tenant, l.UnitID); e != nil {
 				return "", "", 0, e
@@ -493,8 +509,8 @@ func (Store) Movement(ctx context.Context, tx pgx.Tx, tenant, id string) (Moveme
 	}
 	e := tx.QueryRow(ctx, `SELECT m.movement_id::text,m.kind,m.act_no,m.occurred_at,m.actor_ref,
 (SELECT u.username FROM access.users u WHERE u.tenant_id=m.tenant_id AND 'user:'||u.user_id::text=m.actor_ref),
-m.basis,m.note,m.from_location::text,m.to_location::text,m.from_holder::text,m.to_holder::text,m.asset_uid::text,m.reverses::text
-FROM warehouse.movements m WHERE m.tenant_id=$1 AND m.movement_id=$2`, tenant, id).Scan(&m.ID, &m.Kind, &m.ActNo, &m.At, &m.Actor, &m.ActorName, &m.Basis, &m.Note, &m.FromLocation, &m.ToLocation, &m.FromHolder, &m.ToHolder, &m.Asset, &m.Reverses)
+m.basis,m.note,m.from_location::text,m.to_location::text,m.from_holder::text,m.to_holder::text,m.asset_uid::text,m.reverses::text,m.compat_override
+FROM warehouse.movements m WHERE m.tenant_id=$1 AND m.movement_id=$2`, tenant, id).Scan(&m.ID, &m.Kind, &m.ActNo, &m.At, &m.Actor, &m.ActorName, &m.Basis, &m.Note, &m.FromLocation, &m.ToLocation, &m.FromHolder, &m.ToHolder, &m.Asset, &m.Reverses, &m.Override)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return m, domain.NotFound
 	}
@@ -518,7 +534,7 @@ WHERE l.tenant_id=$1 AND l.movement_id=$2 ORDER BY l.line_no`, tenant, id)
 type MovementFilter struct{ Unit, Holder, Location, Asset string }
 
 func (Store) Movements(ctx context.Context, tx pgx.Tx, tenant string, f MovementFilter, limit int) ([]Movement, error) {
-	rows, e := tx.Query(ctx, `SELECT m.movement_id::text,m.kind,m.act_no,m.occurred_at,m.actor_ref,m.basis,m.note,m.from_location::text,m.to_location::text,m.from_holder::text,m.to_holder::text,m.asset_uid::text,m.reverses::text
+	rows, e := tx.Query(ctx, `SELECT m.movement_id::text,m.kind,m.act_no,m.occurred_at,m.actor_ref,m.basis,m.note,m.from_location::text,m.to_location::text,m.from_holder::text,m.to_holder::text,m.asset_uid::text,m.reverses::text,m.compat_override
 FROM warehouse.movements m WHERE m.tenant_id=$1
 AND ($2='' OR EXISTS(SELECT 1 FROM warehouse.movement_lines l WHERE l.tenant_id=m.tenant_id AND l.movement_id=m.movement_id AND l.unit_id::text=$2))
 AND ($3='' OR m.from_holder::text=$3 OR m.to_holder::text=$3)
@@ -530,7 +546,7 @@ ORDER BY m.occurred_at DESC, m.act_no DESC LIMIT $6`, tenant, f.Unit, f.Holder, 
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Movement, error) {
 		var m Movement
-		return m, r.Scan(&m.ID, &m.Kind, &m.ActNo, &m.At, &m.Actor, &m.Basis, &m.Note, &m.FromLocation, &m.ToLocation, &m.FromHolder, &m.ToHolder, &m.Asset, &m.Reverses)
+		return m, r.Scan(&m.ID, &m.Kind, &m.ActNo, &m.At, &m.Actor, &m.Basis, &m.Note, &m.FromLocation, &m.ToLocation, &m.FromHolder, &m.ToHolder, &m.Asset, &m.Reverses, &m.Override)
 	})
 }
 
@@ -812,4 +828,60 @@ LEFT JOIN warehouse.items i ON i.tenant_id=r.tenant_id AND i.item_id=r.item_id W
 		var r Reservation
 		return r, row.Scan(&r.ID, &r.UnitID, &r.ItemID, &r.Location, &r.Quantity, &r.Holder, &r.Basis, &r.ExpiresAt, &r.State, &r.CreatedBy, &r.CreatedAt, &r.Label)
 	})
+}
+
+// IncompatibleError — комплектующее не подходит к модели актива (установка — только с compat_override).
+type IncompatibleError struct{ Model string }
+
+func (e *IncompatibleError) Error() string {
+	return "warehouse: item is not compatible with asset model " + e.Model
+}
+func (e *IncompatibleError) Unwrap() error { return domain.Conflict }
+
+// Compatible — подходит ли позиция к активу: nil — нельзя судить (нет правил или модель актива неизвестна);
+// model — модель/производитель актива из инвентаризации.
+func (Store) Compatible(ctx context.Context, tx pgx.Tx, tenant, item, asset string) (*bool, string, error) {
+	var rules int
+	var model *string
+	var fits bool
+	e := tx.QueryRow(ctx, `WITH m AS (SELECT NULLIF(trim(concat_ws(' ',
+ (SELECT string_agg(value #>> '{}',' ') FROM inventory.record_facts12 WHERE tenant_id=$1 AND asset_uid=$3 AND section_name='hardware' AND field_name IN ('vendor','model')),
+ (SELECT string_agg(value,' ') FROM inventory.current_facts WHERE tenant_id=$1 AND asset_uid=$3 AND section_name='hardware' AND fact_key IN ('vendor','model','manufacturer')))),'') AS model)
+SELECT (SELECT count(*) FROM warehouse.item_compatibility WHERE tenant_id=$1 AND item_id=$2)::int, m.model,
+ EXISTS(SELECT 1 FROM warehouse.item_compatibility c WHERE c.tenant_id=$1 AND c.item_id=$2 AND strpos(lower(m.model), lower(c.model))>0)
+FROM m`, tenant, item, asset).Scan(&rules, &model, &fits)
+	if e != nil || rules == 0 || model == nil {
+		return nil, deref(model), e
+	}
+	return &fits, *model, nil
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// SetCompatibility заменяет список моделей, к которым подходит позиция (пустой — ко всему).
+func (Store) SetCompatibility(ctx context.Context, tx pgx.Tx, tenant, item string, models []string) error {
+	if !identifier.Valid(item) || len(models) > 100 {
+		return domain.Invalid
+	}
+	if _, e := itemKind(ctx, tx, tenant, item); e != nil {
+		return e
+	}
+	if _, e := tx.Exec(ctx, "DELETE FROM warehouse.item_compatibility WHERE tenant_id=$1 AND item_id=$2", tenant, item); e != nil {
+		return e
+	}
+	for _, m := range models {
+		m = strings.TrimSpace(m)
+		if !text(m, 2, 128) {
+			return domain.Invalid
+		}
+		if _, e := tx.Exec(ctx, "INSERT INTO warehouse.item_compatibility(tenant_id,item_id,model) VALUES($1,$2,$3) ON CONFLICT DO NOTHING", tenant, item, m); e != nil {
+			return e
+		}
+	}
+	return nil
 }

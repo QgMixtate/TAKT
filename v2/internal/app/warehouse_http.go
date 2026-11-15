@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/QgMixtate/surveyscan/v2/internal/modules/access"
 	accessport "github.com/QgMixtate/surveyscan/v2/internal/modules/access/port"
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/warehouse"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/domain"
@@ -47,7 +49,15 @@ func (r *Registry) warehouseDo(w http.ResponseWriter, req *http.Request, status 
 	if e == nil {
 		e = tx.Commit(ctx)
 	}
-	if e != nil {
+	var incompatible *warehouse.IncompatibleError
+	switch {
+	case errors.As(e, &incompatible):
+		access.APIError(w, 409, "INCOMPATIBLE_COMPONENT") // установить можно только с пометкой «под ответственность»
+		return
+	case errors.Is(e, warehouse.ErrInventoryOpen):
+		access.APIError(w, 409, "LOCATION_UNDER_INVENTORY")
+		return
+	case e != nil:
 		cmdbError(w, req, e)
 		return
 	}
@@ -247,6 +257,37 @@ func (r *Registry) warehouseHandlers() map[string]route51 {
 			return res, e
 		}).handler.ServeHTTP(w, req)
 	})}
+	h["PUT /api/v1/warehouse/items/{item_id}/compatibility"] = route51{"warehouse:admin", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Models []string `json:"compatible_models"`
+		}
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		write("warehouse:admin", 200, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ *http.Request) (any, error) {
+			item := req.PathValue("item_id")
+			if e := st.SetCompatibility(ctx, tx, id.TenantID, item, body.Models); e != nil {
+				return nil, e
+			}
+			if e := r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "warehouse.item_compatibility_set", "item", item); e != nil {
+				return nil, e
+			}
+			items, e := st.Items(ctx, tx, id.TenantID)
+			for _, it := range items {
+				if it.ID == item {
+					return it, e
+				}
+			}
+			return nil, e
+		}).handler.ServeHTTP(w, req)
+	})}
+	h["GET /api/v1/warehouse/compatibility"] = list("warehouse:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity, q url.Values) (any, error) {
+		if !identifier.Valid(q.Get("item")) || !identifier.Valid(q.Get("asset")) {
+			return nil, domain.Invalid
+		}
+		fits, model, e := st.Compatible(ctx, tx, id.TenantID, q.Get("item"), q.Get("asset"))
+		return map[string]any{"compatible": fits, "asset_model": model}, e
+	}, "item", "asset")
 	h["GET /api/v1/warehouse/inventories"] = list("warehouse:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ url.Values) (any, error) {
 		items, e := st.Inventories(ctx, tx, id.TenantID, 100)
 		return map[string]any{"items": items}, e

@@ -62,21 +62,25 @@ const blank:LineDraft={unit_id:'',item_id:'',quantity:'',serial:'',inventory_no:
 
 function OperationForm({ref_:r,csrf,isAdmin,onFail,onDone}:{ref_:Ref;csrf:string;isAdmin:boolean;onFail:(e:unknown)=>void;onDone:(m:WMovement)=>void}){
  const [kind,setKind]=useState<WOperation['kind']>('issue'),[basis,setBasis]=useState(''),[note,setNote]=useState(''),[fromLoc,setFromLoc]=useState(''),[toLoc,setToLoc]=useState(''),[fromH,setFromH]=useState(''),[toH,setToH]=useState(''),[asset,setAsset]=useState('');
+ const [override,setOverride]=useState(false),[compat,setCompat]=useState<{compatible:boolean|null;asset_model:string}[]>([]);
  const [lines,setLines]=useState<LineDraft[]>([{...blank}]),[units,setUnits]=useState<WUnit[]>([]),[busy,setBusy]=useState(false),[fromMode,setFromMode]=useState<'loc'|'holder'>('loc');
  const n=need[kind]??{};const stockLocs=r.locations.filter(l=>l.kind!=='repair'&&l.active),repairLocs=r.locations.filter(l=>l.kind==='repair'&&l.active);
  const fromIsLoc=n.from==='loc'||(n.from==='either'&&fromMode==='loc'),fromIsHolder=n.from==='holder'||(n.from==='either'&&fromMode==='holder');
  // кандидаты-экземпляры по «откуда»: на месте, у держателя или на активе
  useEffect(()=>{const f=fromIsLoc&&fromLoc?{location:fromLoc}:fromIsHolder&&fromH?{holder:fromH}:kind==='remove'&&asset?{asset}:kind==='repair_in'&&fromLoc?{location:fromLoc}:null;if(!f){setUnits([]);return}api.wUnits(f).then(p=>setUnits(p.items.filter(u=>kind!=='remove'||u.installed_on===asset))).catch(onFail)},[kind,fromLoc,fromH,asset,fromMode]);
+ // установка: проверка совместимости каждого выбранного экземпляра с моделью актива (C44.01)
+ useEffect(()=>{if(kind!=='install'||!/^[0-9a-f-]{36}$/.test(asset.trim())){setCompat([]);return}const ids=lines.map(l=>units.find(u=>u.unit_id===l.unit_id)?.item_id).filter((x):x is string=>!!x);Promise.all(ids.map(i=>api.wCompatibility(i,asset.trim()))).then(setCompat).catch(onFail)},[kind,asset,lines,units]);
+ const incompatible=compat.some(c=>c.compatible===false);
  const set=(i:number,p:Partial<LineDraft>)=>setLines(ls=>ls.map((l,j)=>j===i?{...l,...p}:l));
  const serialItems=r.items.filter(i=>i.kind==='serial'&&i.active),qtyItems=r.items.filter(i=>i.kind==='quantity'&&i.active);
  const qtyAllowed=['receive','issue','return','transfer','write_off'].includes(kind);
  async function submit(){
   const op:WOperation={kind,basis:basis.trim(),note:note.trim()||undefined,lines:lines.filter(l=>l.unit_id||l.item_id).map(l=>l.unit_id?{unit_id:l.unit_id}:kind==='receive'&&l.serial?{item_id:l.item_id,serial:l.serial.trim(),inventory_no:l.inventory_no.trim()||undefined}:{item_id:l.item_id,quantity:Number(l.quantity)})};
   if(fromIsLoc)op.from_location=fromLoc;if(fromIsHolder)op.from_holder=fromH;
-  if(n.to==='loc'||n.to==='repair')op.to_location=toLoc;if(n.to==='holder')op.to_holder=toH;if(n.asset)op.asset_uid=asset.trim();
+  if(n.to==='loc'||n.to==='repair')op.to_location=toLoc;if(n.to==='holder')op.to_holder=toH;if(n.asset)op.asset_uid=asset.trim();if(kind==='install'&&override)op.compat_override=true;
   setBusy(true);try{const m=await api.wMove(csrf,op);setLines([{...blank}]);setBasis('');setNote('');onDone(m)}catch(e){onFail(e)}finally{setBusy(false)}
  }
- const valid=basis.trim()&&lines.some(l=>l.unit_id||l.item_id)&&(!fromIsLoc||fromLoc)&&(!fromIsHolder||fromH)&&(!n.to||(n.to==='holder'?toH:toLoc))&&(!n.asset||/^[0-9a-f-]{36}$/.test(asset.trim()));
+ const valid=(!incompatible||override)&&basis.trim()&&lines.some(l=>l.unit_id||l.item_id)&&(!fromIsLoc||fromLoc)&&(!fromIsHolder||fromH)&&(!n.to||(n.to==='holder'?toH:toLoc))&&(!n.asset||/^[0-9a-f-]{36}$/.test(asset.trim()));
  return <div className="table-panel"><div className="table-toolbar"><h2>Складская операция</h2></div><div className="form-grid wh-form">
   <label>Вид<select value={kind} onChange={e=>{setKind(e.target.value as WOperation['kind']);setLines([{...blank}])}}>{Object.keys(need).filter(k=>k!=='write_off'||isAdmin).map(k=><option key={k} value={k}>{kindName[k as WMovement['kind']]}</option>)}</select></label>
   {n.from==='either'?<label>Откуда<select value={fromMode} onChange={e=>setFromMode(e.target.value as 'loc'|'holder')}><option value="loc">со склада</option><option value="holder">от сотрудника/команды</option></select></label>:null}
@@ -102,6 +106,7 @@ function OperationForm({ref_:r,csrf,isAdmin,onFail,onDone}:{ref_:Ref;csrf:string
   {lines.length>1?<button className="text-link" onClick={()=>setLines(ls=>ls.filter((_,j)=>j!==i))}>убрать</button>:null}
  </div>)}
  <button className="text-link" onClick={()=>setLines(ls=>[...ls,{...blank}])}>+ позиция</button></div>
+ {incompatible?<div className="error" role="alert">Комплектующее не подходит к модели актива «{compat.find(c=>c.compatible===false)?.asset_model}» по каталогу. <label><input type="checkbox" checked={override} onChange={e=>setOverride(e.target.checked)}/> Установить под мою ответственность (отметка останется в журнале)</label></div>:null}
  <div className="wh-submit"><button className="button" disabled={!valid||busy} onClick={()=>void submit()}>{busy?'Проводим…':'Провести и сформировать акт'}</button><small className="muted">Операция попадает в журнал; исправление — только обратной операцией.</small></div>
  </div>;
 }
@@ -146,7 +151,7 @@ function Catalog({ref_:r,csrf,isAdmin,onFail,onChanged}:{ref_:Ref;csrf:string;is
    <button className="button small" disabled={busy||!loc.name.trim()||!parentSite} onClick={()=>void act(async()=>{await api.wCreateLocation(csrf,{site_id:parentSite,kind:loc.kind,name:loc.name.trim(),parent_id:loc.parent_id||undefined});setLoc({...loc,name:''})})}>Добавить</button></div>:null}
  </div>
  <div className="table-panel"><div className="table-toolbar"><h2>Каталог позиций <span>{r.items.length}</span></h2></div>
-  <div className="table-scroll"><table><thead><tr><th>Название</th><th>Учёт</th><th>Категория</th></tr></thead><tbody>{r.items.map(i=><tr key={i.item_id}><td>{i.name}</td><td>{i.kind==='serial'?'по серийным номерам':'количеством, '+i.unit}</td><td>{i.category??'—'}</td></tr>)}</tbody></table></div>
+  <div className="table-scroll"><table><thead><tr><th>Название</th><th>Учёт</th><th>Категория</th><th>Подходит к моделям</th></tr></thead><tbody>{r.items.map(i=><tr key={i.item_id}><td>{i.name}</td><td>{i.kind==='serial'?'по серийным номерам':'количеством, '+i.unit}</td><td>{i.category??'—'}</td><td>{i.compatible_models.length?i.compatible_models.join(', '):<span className="muted">ко всем</span>}{isAdmin&&i.kind==='serial'?<button className="text-link" onClick={()=>{const v=window.prompt('Модели, к которым подходит (через запятую; пусто — ко всем):',i.compatible_models.join(', '));if(v!==null)void act(()=>api.wSetCompatibility(csrf,i.item_id,v.split(',').map(x=>x.trim()).filter(Boolean)))}}>изменить</button>:null}</td></tr>)}</tbody></table></div>
   {isAdmin?<div className="wh-line"><input aria-label="Название позиции" value={item.name} onChange={e=>setItem({...item,name:e.target.value})} placeholder="Модель / номенклатура"/>
    <select aria-label="Учёт" value={item.kind} onChange={e=>setItem({...item,kind:e.target.value as WItem['kind'],unit:'шт'})}><option value="serial">по серийным номерам</option><option value="quantity">количеством</option></select>
    {item.kind==='quantity'?<input aria-label="Единица" value={item.unit} onChange={e=>setItem({...item,unit:e.target.value})} placeholder="ед." size={5}/>:null}
