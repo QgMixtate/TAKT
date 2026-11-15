@@ -112,6 +112,19 @@ func (s *MachineService) AuditPortableImport(ctx context.Context, tenant, actorR
 	return tx.Commit(ctx)
 }
 
+// AuditPortableAction — запись аудита действия с portable-аудитом организации (например, включение шифрования).
+func (s *MachineService) AuditPortableAction(ctx context.Context, tenant, actorRef, action, object string) error {
+	tx, e := s.Pool.Begin(ctx)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(ctx)
+	if e = s.Audit.Record(ctx, tx, tenant, actorRef, action, "portable_encryption", object); e != nil {
+		return e
+	}
+	return tx.Commit(ctx)
+}
+
 // PortableScope — площадка и сегмент для команды init portable-аудита (Web подставляет их в команду).
 type PortableScope struct {
 	Site      string `json:"site_id"`

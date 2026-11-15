@@ -32,6 +32,7 @@ type PortableReport struct {
 	// Повторная отправка того же пакета продолжает: обработанные записи вернутся как duplicate.
 	Complete  bool `json:"complete"`
 	Remaining int  `json:"remaining"`
+	Encrypted bool `json:"encrypted"` // пакет был зашифрован ключом центра
 }
 
 // ImportPortable проверяет пакет ключом зарегистрированного portable-источника (подпись манифеста, digest, подпись
@@ -47,6 +48,9 @@ func (r *Registry) ImportPortableUntil(ctx context.Context, machine *sources.Mac
 	report := PortableReport{SourceID: source, Records: []PortableRecord{}, Complete: true}
 	keyID, pub, err := machine.PortableTrust(ctx, tenant, source)
 	if err != nil {
+		return report, err
+	}
+	if pkg, report.Encrypted, err = r.decryptPortable(ctx, tenant, pkg); err != nil {
 		return report, err
 	}
 	v, err := wire.NewInventory12()

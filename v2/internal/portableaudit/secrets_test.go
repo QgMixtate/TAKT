@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/QgMixtate/surveyscan/v2/internal/agent"
+	"github.com/QgMixtate/surveyscan/v2/internal/platform/wire"
+	"github.com/QgMixtate/surveyscan/v2/internal/portable"
 )
 
 // C23.04: в пакет не попадают ключ подписи (в любом виде), содержимое каталога состояния, кроме открытых
@@ -70,5 +73,47 @@ func TestPackageCarriesNoSecrets(t *testing.T) {
 	// ошибку цели оператор видит в выводе (для разбора), но в пакет она не уходит
 	if !strings.Contains(strings.Join(lines, "\n"), "pc.example.test") {
 		t.Fatal("failed target must be reported to the operator:", lines)
+	}
+}
+
+// Шифрование для центра: пакет нечитаем без ключа центра, после расшифровки — тот же проверяемый пакет;
+// второй, другой ключ центра для того же каталога не принимается (пакеты не уходят незаметно к чужому ключу).
+func TestEncryptedPackageForCentre(t *testing.T) {
+	dir, pub := setup(t)
+	priv, centre, err := portable.GenerateEncryptionKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b64 := base64.StdEncoding.EncodeToString(centre)
+	if _, err = SetCenterKey(dir, b64); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = SetCenterKey(dir, b64); err != nil {
+		t.Fatal("same key again must be accepted:", err)
+	}
+	_, other, _ := portable.GenerateEncryptionKey()
+	if _, err = SetCenterKey(dir, base64.StdEncoding.EncodeToString(other)); err == nil {
+		t.Fatal("another centre key must be refused")
+	}
+	if _, err = SetCenterKey(dir, "not-a-key"); err == nil {
+		t.Fatal("garbage key must be refused")
+	}
+	out := filepath.Join(t.TempDir(), "audit.zip")
+	rep, err := Run(context.Background(), dir, []Target{hostTarget(t)}, out, nil)
+	if err != nil || !rep.Encrypted {
+		t.Fatal("encrypted export:", err, rep.Encrypted)
+	}
+	data, _ := os.ReadFile(out)
+	if !portable.Encrypted(data) || bytes.Contains(data, []byte("manifest.json")) {
+		t.Fatal("package must be an opaque envelope")
+	}
+	plain, err := portable.Open(priv, data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, _ := wire.NewInventory12()
+	res, err := portable.Import(plain, map[string]ed25519.PublicKey{portable.KeyID(pub): pub}, portable.Known{}, portable.DefaultLimits(), v)
+	if err != nil || len(res.Accepted) != 1 {
+		t.Fatal("decrypted package must import:", err)
 	}
 }

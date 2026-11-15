@@ -43,11 +43,26 @@
       ],
       "additionalProperties": false
      }
+    },
+    "encryption": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/PortableEncryption"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "encryption_available": {
+     "type": "boolean"
     }
    },
    "required": [
     "tenant_id",
-    "items"
+    "items",
+    "encryption",
+    "encryption_available"
    ],
    "additionalProperties": false
   },
@@ -114,13 +129,36 @@
     "remaining": {
      "type": "integer",
      "minimum": 0
+    },
+    "encrypted": {
+     "type": "boolean"
     }
    },
    "required": [
     "source_id",
     "records",
     "complete",
-    "remaining"
+    "remaining",
+    "encrypted"
+   ],
+   "additionalProperties": false
+  },
+  "PortableEncryption": {
+   "description": "Открытый ключ шифрования portable-пакетов организации (X25519, base64); POST /api/v1/sources/portable-encryption",
+   "type": "object",
+   "properties": {
+    "key_id": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{32}$"
+    },
+    "public_key": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9+/]{43}=$"
+    }
+   },
+   "required": [
+    "key_id",
+    "public_key"
    ],
    "additionalProperties": false
   }

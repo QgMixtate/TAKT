@@ -1,6 +1,7 @@
 // surveyscan-portable — разовый аудит без службы и без центра (C23.02).
 //
-//	surveyscan-portable init    --state DIR --tenant UUID --site UUID --scope UUID
+//	surveyscan-portable init    --state DIR --tenant UUID --site UUID --scope UUID [--center-key BASE64]
+//	surveyscan-portable center-key --state DIR --center-key BASE64   (включить шифрование для готового каталога)
 //	surveyscan-portable collect --state DIR (--out FILE | --dry-run) [--no-host] [--ssh-target F]... [--winrm-target F]...
 //	surveyscan-portable verify  --package FILE --public-key BASE64URL
 //
@@ -39,7 +40,7 @@ func fail(format string, a ...any) {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: surveyscan-portable init|collect|verify [flags]")
+		fmt.Fprintln(os.Stderr, "usage: surveyscan-portable init|center-key|collect|verify [flags]")
 		os.Exit(2)
 	}
 	fs := flag.NewFlagSet(os.Args[1], flag.ExitOnError)
@@ -52,6 +53,7 @@ func main() {
 	noHost := fs.Bool("no-host", false, "не собирать этот хост")
 	pkg := fs.String("package", "", "файл пакета для проверки")
 	pubKey := fs.String("public-key", "", "открытый ключ portable-источника (base64url, из init)")
+	centerKey := fs.String("center-key", "", "открытый ключ шифрования центра (base64, из Web): пакеты шифруются")
 	var sshTargets, winrmTargets list
 	fs.Var(&sshTargets, "ssh-target", "приватный JSON SSH-цели (можно несколько)")
 	fs.Var(&winrmTargets, "winrm-target", "приватный JSON WinRM-цели (можно несколько)")
@@ -67,7 +69,20 @@ func main() {
 		}
 		// весь блок вставляется в Web («Источники» → «Portable-аудит» → регистрация ключа): все поля нужны центру
 		fmt.Printf("tenant_id=%s\nsite_id=%s\nscope_id=%s\nsource_id=%s\ngeneration_id=%s\nkey_id=%s\npublic_key=%s\n", id.Tenant, id.Site, id.Scope, id.SourceID, id.Generation, id.KeyID, base64.RawURLEncoding.EncodeToString(pub))
+		if *centerKey != "" {
+			encID, err := portableaudit.SetCenterKey(*state, *centerKey)
+			if err != nil {
+				fail("%v", err)
+			}
+			fmt.Printf("encryption_key_id=%s\n", encID)
+		}
 		fmt.Println("Передайте public_key в центр для доверия при импорте. Ключ подписи остаётся в", *state)
+	case "center-key":
+		encID, err := portableaudit.SetCenterKey(*state, *centerKey)
+		if err != nil {
+			fail("%v", err)
+		}
+		fmt.Printf("encryption_key_id=%s: следующие пакеты шифруются ключом центра\n", encID)
 	case "collect":
 		if (*out == "") == !*dry {
 			fail("укажите ровно одно из --out FILE или --dry-run")
@@ -119,7 +134,11 @@ func main() {
 		if *dry {
 			fmt.Printf("DRY RUN: %d target(s) ok, %d failed; package not written\n", len(rep.Observation), failed)
 		} else {
-			fmt.Printf("EXPORTED: %d observation(s) -> %s (%d target(s) failed)\n", rep.Exported, rep.Package, failed)
+			enc := "not encrypted"
+			if rep.Encrypted {
+				enc = "encrypted for the centre"
+			}
+			fmt.Printf("EXPORTED: %d observation(s) -> %s, %s (%d target(s) failed)\n", rep.Exported, rep.Package, enc, failed)
 		}
 		if failed > 0 {
 			os.Exit(3) // частичный результат: оператор видит, что не все цели собраны
@@ -132,6 +151,15 @@ func main() {
 		data, err := os.ReadFile(*pkg)
 		if err != nil {
 			fail("%v", err)
+		}
+		if portable.Encrypted(data) {
+			// содержимое читается только ключом центра: подпись и записи проверит импорт в центре
+			id, err := portable.EnvelopeKeyID(data)
+			if err != nil {
+				fail("%v", err)
+			}
+			fmt.Printf("ENCRYPTED: package for centre key %s (%d bytes); signature and records are verified on import\n", id, len(data))
+			return
 		}
 		v, err := wire.NewInventory12()
 		if err != nil {

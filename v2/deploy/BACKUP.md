@@ -77,6 +77,9 @@ python3 scripts/checkpoint.py extract --checkpoint /private/new-checkpoint --tar
 Нужен полный состав конкретной установки: operator configs, TLS/CA public trust, source
 identity/origin key, generation/counters/profile cache, collector credentials и обе очереди,
 PG/artifacts и Bao. Recovery/unseal/root custody хранится отдельно, не у приложения.
+Без OpenBao секреты, заводимые из Web (пароль каталога AD, учётки сбора, **ключ шифрования portable-пакетов**),
+лежат в каталоге `integrations` рядом с конфигурацией центра — включать его в checkpoint
+(`--state integrations=…`): без ключа зашифрованные portable-пакеты не прочитать. С OpenBao они — в его снимке.
 Tool проверяет SHA256/size/set, отказывает symlinks/special files и existing destination,
 повторно проверяет private copied snapshot перед atomic extraction. Все backup dirs0700/files0600.
 Ограничения:20k files/2GiB payload; protected input/custody обязательны, manifest не подписан.

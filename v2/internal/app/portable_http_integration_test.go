@@ -3,11 +3,13 @@
 package app_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/QgMixtate/surveyscan/v2/internal/portable"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -193,7 +195,57 @@ func TestC23PortableWebRegistration(t *testing.T) {
 	if len(rep.Records) != 1 || rep.Records[0].Disposition != "applied" || !rep.Complete {
 		t.Fatalf("import %s", raw)
 	}
+	// шифрование пакетов: без хранилища секретов — недоступно; с ним — ключ создаётся один раз, пакет,
+	// зашифрованный этим ключом, импортируется; зашифрованный чужим ключом — 422 без применения
+	code, _, _ = b.request(t, "POST", "/api/v1/sources/portable-encryption", "{}", s.CSRFToken, "https://ui.example", nil)
+	expect(t, 501, code)
+	f.registry.Secrets = app.FileSecrets{Dir: t.TempDir()}
+	code, raw, _ = b.request(t, "GET", "/api/v1/sources/portable-scopes", "", s.CSRFToken, "https://ui.example", nil)
+	expect(t, 200, code)
+	valid("PortableScopeList", raw)
+	if !strings.Contains(string(raw), `"encryption":null`) || !strings.Contains(string(raw), `"encryption_available":true`) {
+		t.Fatalf("encryption off but available: %s", raw)
+	}
+	code, _, _ = viewer.request(t, "POST", "/api/v1/sources/portable-encryption", "{}", vs.CSRFToken, "https://ui.example", nil)
+	expect(t, 403, code)
+	code, raw, _ = b.request(t, "POST", "/api/v1/sources/portable-encryption", "{}", s.CSRFToken, "https://ui.example", nil)
+	expect(t, 200, code)
+	valid("PortableEncryption", raw)
+	var enc app.PortableEncryption
+	_ = json.Unmarshal(raw, &enc)
+	if code, again, _ := b.request(t, "POST", "/api/v1/sources/portable-encryption", "{}", s.CSRFToken, "https://ui.example", nil); code != 200 || !bytes.Equal(again, raw) {
+		t.Fatal("repeat must return the same key", code, string(again))
+	}
+	centerPub, _ := base64.StdEncoding.DecodeString(enc.PublicKey)
+	plain := portablePackage(t, key, source, portableObservation(t, f, source, generation, "host:web-registered", "2"))
+	sealed, err := portable.Seal(centerPub, plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, raw, _ = b.request(t, "POST", "/api/v1/sources/"+source+"/portable-import", string(sealed), s.CSRFToken, "https://ui.example", map[string]string{"Content-Type": "application/zip"})
+	expect(t, 200, code)
+	valid("PortableReport", raw)
+	rep = app.PortableReport{}
+	_ = json.Unmarshal(raw, &rep)
+	if !rep.Encrypted || len(rep.Records) != 1 || rep.Records[0].Disposition != "applied" {
+		t.Fatalf("encrypted import %s", raw)
+	}
+	_, foreignPub, _ := portable.GenerateEncryptionKey()
+	foreign, _ := portable.Seal(foreignPub, portablePackage(t, key, source, portableObservation(t, f, source, generation, "host:web-registered", "3")))
+	code, raw, _ = b.request(t, "POST", "/api/v1/sources/"+source+"/portable-import", string(foreign), s.CSRFToken, "https://ui.example", map[string]string{"Content-Type": "application/zip"})
+	if code != 422 || !strings.Contains(string(raw), "PACKAGE_ENCRYPTION_KEY_UNKNOWN") {
+		t.Fatalf("foreign-key package: %d %s", code, raw)
+	}
+	tampered := bytes.Clone(sealed)
+	tampered[len(tampered)-2] ^= 1
+	code, raw, _ = b.request(t, "POST", "/api/v1/sources/"+source+"/portable-import", string(tampered), s.CSRFToken, "https://ui.example", map[string]string{"Content-Type": "application/zip"})
+	if code != 422 || !strings.Contains(string(raw), "PACKAGE_REJECTED") {
+		t.Fatalf("tampered encrypted package: %d %s", code, raw)
+	}
 	var audits int
+	if _ = f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action='source.portable_encryption_enabled'", tenant).Scan(&audits); audits < 1 {
+		t.Fatal("enabling encryption must be audited")
+	}
 	_ = f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action='source.portable_registered' AND actor_ref LIKE 'user:%'", tenant).Scan(&audits)
 	if audits < 1 {
 		t.Fatal("web registration must be audited with the user as actor")

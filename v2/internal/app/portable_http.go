@@ -74,6 +74,10 @@ func (r *Registry) portableImportHandler() http.Handler {
 				access.APIError(w, 404, "NOT_FOUND")
 			case errors.Is(e, portable.ErrLimits):
 				access.APIError(w, 413, "PAYLOAD_TOO_LARGE")
+			case errors.Is(e, ErrPortableEncryptionKey) || errors.Is(e, ErrSecretsUnavailable) || errors.Is(e, portable.ErrEncryptedKey):
+				access.APIError(w, 422, "PACKAGE_ENCRYPTION_KEY_UNKNOWN") // пакет зашифрован не ключом этой организации
+			case errors.Is(e, portable.ErrEnvelope):
+				access.APIError(w, 422, "PACKAGE_REJECTED")
 			case errors.Is(e, domain.Invalid) || isPortableRejection(e):
 				access.APIError(w, 422, "PACKAGE_REJECTED")
 			default:
@@ -117,7 +121,15 @@ func (r *Registry) portableScopesHandler() http.Handler {
 		}
 		r.discoveryDo(w, req, http.StatusOK, "sources:admin", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
 			items, e := (sources.Store{}).PortableScopes(ctx, tx, id.TenantID)
-			return map[string]any{"tenant_id": id.TenantID, "items": items}, e
+			if e != nil {
+				return nil, e
+			}
+			// ключ шифрования пакетов (если включён) — Web подставляет его в команду init
+			enc, e := r.PortableEncryptionKey(ctx, id.TenantID, false)
+			if errors.Is(e, ErrSecretsUnavailable) {
+				enc, e = nil, nil
+			}
+			return map[string]any{"tenant_id": id.TenantID, "items": items, "encryption": enc, "encryption_available": r.Secrets != nil}, e
 		})
 	})
 }
@@ -145,5 +157,31 @@ func (r *Registry) portableRegisterHandler() http.Handler {
 			return
 		}
 		registryJSONStatus(w, http.StatusCreated, PortableRegistered{Source: body.Source, KeyID: keyID})
+	})
+}
+
+// portableEncryptionHandler включает шифрование portable-пакетов организации: создаёт ключ (повтор возвращает тот же).
+func (r *Registry) portableEncryptionHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct{}
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		if r.Secrets == nil || r.Machine == nil || r.Machine.Sources == nil {
+			access.APIError(w, 501, "CAPABILITY_NOT_ENABLED")
+			return
+		}
+		ctx, cancel, id := cmdbContext(req)
+		defer cancel()
+		enc, e := r.PortableEncryptionKey(ctx, id.TenantID, true)
+		if e != nil {
+			registryError(w, e)
+			return
+		}
+		if e = r.Machine.Sources.AuditPortableAction(ctx, id.TenantID, "user:"+id.UserID, "source.portable_encryption_enabled", enc.KeyID); e != nil {
+			registryError(w, e)
+			return
+		}
+		registryJSON(w, enc)
 	})
 }

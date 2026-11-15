@@ -7,6 +7,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/QgMixtate/surveyscan/v2/internal/portable"
 	"io"
 	"os"
 
@@ -54,6 +55,10 @@ func portableConsole(ctx context.Context, pool *pgxpool.Pool, command string, ar
 	data, e := os.ReadFile(*pkgPath)
 	if e != nil {
 		return errors.New("package file unreadable")
+	}
+	if portable.Encrypted(data) {
+		// ключ шифрования — в хранилище секретов работающего центра; консоль к нему не обращается
+		return errors.New("package is encrypted for the centre: upload it in the Web (Sources -> Portable audit) or over HTTPS")
 	}
 	registry, e := app.NewRegistry(pool, access.New(pool))
 	if e != nil {

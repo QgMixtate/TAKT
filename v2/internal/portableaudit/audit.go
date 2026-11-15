@@ -4,6 +4,7 @@
 package portableaudit
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -129,6 +130,49 @@ type Report struct {
 	SourceID    string
 	KeyID       string
 	Observation []string // ID экспортированных наблюдений
+	Encrypted   bool     // пакет зашифрован ключом центра
+}
+
+const centerKeyFile = "center.pub"
+
+// SetCenterKey запоминает открытый ключ шифрования центра (base64, 32 байта X25519): дальнейшие пакеты шифруются.
+// Уже заданный ключ не заменяется (иначе пакеты ушли бы к чужому ключу незаметно) — для смены нужен новый каталог.
+func SetCenterKey(dir, b64 string) (string, error) {
+	pub, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64))
+	if err != nil || len(pub) != 32 {
+		return "", errors.New("portable: centre encryption key must be base64 of 32 bytes")
+	}
+	if _, err = portable.Seal(pub, []byte("probe")); err != nil {
+		return "", errors.New("portable: centre encryption key invalid")
+	}
+	if existing, err := CenterKey(dir); err != nil {
+		return "", err
+	} else if existing != nil {
+		if string(existing) == string(pub) {
+			return portable.EncryptionKeyID(pub), nil
+		}
+		return "", errors.New("portable: another centre encryption key is already set for this state directory")
+	}
+	if err = writePrivate(dir, centerKeyFile, []byte(base64.StdEncoding.EncodeToString(pub))); err != nil {
+		return "", err
+	}
+	return portable.EncryptionKeyID(pub), nil
+}
+
+// CenterKey — открытый ключ шифрования центра или nil, если шифрование для этого каталога не задано.
+func CenterKey(dir string) ([]byte, error) {
+	if _, err := os.Stat(filepath.Join(dir, centerKeyFile)); os.IsNotExist(err) {
+		return nil, nil
+	}
+	raw, err := privatefile.Read(filepath.Join(dir, centerKeyFile), 1024)
+	if err != nil {
+		return nil, errors.New("portable: centre key file unavailable or not private")
+	}
+	pub, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
+	if err != nil || len(pub) != 32 {
+		return nil, errors.New("portable: centre key file corrupt")
+	}
+	return pub, nil
 }
 
 // Run собирает цели по очереди, строит и проверяет наблюдения и (если out != "") экспортирует пакет.
@@ -217,7 +261,20 @@ func Run(ctx context.Context, dir string, targets []Target, out string, progress
 	if err != nil {
 		return rep, err
 	}
-	err = portable.Write(f, key, id.Tenant, id.SourceID, time.Now(), observations)
+	var buf bytes.Buffer
+	err = portable.Write(&buf, key, id.Tenant, id.SourceID, time.Now(), observations)
+	data := buf.Bytes()
+	center, encErr := CenterKey(dir)
+	if err == nil && encErr != nil {
+		err = encErr
+	}
+	if err == nil && center != nil {
+		data, err = portable.Seal(center, data) // пакет читается только закрытым ключом центра
+		rep.Encrypted = err == nil
+	}
+	if err == nil {
+		_, err = f.Write(data)
+	}
 	if err == nil {
 		err = f.Sync()
 	}
