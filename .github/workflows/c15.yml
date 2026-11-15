@@ -1,9 +1,9 @@
 name: surveyscan-c15-contract-preparation
 on:
   push:
-    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/go.mod', 'v2/go.sum', '.github/workflows/c15.yml']
+    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', '.github/workflows/c15.yml']
   pull_request:
-    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/go.mod', 'v2/go.sum', '.github/workflows/c15.yml']
+    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', '.github/workflows/c15.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,7 +13,7 @@ concurrency:
 jobs:
   contract-and-native-baseline:
     runs-on: windows-2022
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -58,6 +58,25 @@ jobs:
           if ($parsed.component -ne 'agent') { throw 'Unexpected component' }
           Write-Output $version
           Write-Output 'Only isolated baseline APIs, private-state primitives and version were checked; no scheduled Windows sender, runtime adoption, service, update or reboot.'
+      - name: Portable audit on Windows Server 2022 (private state DACL, this host to a signed package, verify)
+        working-directory: v2
+        shell: pwsh
+        run: |
+          go build -o surveyscan-portable.exe ./cmd/surveyscan-portable
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $root = Join-Path $env:RUNNER_TEMP 'portable'
+          $state = Join-Path $root 'state'
+          $init = & .\surveyscan-portable.exe init --state $state --tenant 00000000-0000-4000-8000-000000000051 --site 00000000-0000-4000-8000-000000000052 --scope 00000000-0000-4000-8000-000000000053
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $pub = ($init | Select-String '^public_key=(.+)$').Matches[0].Groups[1].Value
+          if (-not $pub) { throw 'init printed no public key' }
+          $pkg = Join-Path $root 'audit.zip'
+          & .\surveyscan-portable.exe collect --state $state --out $pkg
+          if ($LASTEXITCODE -ne 0) { throw "portable collect on Windows failed ($LASTEXITCODE)" }
+          & .\surveyscan-portable.exe verify --package $pkg --public-key $pub
+          if ($LASTEXITCODE -ne 0) { throw "portable package verify failed ($LASTEXITCODE)" }
+          $item = Get-Item $pkg
+          Write-Output "portable package: $($item.Length) bytes"
       - name: Compiled agent prepare with an operator-style private config (icacls, no network)
         working-directory: v2
         shell: pwsh

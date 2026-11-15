@@ -57,6 +57,15 @@ func (s *MachineService) RegisterPortable(ctx context.Context, actorRef string, 
 	case kind != "portable" || generation != r.Generation || state != "active":
 		return "", domain.Conflict
 	}
+	// у источника — один ключ: другой ключ для того же source_id/поколения — конфликт (раньше добавлялась вторая
+	// привязка; найдено тестом регистрации из Web). Смена ключа — новый portable-источник.
+	var otherKey bool
+	if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM sources.ingest_bindings WHERE tenant_id=$1 AND source_id=$2 AND generation_id=$3 AND key_id<>$4)", r.Tenant, r.Source, r.Generation, keyID).Scan(&otherKey); e != nil {
+		return "", e
+	}
+	if otherKey {
+		return "", domain.Conflict
+	}
 	var existing []byte
 	e = tx.QueryRow(ctx, "SELECT public_key FROM sources.ingest_bindings WHERE tenant_id=$1 AND source_id=$2 AND generation_id=$3 AND key_id=$4 AND namespace='host' AND scope_id=$5", r.Tenant, r.Source, r.Generation, keyID, r.Scope).Scan(&existing)
 	switch {
@@ -101,4 +110,30 @@ func (s *MachineService) AuditPortableImport(ctx context.Context, tenant, actorR
 		return e
 	}
 	return tx.Commit(ctx)
+}
+
+// PortableScope — площадка и сегмент для команды init portable-аудита (Web подставляет их в команду).
+type PortableScope struct {
+	Site      string `json:"site_id"`
+	SiteName  string `json:"site_name"`
+	Scope     string `json:"scope_id"`
+	Namespace string `json:"namespace"`
+}
+
+func (Store) PortableScopes(ctx context.Context, tx pgx.Tx, tenant string) ([]PortableScope, error) {
+	rows, e := tx.Query(ctx, `SELECT n.site_id::text,s.name,n.scope_id::text,n.namespace FROM scope.network_scopes n JOIN scope.sites s ON s.tenant_id=n.tenant_id AND s.site_id=n.site_id
+WHERE n.tenant_id=$1 ORDER BY s.name,n.namespace LIMIT 200`, tenant)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	out := []PortableScope{}
+	for rows.Next() {
+		var p PortableScope
+		if e = rows.Scan(&p.Site, &p.SiteName, &p.Scope, &p.Namespace); e != nil {
+			return nil, e
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }

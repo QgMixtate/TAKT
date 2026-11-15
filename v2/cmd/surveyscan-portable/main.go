@@ -65,7 +65,8 @@ func main() {
 		if err != nil {
 			fail("%v", err)
 		}
-		fmt.Printf("source_id=%s\nkey_id=%s\npublic_key=%s\n", id.SourceID, id.KeyID, base64.RawURLEncoding.EncodeToString(pub))
+		// весь блок вставляется в Web («Источники» → «Portable-аудит» → регистрация ключа): все поля нужны центру
+		fmt.Printf("tenant_id=%s\nsite_id=%s\nscope_id=%s\nsource_id=%s\ngeneration_id=%s\nkey_id=%s\npublic_key=%s\n", id.Tenant, id.Site, id.Scope, id.SourceID, id.Generation, id.KeyID, base64.RawURLEncoding.EncodeToString(pub))
 		fmt.Println("Передайте public_key в центр для доверия при импорте. Ключ подписи остаётся в", *state)
 	case "collect":
 		if (*out == "") == !*dry {

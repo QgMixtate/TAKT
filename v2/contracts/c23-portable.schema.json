@@ -1,0 +1,128 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:surveyscan:c23:portable:1:0",
+ "title": "Portable-аудит из Web (C23): площадки для init, регистрация ключа, итог импорта пакета",
+ "$defs": {
+  "PortableScopeList": {
+   "description": "GET /api/v1/sources/portable-scopes (администратор)",
+   "type": "object",
+   "properties": {
+    "tenant_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "items": {
+     "type": "array",
+     "maxItems": 200,
+     "items": {
+      "type": "object",
+      "properties": {
+       "site_id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "site_name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 512
+       },
+       "scope_id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "namespace": {
+        "type": "string",
+        "maxLength": 512
+       }
+      },
+      "required": [
+       "site_id",
+       "site_name",
+       "scope_id",
+       "namespace"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "tenant_id",
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "PortableRegistered": {
+   "description": "POST /api/v1/sources/portable {site_id, scope_id, source_id, generation_id, public_key} → 201 (повтор с теми же данными идемпотентен; другой ключ для того же source_id — 409)",
+   "type": "object",
+   "properties": {
+    "source_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "key_id": {
+     "type": "string",
+     "format": "uuid"
+    }
+   },
+   "required": [
+    "source_id",
+    "key_id"
+   ],
+   "additionalProperties": false
+  },
+  "PortableReport": {
+   "description": "POST /api/v1/sources/{source_id}/portable-import (application/zip) — итог по записям; complete=false — бюджет времени исчерпан, повторная отправка продолжит",
+   "type": "object",
+   "properties": {
+    "source_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "records": {
+     "type": "array",
+     "maxItems": 100000,
+     "items": {
+      "type": "object",
+      "properties": {
+       "observation_id": {
+        "type": "string",
+        "maxLength": 64
+       },
+       "disposition": {
+        "type": "string",
+        "maxLength": 64
+       },
+       "asset_id": {
+        "type": "string",
+        "maxLength": 64
+       },
+       "reason_code": {
+        "type": "string",
+        "maxLength": 128
+       }
+      },
+      "required": [
+       "observation_id",
+       "disposition"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "complete": {
+     "type": "boolean"
+    },
+    "remaining": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "source_id",
+    "records",
+    "complete",
+    "remaining"
+   ],
+   "additionalProperties": false
+  }
+ }
+}

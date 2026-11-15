@@ -65,6 +65,8 @@ export type WebhookDeliveryPage={tenant_id:string;subscription_id:string;items:W
 export type DirectoryWebSettings={url:string;base_dn:string;bind_dn:string;user_filter?:string;group_filter?:string;guid_attribute?:string;login_attribute?:string;changed_attribute?:string;interval_minutes?:number;full_sync_hours?:number;ca_certificate_pem?:string;tls_server_name?:string};
 export type DirectorySettingsView={tenant_id:string;source:'none'|'web'|'config';secrets_available:boolean;revision:string|null;settings:DirectoryWebSettings|null;password_set:boolean};
 export type DirectoryTestResult={ok:boolean;people_found:number;teams_found:number;error:string|null};
+export type PortableScope={site_id:string;site_name:string;scope_id:string;namespace:string};
+export type PortableReport={source_id:string;records:{observation_id:string;disposition:string;asset_id?:string;reason_code?:string}[];complete:boolean;remaining:number};
 export class ApiError extends Error {
  constructor(public status:number,public code:string,public requestId?:string){super(code)}
 }
@@ -103,6 +105,9 @@ export const api={
  sourceRecords:(uid:string)=>call<SourceRecordPage>('/api/v1/assets/'+encodeURIComponent(uid)+'/source-records','SourceRecordPage'),
  mergeAssets:(csrf:string,body:{target_asset_uid:string;absorbed_asset_uid:string;target_version?:string})=>call<AssetOperation>('/api/v1/assets/merge','AssetOperation',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf},signal:AbortSignal.timeout(130000)}),
  splitAsset:(uid:string,csrf:string,body:{source_record_keys:string[];target_asset_uid?:string;version?:string})=>call<AssetOperation>('/api/v1/assets/'+encodeURIComponent(uid)+'/split','AssetOperation',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf},signal:AbortSignal.timeout(130000)}),
+ portableScopes:()=>call<{tenant_id:string;items:PortableScope[]}>('/api/v1/sources/portable-scopes','PortableScopeList'),
+ registerPortable:(csrf:string,body:{site_id:string;scope_id:string;source_id:string;generation_id:string;public_key:string})=>call<{source_id:string;key_id:string}>('/api/v1/sources/portable','PortableRegistered',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ importPortable:(csrf:string,source:string,file:File)=>call<PortableReport>('/api/v1/sources/'+encodeURIComponent(source)+'/portable-import','PortableReport',{method:'POST',body:file,signal:AbortSignal.timeout(300000),headers:{'Content-Type':'application/zip','X-CSRF-Token':csrf}}),
  retireAsset:(uid:string,csrf:string,reason:string)=>call<AssetCMDB>('/api/v1/assets/'+encodeURIComponent(uid)+'/retire','AssetCMDB',{method:'POST',body:JSON.stringify({reason}),headers:{'X-CSRF-Token':csrf}}),
  restoreAsset:(uid:string,csrf:string)=>call<AssetCMDB>('/api/v1/assets/'+encodeURIComponent(uid)+'/restore','AssetCMDB',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
  retiredAssets:()=>call<{tenant_id:string;items:RetiredAsset[]}>('/api/v1/retired-assets','RetiredAssetList'),

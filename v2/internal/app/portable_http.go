@@ -2,15 +2,19 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/access"
+	accessport "github.com/QgMixtate/surveyscan/v2/internal/modules/access/port"
+	"github.com/QgMixtate/surveyscan/v2/internal/modules/sources"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/domain"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/identifier"
 	"github.com/QgMixtate/surveyscan/v2/internal/portable"
+	"github.com/jackc/pgx/v5"
 )
 
 // portableImportTimeout — предел на загрузку и импорт одного пакета через API. Общие таймауты сервера
@@ -88,4 +92,58 @@ func (r *Registry) portableImportHandler() http.Handler {
 // isPortableRejection — пакет целиком не прошёл проверку формата или подписи (ничего не применено).
 func isPortableRejection(e error) bool {
 	return errors.Is(e, portable.ErrFormat) || errors.Is(e, portable.ErrSignature)
+}
+
+// C23 (стенд, вопрос пользователя о portable): регистрация portable-источника из Web. Площадки и сегменты — для
+// команды init; регистрация — вставкой вывода init (ключ подписи остаётся на ПК, центр получает только открытый).
+type portableRegistrationBody struct {
+	Site       string `json:"site_id"`
+	Scope      string `json:"scope_id"`
+	Source     string `json:"source_id"`
+	Generation string `json:"generation_id"`
+	PublicKey  string `json:"public_key"`
+}
+
+type PortableRegistered struct {
+	Source string `json:"source_id"`
+	KeyID  string `json:"key_id"`
+}
+
+func (r *Registry) portableScopesHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.URL.RawQuery != "" {
+			access.APIError(w, 400, "INVALID_QUERY")
+			return
+		}
+		r.discoveryDo(w, req, http.StatusOK, "sources:admin", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			items, e := (sources.Store{}).PortableScopes(ctx, tx, id.TenantID)
+			return map[string]any{"tenant_id": id.TenantID, "items": items}, e
+		})
+	})
+}
+
+func (r *Registry) portableRegisterHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body portableRegistrationBody
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		if r.Machine == nil || r.Machine.Sources == nil { // регистрации протокол 1.2 не нужен (он нужен импорту)
+			access.APIError(w, 501, "CAPABILITY_NOT_ENABLED")
+			return
+		}
+		pub, err := base64.RawURLEncoding.Strict().DecodeString(body.PublicKey)
+		if err != nil {
+			access.APIError(w, 422, "INVALID_INPUT")
+			return
+		}
+		ctx, cancel, id := cmdbContext(req)
+		defer cancel()
+		keyID, e := r.Machine.Sources.RegisterPortable(ctx, "user:"+id.UserID, sources.PortableRegistration{Tenant: id.TenantID, Site: body.Site, Scope: body.Scope, Source: body.Source, Generation: body.Generation, PublicKey: pub})
+		if e != nil {
+			cmdbError(w, req, e)
+			return
+		}
+		registryJSONStatus(w, http.StatusCreated, PortableRegistered{Source: body.Source, KeyID: keyID})
+	})
 }

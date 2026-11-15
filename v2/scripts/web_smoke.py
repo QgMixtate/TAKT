@@ -31,8 +31,12 @@ def browser_scenario(**s):
   do_PATCH=dispatch
   do_PUT=dispatch
  server=http.server.ThreadingHTTPServer(('127.0.0.1',port),Handler);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start();path=s['directory']/'browser-input.json';fd=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
- with os.fdopen(fd,'w') as f:json.dump({k:s[k] for k in ('origin','username','password','asset')},f)
+ # C23 из Web: настоящий portable init/collect этого хоста — вывод init вставляется в Web, пакет загружается из браузера
+ site,scope=s['sql']("SELECT site_id::text||' '||scope_id::text FROM scope.network_scopes LIMIT 1").split();pdir=s['directory']/'portable-web';pdir.mkdir(mode=0o700)
+ init=subprocess.run([str(ROOT/'.dist/surveyscan-portable'),'init','--state',str(pdir/'state'),'--tenant',s['tenant'],'--site',site,'--scope',scope],capture_output=True,text=True,check=True,timeout=30).stdout
+ subprocess.run([str(ROOT/'.dist/surveyscan-portable'),'collect','--state',str(pdir/'state'),'--out',str(pdir/'audit.zip')],capture_output=True,check=True,timeout=120)
+ with os.fdopen(fd,'w') as f:json.dump({**{k:s[k] for k in ('origin','username','password','asset')},'portable_init':init,'portable_package':str(pdir/'audit.zip')},f)
  try:
   env=dict(os.environ);env.setdefault('PLAYWRIGHT_BROWSERS_PATH','/workspace/.cache/surveyscan-browsers');subprocess.run(['node','scripts/smoke.mjs',str(path)],cwd=ROOT/'web',env=env,check=True,timeout=80)
  finally:server.shutdown();server.server_close();thread.join(timeout=5)
-if __name__=='__main__':machine_harness(web_scenario=browser_scenario,browser_origin=f'http://127.0.0.1:{freeport()}')
+if __name__=='__main__':machine_harness(web_scenario=browser_scenario,browser_origin=f'http://127.0.0.1:{freeport()}',inventory12=True) # 1.2: импорт portable-пакета из Web (C23)

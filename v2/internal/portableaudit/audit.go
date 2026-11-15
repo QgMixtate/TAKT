@@ -60,10 +60,7 @@ func Init(dir, tenant, site, scope string) (Identity, ed25519.PublicKey, error) 
 	if _, err := os.Stat(filepath.Join(dir, "identity.json")); err == nil {
 		return id, nil, ErrExists
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return id, nil, err
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
+	if err := privateDir(dir); err != nil {
 		return id, nil, err
 	}
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)

@@ -52,6 +52,12 @@ try{
  if((await mapReply).status()!==200)throw new Error('network map save failed');await expect(page.getByText('Схема сохранена')).toBeVisible();
  await page.getByRole('button',{name:'✓ Готово'}).click();await page.getByRole('button',{name:'↻ Обновить'}).click();await expect(page.locator('.topo-node',{hasText:'Коммутатор smoke'})).toBeVisible();
  await page.screenshot({path:'../.local/c22-network-map-web.png',fullPage:true});checks.push('C22.04 network map: manual switch added in edit mode, saved to the center, still on the map after reload');
+ // C23 из Web: вывод настоящего portable init → регистрация ключа → загрузка пакета этого хоста → «принято»
+ await page.getByRole('button',{name:/Источники данных/}).click();await page.locator('.portable-panel').getByRole('button',{name:'Открыть'}).click();
+ await expect(page.locator('.portable-panel pre').first()).toContainText('--scope');
+ await page.getByLabel('Вывод init').fill(config.portable_init);await page.getByRole('button',{name:'Зарегистрировать источник'}).click();await expect(page.getByText('Источник зарегистрирован')).toBeVisible();
+ await page.getByLabel('Файл пакета').setInputFiles(config.portable_package);await page.getByRole('button',{name:'Загрузить и импортировать'}).click();
+ await expect(page.locator('.portable-panel')).toContainText('принято',{timeout:60000});checks.push('C23 portable from the Web: init output pasted, key registered, real host package uploaded and applied');
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('button',{name:/Реестр активов/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');
