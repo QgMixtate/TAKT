@@ -272,3 +272,62 @@ func TestSecretIsRedacted(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Стенд, задание №12: OpenSSH на Windows и другие не-Linux узлы — отказ «неподдерживаемая платформа», а не
+// «успешный» пустой сбор.
+func TestNonLinuxHostIsRefused(t *testing.T) {
+	for _, c := range []struct {
+		outputs map[string]string
+		os      string
+	}{
+		{map[string]string{"cmd /c ver": "\r\nMicrosoft Windows [Version 10.0.17763.1]\r\n"}, "windows"},
+		{map[string]string{"uname -s": "Darwin\n"}, "darwin"},
+	} {
+		s := startServer(t, "pw", c.outputs)
+		_, err := Collect(context.Background(), Target{Addr: s.addr, User: "scan", HostKeySHA256: s.hostFP}, Secret{Password: "pw"}, Policy{})
+		var up *UnsupportedPlatform
+		if !errors.As(err, &up) || up.OS != c.os {
+			t.Fatalf("%s: %v", c.os, err)
+		}
+	}
+	s := startServer(t, "pw", map[string]string{"uname -s": "Linux\n", cmdHostname: "web01\n"})
+	if _, err := Collect(context.Background(), Target{Addr: s.addr, User: "scan", HostKeySHA256: s.hostFP}, Secret{Password: "pw"}, Policy{}); err != nil {
+		t.Fatal("linux host must be collected", err)
+	}
+}
+
+// Узел с двухфакторным входом (пароль/ключ + код) — отдельная причина, без повторов.
+func TestSecondFactorIsDetected(t *testing.T) {
+	_, priv, _ := ed25519.GenerateKey(rand.Reader)
+	signer, _ := ssh.NewSignerFromKey(priv)
+	cfg := &ssh.ServerConfig{PasswordCallback: func(c ssh.ConnMetadata, p []byte) (*ssh.Permissions, error) {
+		if string(p) != "pw" {
+			return nil, errors.New("denied")
+		}
+		return nil, &ssh.PartialSuccessError{Next: ssh.ServerAuthCallbacks{KeyboardInteractiveCallback: func(c ssh.ConnMetadata, ch ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+			_, err := ch("", "", []string{"Verification code: "}, []bool{false})
+			if err == nil {
+				err = errors.New("wrong code")
+			}
+			return nil, err
+		}}}
+	}}
+	cfg.AddHostKey(signer)
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	t.Cleanup(func() { l.Close() })
+	var conns atomic.Int32
+	go func() {
+		for {
+			nc, err := l.Accept()
+			if err != nil {
+				return
+			}
+			conns.Add(1)
+			go func() { _, _, _, _ = ssh.NewServerConn(nc, cfg) }()
+		}
+	}()
+	_, err := Collect(context.Background(), Target{Addr: l.Addr().String(), User: "scan", HostKeySHA256: Fingerprint(signer.PublicKey())}, Secret{Password: "pw"}, Policy{})
+	if !errors.Is(err, ErrSecondFactor) || conns.Load() != 1 {
+		t.Fatal("second factor must be reported without retries", err, conns.Load())
+	}
+}

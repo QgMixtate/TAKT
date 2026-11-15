@@ -8,7 +8,7 @@ const runSummary=(r:SyncRun)=>{const c=r.counters;return r.status==='failed'?'О
 
 
 const presets:Record<string,Partial<DirectoryWebSettings>>={
- ad:{user_filter:'(&(objectCategory=person)(objectClass=user))',guid_attribute:'objectGUID',login_attribute:'sAMAccountName',changed_attribute:'whenChanged'},
+ ad:{user_filter:'(&(objectCategory=person)(objectClass=user)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))',guid_attribute:'objectGUID',login_attribute:'sAMAccountName',changed_attribute:'whenChanged'},
  openldap:{user_filter:'(objectClass=inetOrgPerson)',guid_attribute:'entryUUID',login_attribute:'uid',changed_attribute:'modifyTimestamp'}};
 
 // C31.05 — настройка синхронизации в Web: пароль только записывается (в хранилище секретов центра), обратно не показывается.

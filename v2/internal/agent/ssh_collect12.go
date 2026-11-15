@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/QgMixtate/surveyscan/v2/contracts"
 	"strings"
 
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/privatefile"
@@ -22,6 +23,46 @@ type SSHTarget struct {
 	// Secret — секрет из памяти (C51.03: collector получает учётку у центра по mTLS перед каждым сбором); файлы
 	// тогда не используются. Не сериализуется.
 	Secret func(context.Context) (sshlinux.Secret, error) `json:"-"`
+	// Problem — код отказа для показа в Web (auth_failed, second_factor_required, unsupported_platform:…); не сериализуется
+	Problem func(code string) `json:"-"`
+}
+
+// SSHProblem — фиксированный код отказа SSH-цели (без текста цели).
+func SSHProblem(err error) string {
+	var up *sshlinux.UnsupportedPlatform
+	switch {
+	case err == nil:
+		return ""
+	case errors.As(err, &up):
+		return "unsupported_platform:" + up.OS
+	case errors.Is(err, sshlinux.ErrSecondFactor):
+		return "second_factor_required"
+	case errors.Is(err, sshlinux.ErrAuth):
+		return "auth_failed"
+	case errors.Is(err, sshlinux.ErrHostKeyMismatch):
+		return "host_key_changed"
+	case errors.Is(err, sshlinux.ErrNetwork):
+		return "host_unreachable"
+	case errors.Is(err, sshlinux.ErrNoIdentity):
+		return "command_failed"
+	}
+	return ""
+}
+
+func (t SSHTarget) problem(err error) {
+	if t.Problem != nil {
+		t.Problem(SSHProblem(err))
+	}
+}
+
+// snapshot — 12 секций и кандидаты; без идентифицирующих кандидатов наблюдение не отправляется (иначе пустой актив).
+func sshSnapshot(sections []contracts.Section) (Snapshot, error) {
+	full := sshlinux.Complete12(sections)
+	cands := sshlinux.Candidates(full)
+	if len(cands) == 0 {
+		return Snapshot{}, sshlinux.ErrNoIdentity
+	}
+	return Snapshot{Candidates: cands, Sections: full}, nil
 }
 
 // LoadSSHTarget читает приватный JSON цели и проверяет обязательные поля (ключ хоста обязателен).
@@ -67,10 +108,12 @@ func NewSSHCollect12(t SSHTarget, policy sshlinux.Policy) func(context.Context) 
 			}
 			sections, err := sshlinux.Collect(ctx, sshlinux.Target{Addr: t.Addr, User: t.User, HostKeySHA256: t.HostKeySHA256}, secret, policy)
 			if err != nil {
+				t.problem(err)
 				return Snapshot{}, err
 			}
-			full := sshlinux.Complete12(sections)
-			return Snapshot{Candidates: sshlinux.Candidates(full), Sections: full}, nil
+			snap, err := sshSnapshot(sections)
+			t.problem(err)
+			return snap, err
 		}
 		pw, err := readSecretFile(t.PasswordFile)
 		if err != nil {
@@ -89,7 +132,6 @@ func NewSSHCollect12(t SSHTarget, policy sshlinux.Policy) func(context.Context) 
 		if err != nil {
 			return Snapshot{}, err // отмена/срок/сбой подключения: частичный результат не публикуем как свежий
 		}
-		full := sshlinux.Complete12(sections)
-		return Snapshot{Candidates: sshlinux.Candidates(full), Sections: full}, nil
+		return sshSnapshot(sections)
 	}
 }

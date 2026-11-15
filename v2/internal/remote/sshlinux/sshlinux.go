@@ -27,7 +27,18 @@ var (
 	ErrHostKeyMismatch = errors.New("ssh: host key does not match the pinned fingerprint")
 	ErrAuth            = errors.New("ssh: authentication failed")
 	ErrNoSecret        = errors.New("ssh: exactly one of password or private key is required")
+	// стенд, задание №12: узел просит второй фактор (keyboard-interactive после ключа/пароля) — сбор невозможен
+	ErrSecondFactor = errors.New("ssh: the host requires a second authentication factor")
+	ErrNetwork      = errors.New("ssh: host unreachable")
+	// ErrNoIdentity — подключение есть, но команды Linux не дали ни имени хоста, ни machine-id: наблюдение
+	// не отправляется (иначе появился бы пустой актив)
+	ErrNoIdentity = errors.New("ssh: identity commands failed on the host")
 )
+
+// UnsupportedPlatform — по SSH отвечает не Linux (например, OpenSSH на Windows): собирать нужно другим способом.
+type UnsupportedPlatform struct{ OS string }
+
+func (e *UnsupportedPlatform) Error() string { return "ssh: unsupported platform " + e.OS }
 
 // Secret — учётные данные задания. Выводятся только как «[redacted]».
 type Secret struct {
@@ -265,8 +276,28 @@ func Connect(ctx context.Context, t Target, secret Secret, p Policy) (*ssh.Clien
 	if err != nil {
 		return nil, err
 	}
-	var mismatch bool
-	cfg := &ssh.ClientConfig{User: t.User, Auth: []ssh.AuthMethod{auth}, Timeout: p.ConnectTimeout,
+	var mismatch, secondFactor bool
+	answered := false
+	ki := ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
+		if len(questions) == 0 {
+			return nil, nil
+		}
+		// единственный вопрос о пароле при входе по паролю — это PAM-вход паролем, отвечаем один раз
+		if secret.Password != "" && !answered && len(questions) == 1 && strings.Contains(strings.ToLower(questions[0]), "password") {
+			answered = true
+			return []string{secret.Password}, nil
+		}
+		// вопрос о пароле при входе по ключу — ключ не принят (запасной вход паролем), это отказ входа, не второй
+		// фактор; любой иной вопрос (код, OTP, токен) — второй фактор
+		for _, q := range questions {
+			if strings.Contains(strings.ToLower(q), "password") || strings.Contains(strings.ToLower(q), "пароль") {
+				return nil, ErrAuth
+			}
+		}
+		secondFactor = true
+		return nil, ErrSecondFactor
+	})
+	cfg := &ssh.ClientConfig{User: t.User, Auth: []ssh.AuthMethod{auth, ki}, Timeout: p.ConnectTimeout,
 		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
 			if Fingerprint(key) != t.HostKeySHA256 {
 				mismatch = true
@@ -284,6 +315,9 @@ func Connect(ctx context.Context, t Target, secret Secret, p Policy) (*ssh.Clien
 		if mismatch {
 			return nil, ErrHostKeyMismatch
 		}
+		if secondFactor {
+			return nil, ErrSecondFactor
+		}
 		if strings.Contains(err.Error(), "unable to authenticate") {
 			return nil, ErrAuth // не повторяем: риск блокировки учётной записи
 		}
@@ -293,7 +327,7 @@ func Connect(ctx context.Context, t Target, secret Secret, p Policy) (*ssh.Clien
 		case <-time.After(time.Duration(attempt+1) * 500 * time.Millisecond):
 		}
 	}
-	return nil, fmt.Errorf("ssh: connect failed: %w", sanitize(last))
+	return nil, fmt.Errorf("%w: %w", ErrNetwork, sanitize(last))
 }
 
 // sanitize оставляет сетевую причину без деталей, которые могли бы содержать данные цели.
@@ -322,6 +356,14 @@ func Collect(ctx context.Context, t Target, secret Secret, p Policy) ([]contract
 	defer stop()
 	s := session{client: client, policy: p}
 	var out []contracts.Section
+	// платформа: команды сбора — для Linux; OpenSSH на Windows (DC стенда) давал «успешный» пустой сбор
+	if kernel, ok := s.run(ctx, "uname -s"); ok {
+		if k := strings.TrimSpace(kernel); k != "" && k != "Linux" {
+			return nil, &UnsupportedPlatform{OS: strings.ToLower(k)}
+		}
+	} else if ver, ok := s.run(ctx, "cmd /c ver"); ok && strings.Contains(strings.ToLower(ver), "windows") {
+		return nil, &UnsupportedPlatform{OS: "windows"}
+	}
 
 	host, okHost := s.run(ctx, cmdHostname)
 	machine, _ := s.run(ctx, cmdMachine)

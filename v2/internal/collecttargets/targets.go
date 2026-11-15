@@ -221,9 +221,10 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 		return
 	}
 	cfg := agent.Config{Tenant: t.Tenant, Site: t.Site, Scope: t.Scope, CollectorURL: c.selfURL(), CollectorSource: c.CollectorSource, CA: c.CA,
-		State: state, InventorySeconds: max(t.Interval, 300), HeartbeatSeconds: 300, Jitter: 10, Limit: 16 << 20, InventoryPlatform: platform}
-	var winrmProblem atomic.Value // последний код отказа подключения WinRM (пишет сбор, читает отчёт)
-	winrmProblem.Store("")
+		State: state, InventorySeconds: max(t.Interval, 300), HeartbeatSeconds: 60, // стенд №12: центр ждёт пульс раз в 60 с (STALE после 3 периодов)
+		Jitter: 10, Limit: 16 << 20, InventoryPlatform: platform}
+	var targetProblem atomic.Value // последний код отказа подключения цели (пишет сбор, читает отчёт)
+	targetProblem.Store("")
 	pinned := "" // отпечаток сертификата WinRM, с которым запущен сбор (цель без PEM)
 	report := func(s string) {
 		if !strings.HasPrefix(s, "detail:") {
@@ -240,8 +241,8 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 					return
 				}
 			}
-			if code, _ := winrmProblem.Load().(string); code != "" {
-				c.report(ctx, t.ID, false, "winrm:"+code) // причина отказа WinRM/Kerberos фиксированным кодом
+			if code, _ := targetProblem.Load().(string); code != "" && !strings.HasSuffix(code, ":") {
+				c.report(ctx, t.ID, false, code) // причина отказа SSH/WinRM фиксированным кодом
 				return
 			}
 			c.report(ctx, t.ID, false, s)
@@ -262,7 +263,7 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 					}
 					return out, err
 				}
-				target := agent.SSHTarget{Addr: addr, User: t.Username, Secret: fetch}
+				target := agent.SSHTarget{Addr: addr, User: t.Username, Secret: fetch, Problem: func(code string) { targetProblem.Store("ssh:" + code) }}
 				if t.HostKey != nil {
 					target.HostKeySHA256 = *t.HostKey
 				} else {
@@ -292,7 +293,7 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 					s, err := c.secret(ctx, t.ID)
 					return []byte(s.Secret.Password), err
 				}
-				target := agent.WinRMTarget{Host: t.Address, Port: t.Port, User: t.Username, Password: fetch, Problem: func(code string) { winrmProblem.Store(code) }}
+				target := agent.WinRMTarget{Host: t.Address, Port: t.Port, User: t.Username, Password: fetch, Problem: func(code string) { targetProblem.Store("winrm:" + code) }}
 				if t.CAPEM != nil {
 					target.CAPEM = []byte(*t.CAPEM)
 				}

@@ -71,7 +71,7 @@ func diagnosticAlerts(d diagnosticSnapshot) []diagnosticAlert {
 		add("SOURCE_DIAGNOSTICS_TRUNCATED", "warning", nil)
 	}
 	for _, s := range d.Sources {
-		if s.State != "active" || s.Kind == "portable" {
+		if s.State != "active" || s.Kind == "portable" || s.Paused { // источник отключённой цели сбора — на паузе
 			continue
 		}
 		source := s.Source

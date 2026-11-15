@@ -294,6 +294,33 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if issued != 1 {
 		t.Fatal("credential issuance must be audited with the collector as actor", issued)
 	}
+	// стенд №12: источник отключённой цели — на паузе (без предупреждений о контакте); после включения — снова в учёте
+	paused := func() bool {
+		t.Helper()
+		items, err := machine.Diagnostics(f.ctx, f.identity)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, d := range items {
+			if d.Source == agentSource {
+				return d.Paused
+			}
+		}
+		t.Fatal("target source missing from diagnostics")
+		return false
+	}
+	if paused() {
+		t.Fatal("active target source must not be paused")
+	}
+	var dis sources.RemoteTarget
+	_ = json.Unmarshal(call("admin", "PATCH", "/api/v1/discovery/targets/"+tg.ID, `{"revision":"`+tl.Items[0].Revision+`","disabled":true}`, 200), &dis)
+	if !paused() {
+		t.Fatal("disabled target source must be paused")
+	}
+	call("admin", "PATCH", "/api/v1/discovery/targets/"+tg.ID, `{"revision":"`+dis.Revision+`","disabled":false}`, 200)
+	if paused() {
+		t.Fatal("re-enabled target source must not be paused")
+	}
 	// SSH-цель без отпечатка: collector запоминает ключ при первом подключении; смена ключа — 409; сброс из Web
 	var tofu sources.RemoteTarget
 	_ = json.Unmarshal(call("admin", "POST", "/api/v1/discovery/targets", strings.Replace(target51(""), "10.51.0.10", "10.51.0.30", 1), 201), &tofu)
