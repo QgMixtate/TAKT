@@ -88,6 +88,12 @@ export type DiscoveryRun={run_id:string;network_id:string;trigger:'manual'|'sche
 export type DiscoveryNetwork={network_id:string;site_id:string;collector_id:string;name:string;cidr:string;probes:DiscoveryProbe[];schedule_minutes:number|null;active:boolean;revision:string;last_run:DiscoveryRun|null;present_hosts:number;missing_hosts:number};
 export type DiscoveryNetworkPage={items:DiscoveryNetwork[];limits:{max_prefix:number;rate_per_second:number;min_schedule_minutes:number;miss_after:number;tcp_ports:number[]}};
 export type DiscoveryHost={ip:string;mac:string|null;ports:number[];icmp:boolean;first_seen:string;last_seen:string;state:'present'|'missing';misses:number;missing_since:string|null};
+export type WLocation={location_id:string;site_id:string;parent_id:string|null;kind:'warehouse'|'bin'|'repair';name:string;active:boolean};
+export type WItem={item_id:string;name:string;kind:'serial'|'quantity';unit:string;category:string|null;active:boolean};
+export type WUnit={unit_id:string;item_id:string;item_name:string;serial:string;inventory_no:string|null;asset_uid:string|null;state:'in_stock'|'reserved'|'issued'|'installed'|'in_repair'|'written_off';location_id:string|null;holder_id:string|null;installed_on:string|null};
+export type WStock={item_id:string;item_name:string;unit:string;location_id:string;quantity:number;reserved:number};
+export type WMovement={movement_id:string;kind:'receive'|'issue'|'return'|'transfer'|'repair_out'|'repair_in'|'install'|'remove'|'write_off'|'adjust'|'reverse';act_no:string;occurred_at:string;actor_ref:string;basis:string;note:string|null;from_location:string|null;to_location:string|null;from_holder:string|null;to_holder:string|null;asset_uid:string|null;reverses:string|null;lines:{line_no:number;item_id:string;item_name:string;unit:string;unit_id:string|null;serial:string|null;inventory_no:string|null;quantity:number}[]|null};
+export type WOperation={kind:Exclude<WMovement['kind'],'adjust'|'reverse'>;basis:string;note?:string;from_location?:string;to_location?:string;from_holder?:string;to_holder?:string;asset_uid?:string;lines:{unit_id?:string;item_id?:string;quantity?:number;serial?:string;inventory_no?:string}[]};
 export type AssetPresence={asset_uid:string;miss_after:number;state:'present'|'missing'|'unknown';items:{network_id:string;network_name:string;ip:string;state:'present'|'missing';misses:number;first_seen:string;last_seen:string;missing_since:string|null}[]};
 export type DiscoveryHostEvent={ip:string;kind:'appeared'|'missing'|'returned';run_id:string;at:string};
 export type CollectKind='ssh'|'winrm'|'snmp';
@@ -105,6 +111,15 @@ export const api={
  records12:(uid:string,section:string,cursor:string|null=null)=>call<RecordPage12>('/api/v1/assets/'+encodeURIComponent(uid)+'/inventory/facts/'+encodeURIComponent(section)+'?limit=100'+(cursor?'&cursor='+encodeURIComponent(cursor):''),'RecordFactPage12'),
  conflicts:(state:string,cursor:string|null=null)=>call<ConflictPage>('/api/v1/reconciliation/conflicts?state='+encodeURIComponent(state)+'&limit=50'+(cursor?'&cursor='+encodeURIComponent(cursor):''),'ConflictPage'),
  resolveConflict:(id:string,csrf:string,body:{action:string;asset_uid?:string;revision?:string})=>call<ConflictResult>('/api/v1/reconciliation/conflicts/'+encodeURIComponent(id)+'/resolve','ConflictResult',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ wLocations:()=>call<{items:WLocation[]}>('/api/v1/warehouse/locations','WLocationList'),
+ wItems:()=>call<{items:WItem[]}>('/api/v1/warehouse/items','WItemList'),
+ wUnits:(f:{state?:string;holder?:string;location?:string;asset?:string;q?:string})=>{const q=new URLSearchParams(Object.entries(f).filter(([,v])=>v) as [string,string][]).toString();return call<{items:WUnit[]}>('/api/v1/warehouse/units'+(q?'?'+q:''),'WUnitList')},
+ wStock:(location:string)=>call<{items:WStock[]}>('/api/v1/warehouse/stock'+(location?'?location='+encodeURIComponent(location):''),'WStockList'),
+ wMovements:(f:{asset?:string;unit?:string}={})=>{const q=new URLSearchParams(Object.entries(f).filter(([,v])=>v) as [string,string][]).toString();return call<{items:WMovement[]}>('/api/v1/warehouse/movements'+(q?'?'+q:''),'WMovementList')},
+ wMovement:(id:string)=>call<WMovement>('/api/v1/warehouse/movements/'+encodeURIComponent(id),'WMovement'),
+ wMove:(csrf:string,op:WOperation)=>call<WMovement>('/api/v1/warehouse/movements','WMovement',{method:'POST',body:JSON.stringify(op),headers:{'X-CSRF-Token':csrf}}),
+ wCreateLocation:(csrf:string,b:{site_id:string;kind:WLocation['kind'];name:string;parent_id?:string})=>call<WLocation>('/api/v1/warehouse/locations','WLocation',{method:'POST',body:JSON.stringify(b),headers:{'X-CSRF-Token':csrf}}),
+ wCreateItem:(csrf:string,b:{name:string;kind:WItem['kind'];unit:string;category?:string})=>call<WItem>('/api/v1/warehouse/items','WItem',{method:'POST',body:JSON.stringify(b),headers:{'X-CSRF-Token':csrf}}),
  assetPresence:(uid:string)=>call<AssetPresence>('/api/v1/assets/'+encodeURIComponent(uid)+'/presence','AssetPresence'),
  sourceRecords:(uid:string)=>call<SourceRecordPage>('/api/v1/assets/'+encodeURIComponent(uid)+'/source-records','SourceRecordPage'),
  mergeAssets:(csrf:string,body:{target_asset_uid:string;absorbed_asset_uid:string;target_version?:string})=>call<AssetOperation>('/api/v1/assets/merge','AssetOperation',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf},signal:AbortSignal.timeout(130000)}),

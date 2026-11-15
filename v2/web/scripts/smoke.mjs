@@ -58,6 +58,20 @@ try{
  await page.getByLabel('Вывод init').fill(config.portable_init);await page.getByRole('button',{name:'Зарегистрировать источник'}).click();await expect(page.getByText('Источник зарегистрирован')).toBeVisible();
  await page.getByLabel('Файл пакета').setInputFiles(config.portable_package);await page.getByRole('button',{name:'Загрузить и импортировать'}).click();
  await expect(page.locator('.portable-panel')).toContainText('принято',{timeout:60000});checks.push('C23 portable from the Web: init output pasted, key registered, real host package uploaded and applied');
+ // W2 склад: справочники → приход серийного экземпляра → выдача команде → акт для печати
+ await page.getByRole('button',{name:/Склад/}).click();await page.getByRole('tab',{name:'Справочники'}).click();
+ await page.getByLabel('Площадка').selectOption({index:1});await page.getByLabel('Название места').fill('Склад smoke');await page.getByRole('button',{name:'Добавить'}).first().click();
+ await expect(page.locator('.warehouse')).toContainText('Склад smoke');
+ await page.getByLabel('Название позиции').fill('Ноутбук smoke');await page.getByRole('button',{name:'Добавить'}).nth(1).click();await expect(page.locator('.warehouse')).toContainText('Ноутбук smoke');
+ await page.getByRole('tab',{name:'Операция'}).click();await page.getByLabel('Вид').selectOption('receive');await page.getByLabel('На склад').selectOption({label:'Склад smoke'});
+ await page.getByLabel('Позиция').selectOption({label:'Ноутбук smoke'});await page.getByLabel('Серийный номер').fill('SMOKE-SN-1');await page.getByLabel('Основание').fill('Накладная smoke');
+ await page.getByRole('button',{name:'Провести и сформировать акт'}).click();await expect(page.getByRole('dialog',{name:/Акт/})).toContainText('Акт приёма на склад');await expect(page.getByRole('dialog',{name:/Акт/})).toContainText('SMOKE-SN-1');
+ await page.getByRole('dialog',{name:/Акт/}).getByRole('button',{name:'Закрыть'}).click();
+ await page.getByLabel('Вид').selectOption('issue');await page.getByLabel('Со склада').selectOption({label:'Склад smoke'});await page.getByLabel('Кому').selectOption({index:1});
+ await page.getByLabel('Экземпляр или позиция').selectOption({label:'Ноутбук smoke · SMOKE-SN-1 (на складе)'});await page.getByLabel('Основание').fill('Заявка smoke');
+ await page.getByRole('button',{name:'Провести и сформировать акт'}).click();await expect(page.getByRole('dialog',{name:/Акт/})).toContainText('Акт выдачи');
+ await page.screenshot({path:'../.local/w2-warehouse-act.png',fullPage:true});await page.getByRole('dialog',{name:/Акт/}).getByRole('button',{name:'Закрыть'}).click();
+ await page.getByRole('tab',{name:'Экземпляры'}).click();await expect(page.locator('.warehouse table')).toContainText('выдан');checks.push('W2 warehouse in the Web: location and item created, serial unit received and issued, acts shown for printing');
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('button',{name:/Реестр активов/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');
