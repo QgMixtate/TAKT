@@ -259,14 +259,14 @@ func read(path string) (profile, error) {
 }
 func execute(ctx context.Context, args []string, out io.Writer) error {
 	if len(args) == 1 && (args[0] == "help" || args[0] == "--help") {
-		return emit(out, map[string]any{"commands": []string{"login --server URL --username USER --password-file PRIVATE --context-file PRIVATE [--ca-file CA]", "context show --context-file PRIVATE", "assets list --context-file PRIVATE [--limit 1..200 --cursor CURSOR]", "assets get --context-file PRIVATE --id UUID", "sources list|get|status --context-file PRIVATE [--id UUID]", "profiles get --context-file PRIVATE --id UUID", "profiles set --context-file PRIVATE --id UUID --revision REV --profile-file JSON", "sources portable-import --context-file PRIVATE --id SOURCE_UUID --package FILE", "reconciliation list --context-file PRIVATE [--state open|resolved|dismissed]", "reconciliation resolve --context-file PRIVATE --id CONFLICT_UUID --action attach|create_asset|confirm|dismiss [--asset ASSET_UUID] [--revision REV]", "diagnostics --context-file PRIVATE", "local-status --diagnostics-file PRIVATE", "status --context-file PRIVATE", "logout --context-file PRIVATE", "version"}, "output": "JSON by default; --output table for resource commands", "exit_codes": map[string]int{"success": 0, "arguments_or_private_context": 2, "authentication_or_policy": 3, "not_found": 4, "network_tls_timeout_or_dependency": 5, "other_api_failure": 6}})
+		return emit(out, map[string]any{"commands": []string{"login --server URL --username USER --password-file PRIVATE --context-file PRIVATE [--ca-file CA]", "context show --context-file PRIVATE", "assets list --context-file PRIVATE [--limit 1..200 --cursor CURSOR]", "assets get --context-file PRIVATE --id UUID", "sources list|get|status --context-file PRIVATE [--id UUID]", "profiles get --context-file PRIVATE --id UUID", "profiles set --context-file PRIVATE --id UUID --revision REV --profile-file JSON", "sources portable-import --context-file PRIVATE --id SOURCE_UUID --package FILE", "reconciliation list --context-file PRIVATE [--state open|resolved|dismissed]", "reconciliation resolve --context-file PRIVATE --id CONFLICT_UUID --action attach|create_asset|confirm|dismiss [--asset ASSET_UUID] [--revision REV]", "diagnostics --context-file PRIVATE", "local-status --diagnostics-file PRIVATE", "status --context-file PRIVATE", "logout --context-file PRIVATE", "version", "warehouse units|stock|movements|verify --context-file PRIVATE [--state S --holder ID --asset ID]", "warehouse act --context-file PRIVATE --id MOVEMENT", "warehouse move --context-file PRIVATE --operation-file OPERATION.json"}, "output": "JSON by default; --output table for resource commands", "exit_codes": map[string]int{"success": 0, "arguments_or_private_context": 2, "authentication_or_policy": 3, "not_found": 4, "network_tls_timeout_or_dependency": 5, "other_api_failure": 6}})
 	}
 	if len(args) == 0 {
 		return fail(2, "COMMAND_REQUIRED")
 	}
 	operation := args[0]
 	args = args[1:]
-	if operation == "assets" || operation == "sources" || operation == "context" || operation == "profiles" || operation == "reconciliation" {
+	if operation == "assets" || operation == "sources" || operation == "context" || operation == "profiles" || operation == "reconciliation" || operation == "warehouse" {
 		if len(args) == 0 {
 			return fail(2, "SUBCOMMAND_REQUIRED")
 		}
@@ -291,6 +291,8 @@ func execute(ctx context.Context, args []string, out io.Writer) error {
 	state := f.String("state", "open", "")
 	action := f.String("action", "", "")
 	asset := f.String("asset", "", "")
+	holder := f.String("holder", "", "")
+	operationFile := f.String("operation-file", "", "")
 	format := f.String("output", "json", "")
 	if f.Parse(args) != nil || f.NArg() != 0 || (*contextFile == "" && operation != "local-status") {
 		return fail(2, "INVALID_ARGUMENTS")
@@ -444,6 +446,54 @@ func execute(ctx context.Context, args []string, out io.Writer) error {
 			}
 			raw, _, e = call(ctx, c, p, "POST", "/api/v1/reconciliation/conflicts/"+*id+"/resolve", body)
 		}
+		if e != nil {
+			return e
+		}
+		if e = render(out, raw, operation, *format); e != nil {
+			return fail(5, "OUTPUT_UNAVAILABLE")
+		}
+		return nil
+	}
+	if strings.HasPrefix(operation, "warehouse ") {
+		// W2 (C42.03): склад из командной строки — чтение и операция из JSON-файла (формат API POST /api/v1/warehouse/movements)
+		method, path := "GET", ""
+		var body any
+		q := url.Values{}
+		for k, v := range map[string]string{"state": *state, "holder": *holder, "asset": *asset} {
+			if v != "" && !(k == "state" && v == "open") {
+				if k != "state" && !identifier.Valid(v) {
+					return fail(2, "INVALID_RESOURCE_ID")
+				}
+				q.Set(k, v)
+			}
+		}
+		switch operation {
+		case "warehouse units":
+			path = "/api/v1/warehouse/units?" + q.Encode()
+		case "warehouse stock":
+			path = "/api/v1/warehouse/stock"
+		case "warehouse movements":
+			q.Del("state")
+			q.Del("holder")
+			path = "/api/v1/warehouse/movements?" + q.Encode()
+		case "warehouse act":
+			if !identifier.Valid(*id) {
+				return fail(2, "INVALID_RESOURCE_ID")
+			}
+			path = "/api/v1/warehouse/movements/" + *id
+		case "warehouse verify":
+			path = "/api/v1/warehouse/verify"
+		case "warehouse move":
+			raw, e := boundedFile(*operationFile, 1<<20)
+			var op map[string]any
+			if e != nil || json.Unmarshal(raw, &op) != nil {
+				return fail(2, "INVALID_OPERATION_FILE")
+			}
+			method, path, body = "POST", "/api/v1/warehouse/movements", op
+		default:
+			return fail(2, "UNKNOWN_COMMAND")
+		}
+		raw, _, e := call(ctx, c, p, method, strings.TrimSuffix(path, "?"), body)
 		if e != nil {
 			return e
 		}

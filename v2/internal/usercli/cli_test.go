@@ -272,3 +272,45 @@ func TestReconciliationCommands(t *testing.T) {
 		t.Fatal("invalid state must be an argument error", code)
 	}
 }
+
+// W2 (C42.03): склад из CLI — чтение экземпляров с фильтром и операция из JSON-файла (POST с CSRF, тело как есть).
+func TestWarehouseCommands(t *testing.T) {
+	holder := identifier.New()
+	var posted map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/api/v1/warehouse/units" && r.URL.Query().Get("holder") == holder:
+			_, _ = w.Write([]byte(`{"items":[{"unit_id":"u","item_name":"Ноутбук","serial":"SN-1","inventory_no":null,"state":"issued","location_id":null,"holder_id":"` + holder + `","asset_uid":null}]}`))
+		case r.Method == "POST" && r.URL.Path == "/api/v1/warehouse/movements" && r.Header.Get("X-CSRF-Token") == "csrf":
+			_ = json.NewDecoder(r.Body).Decode(&posted)
+			w.WriteHeader(201)
+			_, _ = w.Write([]byte(`{"movement_id":"m","kind":"issue","act_no":"2026-000001","occurred_at":"2026-11-15T00:00:00Z","basis":"Заявка"}`))
+		default:
+			w.WriteHeader(400)
+		}
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "context.json")
+	if e := writeNew(path, profile{Version: 1, Server: server.URL, DevHTTP: true, Tenant: identifier.New(), User: identifier.New(), Cookie: "surveyscan_session=s", CSRF: "csrf", Expires: time.Now().Add(time.Hour)}); e != nil {
+		t.Fatal(e)
+	}
+	code, out, _ := invoke(context.Background(), "warehouse", "units", "--context-file", path, "--holder", holder, "--output", "table")
+	if code != 0 || !strings.Contains(out, "SN-1") || !strings.Contains(out, "issued") {
+		t.Fatal("units by holder", code, out)
+	}
+	if code, _, _ = invoke(context.Background(), "warehouse", "units", "--context-file", path, "--holder", "bad"); code != 2 {
+		t.Fatal("invalid holder id must be an argument error", code)
+	}
+	op := filepath.Join(dir, "op.json")
+	_ = os.WriteFile(op, []byte(`{"kind":"issue","basis":"Заявка","from_location":"`+identifier.New()+`","to_holder":"`+holder+`","lines":[{"unit_id":"`+identifier.New()+`"}]}`), 0o600)
+	code, out, _ = invoke(context.Background(), "warehouse", "move", "--context-file", path, "--operation-file", op, "--output", "table")
+	if code != 0 || !strings.Contains(out, "2026-000001") || posted["kind"] != "issue" {
+		t.Fatal("move", code, out, posted)
+	}
+	_ = os.WriteFile(op, []byte(`not json`), 0o600)
+	if code, _, _ = invoke(context.Background(), "warehouse", "move", "--context-file", path, "--operation-file", op); code != 2 {
+		t.Fatal("broken operation file must be an argument error", code)
+	}
+}

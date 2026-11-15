@@ -38,3 +38,10 @@ C12.02–04 добавили profiles get/set --id UUID --revision REV --profile
 local-status --diagnostics-file PRIVATE; source profile panel виден в отдельном UI. JSONC03/C09 остаётся неизменным.
 
 C23.03 `sources portable-import`: пакет ≤128 МиБ отправляется как есть (application/zip), таймаут запроса 6 мин. Большой пакет центр обрабатывает частями (complete=false); команда повторяет загрузку того же пакета до complete=true (≤50 раз) и печатает объединённый итог с числом попыток. Повтор после обрыва безопасен: обработанные записи возвращаются как duplicate.
+
+## Склад (волна 2, C42.03)
+Права — как в Web (просмотр — все, операции — оператор/администратор, списание — администратор).
+- `surveyscanctl warehouse units --context-file CTX [--state issued --holder SUBJECT_ID --asset ASSET_UID] --output table` — что где и за кем числится;
+- `warehouse stock`, `warehouse movements [--asset ASSET_UID]`, `warehouse act --id MOVEMENT_ID`, `warehouse verify` (остатки = журнал);
+- `warehouse move --operation-file op.json` — операция в формате API `POST /api/v1/warehouse/movements`
+  (например `{"kind":"issue","basis":"Заявка 12","from_location":"…","to_holder":"…","lines":[{"unit_id":"…"}]}`).
