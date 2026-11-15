@@ -297,11 +297,11 @@ func allowed(id port.Identity, action string) bool {
 		return false
 	}
 	switch action {
-	case "assets:read", "sources:read", "jobs:read", "auth:self":
+	case "assets:read", "sources:read", "jobs:read", "auth:self", "warehouse:read":
 		return true
-	case "assets:write", "jobs:write":
+	case "assets:write", "jobs:write", "warehouse:write":
 		return id.Role == "admin" || id.Role == "operator"
-	case "sources:admin":
+	case "sources:admin", "warehouse:admin": // склад: каталог, места, списание — администратор (W2, C41.03 п. 8)
 		return id.Role == "admin"
 	}
 	return false

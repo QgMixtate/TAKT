@@ -1,0 +1,569 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:surveyscan:w2:warehouse:1:0",
+ "title": "Склад и жизненный цикл оборудования (волна 2; decisions/C41-w2-scope-and-model.md)",
+ "$defs": {
+  "Location": {
+   "type": "object",
+   "properties": {
+    "location_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "site_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "parent_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "kind": {
+     "enum": [
+      "warehouse",
+      "bin",
+      "repair"
+     ]
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "active": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "location_id",
+    "site_id",
+    "parent_id",
+    "kind",
+    "name",
+    "active"
+   ],
+   "additionalProperties": false
+  },
+  "Item": {
+   "type": "object",
+   "properties": {
+    "item_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "kind": {
+     "enum": [
+      "serial",
+      "quantity"
+     ]
+    },
+    "unit": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 16
+    },
+    "category": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 64
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "active": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "item_id",
+    "name",
+    "kind",
+    "unit",
+    "category",
+    "active"
+   ],
+   "additionalProperties": false
+  },
+  "Unit": {
+   "type": "object",
+   "properties": {
+    "unit_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "item_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "item_name": {
+     "type": "string"
+    },
+    "serial": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "inventory_no": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 64
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "asset_uid": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "state": {
+     "enum": [
+      "in_stock",
+      "reserved",
+      "issued",
+      "installed",
+      "in_repair",
+      "written_off"
+     ]
+    },
+    "location_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "holder_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "installed_on": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "unit_id",
+    "item_id",
+    "item_name",
+    "serial",
+    "inventory_no",
+    "asset_uid",
+    "state",
+    "location_id",
+    "holder_id",
+    "installed_on"
+   ],
+   "additionalProperties": false
+  },
+  "StockRow": {
+   "type": "object",
+   "properties": {
+    "item_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "item_name": {
+     "type": "string"
+    },
+    "unit": {
+     "type": "string"
+    },
+    "location_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "quantity": {
+     "type": "number",
+     "minimum": 0
+    },
+    "reserved": {
+     "type": "number",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "item_id",
+    "item_name",
+    "unit",
+    "location_id",
+    "quantity",
+    "reserved"
+   ],
+   "additionalProperties": false
+  },
+  "MovementLine": {
+   "type": "object",
+   "properties": {
+    "line_no": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "item_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "item_name": {
+     "type": "string"
+    },
+    "unit": {
+     "type": "string"
+    },
+    "unit_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "serial": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 128
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "inventory_no": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 64
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "quantity": {
+     "type": "number",
+     "exclusiveMinimum": 0
+    }
+   },
+   "required": [
+    "line_no",
+    "item_id",
+    "item_name",
+    "unit",
+    "unit_id",
+    "serial",
+    "inventory_no",
+    "quantity"
+   ],
+   "additionalProperties": false
+  },
+  "Movement": {
+   "description": "Движение (запись журнала) и данные акта; в списке журнала lines = null",
+   "type": "object",
+   "properties": {
+    "movement_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "kind": {
+     "enum": [
+      "receive",
+      "issue",
+      "return",
+      "transfer",
+      "repair_out",
+      "repair_in",
+      "install",
+      "remove",
+      "write_off",
+      "adjust",
+      "reverse"
+     ]
+    },
+    "act_no": {
+     "type": "string",
+     "pattern": "^[0-9]{4}-[0-9]{6}$"
+    },
+    "occurred_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "actor_ref": {
+     "type": "string"
+    },
+    "basis": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "note": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 1024
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "from_location": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "to_location": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "from_holder": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "to_holder": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "asset_uid": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "reverses": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "lines": {
+     "oneOf": [
+      {
+       "type": "array",
+       "items": {
+        "$ref": "#/$defs/MovementLine"
+       }
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "movement_id",
+    "kind",
+    "act_no",
+    "occurred_at",
+    "actor_ref",
+    "basis",
+    "note",
+    "from_location",
+    "to_location",
+    "from_holder",
+    "to_holder",
+    "asset_uid",
+    "reverses",
+    "lines"
+   ],
+   "additionalProperties": false
+  },
+  "Discrepancy": {
+   "type": "object",
+   "properties": {
+    "item_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "location_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "stock": {
+     "type": "number"
+    },
+    "journal": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "item_id",
+    "location_id",
+    "stock",
+    "journal"
+   ],
+   "additionalProperties": false
+  },
+  "LocationList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Location"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "ItemList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Item"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "UnitList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Unit"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "StockList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/StockRow"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "MovementList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Movement"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "StockVerification": {
+   "type": "object",
+   "properties": {
+    "discrepancies": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Discrepancy"
+     }
+    }
+   },
+   "required": [
+    "discrepancies"
+   ],
+   "additionalProperties": false
+  }
+ }
+}
