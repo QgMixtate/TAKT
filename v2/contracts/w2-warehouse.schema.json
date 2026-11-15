@@ -429,6 +429,16 @@
        "type": "null"
       }
      ]
+    },
+    "actor_name": {
+     "oneOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -437,6 +447,7 @@
     "act_no",
     "occurred_at",
     "actor_ref",
+    "actor_name",
     "basis",
     "note",
     "from_location",

@@ -97,6 +97,7 @@ type Movement struct {
 	ActNo        string         `json:"act_no"`
 	At           time.Time      `json:"occurred_at"`
 	Actor        string         `json:"actor_ref"`
+	ActorName    *string        `json:"actor_name"` // логин пользователя, оформившего операцию (для акта)
 	Basis        string         `json:"basis"`
 	Note         *string        `json:"note"`
 	FromLocation *string        `json:"from_location"`
@@ -461,8 +462,10 @@ func (Store) Movement(ctx context.Context, tx pgx.Tx, tenant, id string) (Moveme
 	if !identifier.Valid(id) {
 		return m, domain.NotFound
 	}
-	e := tx.QueryRow(ctx, `SELECT movement_id::text,kind,act_no,occurred_at,actor_ref,basis,note,from_location::text,to_location::text,from_holder::text,to_holder::text,asset_uid::text,reverses::text
-FROM warehouse.movements WHERE tenant_id=$1 AND movement_id=$2`, tenant, id).Scan(&m.ID, &m.Kind, &m.ActNo, &m.At, &m.Actor, &m.Basis, &m.Note, &m.FromLocation, &m.ToLocation, &m.FromHolder, &m.ToHolder, &m.Asset, &m.Reverses)
+	e := tx.QueryRow(ctx, `SELECT m.movement_id::text,m.kind,m.act_no,m.occurred_at,m.actor_ref,
+(SELECT u.username FROM access.users u WHERE u.tenant_id=m.tenant_id AND 'user:'||u.user_id::text=m.actor_ref),
+m.basis,m.note,m.from_location::text,m.to_location::text,m.from_holder::text,m.to_holder::text,m.asset_uid::text,m.reverses::text
+FROM warehouse.movements m WHERE m.tenant_id=$1 AND m.movement_id=$2`, tenant, id).Scan(&m.ID, &m.Kind, &m.ActNo, &m.At, &m.Actor, &m.ActorName, &m.Basis, &m.Note, &m.FromLocation, &m.ToLocation, &m.FromHolder, &m.ToHolder, &m.Asset, &m.Reverses)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return m, domain.NotFound
 	}

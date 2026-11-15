@@ -121,7 +121,7 @@ function ActView({act:m,ref_:r,onClose}:{act:WMovement;ref_:Ref;onClose:()=>void
    <h2>{actTitle[m.kind]??kindName[m.kind]} № {m.act_no}</h2><p>от {new Date(m.occurred_at).toLocaleDateString('ru-RU')}</p>
    <dl><dt>Операция</dt><dd>{kindName[m.kind]}</dd><dt>Откуда</dt><dd>{from}</dd><dt>Куда</dt><dd>{to}</dd><dt>Основание</dt><dd>{m.basis}</dd>{m.note?<><dt>Примечание</dt><dd>{m.note}</dd></>:null}</dl>
    <table><thead><tr><th>№</th><th>Наименование</th><th>Серийный №</th><th>Инв. №</th><th>Кол-во</th></tr></thead><tbody>{(m.lines??[]).map(l=><tr key={l.line_no}><td>{l.line_no}</td><td>{l.item_name}</td><td>{l.serial??'—'}</td><td>{l.inventory_no??'—'}</td><td>{l.quantity} {l.unit}</td></tr>)}</tbody></table>
-   <div className="act-signs"><div>Сдал: ____________________ /{m.from_holder?subjName(r,m.from_holder):'                    '}/</div><div>Принял: ____________________ /{m.to_holder?subjName(r,m.to_holder):'                    '}/</div><div>Оформил: {m.actor_ref.replace(/^user:/,'')}</div></div>
+   <div className="act-signs"><div>Сдал: ______________________ {m.from_holder?'/'+subjName(r,m.from_holder)+'/':'(склад: '+from+')'}</div><div>Принял: ______________________ {m.to_holder?'/'+subjName(r,m.to_holder)+'/':'(склад: '+to+')'}</div><div>Оформил: {m.actor_name??'—'}</div></div>
   </div></div></div>;
 }
 
