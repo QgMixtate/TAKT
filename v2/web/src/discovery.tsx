@@ -98,15 +98,20 @@ function NetworkForm({busy,onCreate,onExpired}:{busy:boolean;onExpired:()=>void;
 }
 
 function CredentialsTab({csrf,onExpired}:{csrf:string;onExpired:()=>void}){
- const [items,setItems]=useState<CollectCredential[]>([]),[available,setAvailable]=useState(true),[error,setError]=useState<unknown>(null),[busy,setBusy]=useState(false),[creating,setCreating]=useState(false);
+ const [items,setItems]=useState<CollectCredential[]>([]),[note,setNote]=useState<string|null>(null),[available,setAvailable]=useState(true),[error,setError]=useState<unknown>(null),[busy,setBusy]=useState(false),[creating,setCreating]=useState(false);
  const load=()=>{api.collectCredentials().then(p=>{setItems(p.items);setAvailable(p.secrets_available)}).catch(e=>{setError(e);expired(e,onExpired)})};
  useEffect(load,[]);
  return <div className="stack">
   {!available?<div className="error" role="alert">Хранилище секретов центра не настроено — учётки сохранить нельзя.</div>:null}
   {error&&!creating?<div className="error" role="alert">{errorMessage(error)}</div>:null}
+  {note?<div className="map-notice ok" role="status">{note}</div>:null}
   <div className="table-panel"><div className="table-toolbar"><h2>Учётки сбора <span>{items.length}</span></h2><button className="button small" disabled={!available} onClick={()=>setCreating(true)}>+ Новая учётка</button></div>
    {items.length===0?<div className="empty"><span>⚿</span><h3>Учёток пока нет</h3><p>Учётка нужна, чтобы собирать данные с найденных узлов по SSH, WinRM или SNMPv3. Пароли и ключи хранятся в хранилище секретов центра и больше нигде не показываются.</p></div>:
-   <div className="table-scroll"><table><thead><tr><th>Название</th><th>Способ</th><th>Логин</th><th>Целей</th><th>Секрет сменён</th><th/></tr></thead><tbody>{items.map(c=><tr key={c.credential_id} className={c.active?'':'muted'}><td><strong>{c.name}</strong></td><td>{kindName[c.kind]}</td><td className="mono">{c.username}</td><td>{c.targets}</td><td className="time">{time(c.secret_changed_at)}</td><td className="actions"><button className="text-link" disabled={busy} onClick={()=>{if(c.active&&c.targets&&!confirm('Отключить учётку «'+c.name+'»? Её цели ('+c.targets+') перестанут собираться, пока учётка выключена.'))return;setBusy(true);api.patchCollectCredential(c.credential_id,csrf,{revision:c.revision,active:!c.active}).then(load).catch(e=>{setError(e);expired(e,onExpired)}).finally(()=>setBusy(false))}}>{c.active?'Отключить':'Включить'}</button></td></tr>)}</tbody></table></div>}
+   <div className="table-scroll"><table><thead><tr><th>Название</th><th>Способ</th><th>Логин</th><th>Целей</th><th>Секрет сменён</th><th/></tr></thead><tbody>{items.map(c=><tr key={c.credential_id} className={c.active?'':'muted'}><td><strong>{c.name}</strong></td><td>{kindName[c.kind]}</td><td className="mono">{c.username}</td><td>{c.targets}</td><td className="time">{time(c.secret_changed_at)}</td><td className="actions"><span className={'badge '+(c.active?'state-ok':'state-unavailable')}><i/>{c.active?'включена':'отключена'}</span> <button className="text-link" disabled={busy} onClick={()=>{
+     // стенд №13: переключатель без подтверждения незаметно возвращался двойным щелчком — подтверждение в обе стороны,
+     // кнопка заблокирована до ответа центра и ещё на секунду после него
+     const q=c.active?'Отключить учётку «'+c.name+'»?'+(c.targets?' Её цели ('+c.targets+') перестанут собираться, пока учётка выключена.':''):'Включить учётку «'+c.name+'»?'+(c.targets?' Её цели ('+c.targets+') снова начнут собираться.':'');
+     if(!confirm(q))return;setBusy(true);setNote(null);api.patchCollectCredential(c.credential_id,csrf,{revision:c.revision,active:!c.active}).then(()=>{setNote('Учётка «'+c.name+'» '+(c.active?'отключена':'включена'));load()}).catch(e=>{setError(e);expired(e,onExpired)}).finally(()=>setTimeout(()=>setBusy(false),1000))}}>{c.active?'Отключить':'Включить'}</button></td></tr>)}</tbody></table></div>}
    <p className="panel-note">Сборщик получает учётку у центра по защищённому каналу перед каждым сбором и держит её только в памяти.</p>
   </div>
   <DomainCAPanel csrf={csrf} onExpired={onExpired}/>
@@ -146,7 +151,7 @@ function CredentialForm({busy,onSave}:{busy:boolean;onSave:(b:{name:string;kind:
    <Field label="Ключ шифрования" hint="Не короче 8 символов"><input type="password" value={privKey} onChange={e=>setPrivKey(e.target.value)} required minLength={8} autoComplete="new-password"/></Field>
   </>:<>
    {kind==='ssh'?<fieldset className="field"><span>Вход</span><div className="checks"><label><input type="radio" checked={mode==='password'} onChange={()=>setMode('password')}/> по паролю</label><label><input type="radio" checked={mode==='key'} onChange={()=>setMode('key')}/> по закрытому ключу</label></div></fieldset>:null}
-   {kind==='ssh'&&mode==='key'?<Field label="Закрытый ключ" hint="Вставьте содержимое файла ключа целиком"><textarea className="mono" value={key} onChange={e=>setKey(e.target.value)} rows={6} required placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END OPENSSH PRIVATE KEY-----'}/></Field>:
+   {kind==='ssh'&&mode==='key'?<Field label="Закрытый ключ" hint="Выберите файл ключа или вставьте его содержимое целиком; ключ уходит только в хранилище секретов центра"><input type="file" aria-label="Файл закрытого ключа" onChange={e=>{const f=e.target.files?.[0];if(f&&f.size<=16384)void f.text().then(setKey);e.target.value=''}}/><textarea className="mono" value={key} onChange={e=>setKey(e.target.value)} rows={6} required placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n…\n-----END OPENSSH PRIVATE KEY-----'}/></Field>:
     <Field label="Пароль"><input type="password" value={password} onChange={e=>setPassword(e.target.value)} required autoComplete="new-password"/></Field>}
   </>}
   <p className="panel-note">После сохранения пароль и ключ не показываются: сменить их можно, только введя заново.</p>

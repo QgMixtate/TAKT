@@ -12,7 +12,7 @@ try{
  // C42 (частично): вывод актива из учёта из карточки и возврат
  if(await page.getByRole('button',{name:'Закрыть карточку'}).isVisible())await page.getByRole('button',{name:'Закрыть карточку'}).click();
  await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
- page.once('dialog',d=>void d.accept('Smoke: проверка вывода'));await page.getByRole('button',{name:'Вывести из учёта…'}).click();await expect(page.getByText('Выведен из учёта')).toBeVisible();
+ await page.getByRole('button',{name:'Вывести из учёта…'}).click();await page.getByLabel('Причина вывода из учёта').selectOption('Дубль другого актива');await page.getByLabel('Уточнение причины').fill('Smoke: проверка вывода');await page.getByRole('button',{name:'Вывести',exact:true}).click();await expect(page.getByText('Выведен из учёта')).toBeVisible();await expect(page.getByText('Дубль другого актива: Smoke: проверка вывода')).toBeVisible();
  page.once('dialog',d=>void d.accept());await page.getByRole('button',{name:'Вернуть в учёт'}).click();await expect(page.getByRole('button',{name:'Вывести из учёта…'})).toBeVisible();
  await page.getByRole('button',{name:'Закрыть карточку'}).click();checks.push('C42 asset retired from the card with a reason and restored');
  await page.screenshot({path:'../.local/c09-web-1440.png',fullPage:true});await page.setViewportSize({width:800,height:1000});await page.screenshot({path:'../.local/c09-web-800.png',fullPage:true});if(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth))throw new Error('document horizontal overflow');checks.push('1440 and 800 responsive layouts render without document overflow');

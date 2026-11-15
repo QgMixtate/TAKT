@@ -3,6 +3,7 @@ import {api,ApiError,errorMessage,type AssetCMDB,type AssetClassName,type CIEnd,
 
 // C26 — CMDB в Web: класс актива, ПО и компоненты с provenance, связи; сервисы и поиск ПО по реестру.
 export const classNames:Record<AssetClassName,string>={server:'Сервер',workstation:'Рабочая станция',network_device:'Сетевое устройство',printer:'Принтер',virtual_machine:'Виртуальная машина',unknown:'Не определён'};
+const retireReasons=['Дубль другого актива','Пустой актив (ошибочная цель сбора)','Списан','Передан в другую организацию','Утерян','Другое'];
 const reasons:Record<string,string>={HARDWARE_MODEL_VIRTUAL:'по модели оборудования (виртуализация)',OS_SERVER_EDITION:'по серверной редакции ОС',OS_CLIENT_EDITION:'по клиентской редакции ОС',OS_LINUX_ASSUMED_SERVER:'Linux — считаем сервером',OS_UNRECOGNIZED:'ОС не распознана',NO_FACTS:'нет фактов'};
 export const relationNames:Record<string,string>={runs_on:'работает на',uses:'использует',depends_on:'зависит от',hosts:'размещает',connected_to:'подключён к'};
 const criticalities:Record<string,string>={unknown:'Не задана',low:'Низкая',medium:'Средняя',high:'Высокая',critical:'Критичная'};
@@ -20,6 +21,8 @@ const confirmAction=(what:string)=>window.confirm('Подтвердите: '+wha
 export function AssetClassBlock({asset,csrf,onExpired}:{asset:string;csrf:string;onExpired:()=>void}){
  const [data,error,reload]=useLoad(()=>api.assetCMDB(asset),[asset],onExpired);
  const [busy,setBusy]=useState(false),[failure,setFailure]=useState<unknown>(null);
+ // стенд №13: свободный текст причины давал «ошибка» — готовые причины плюс уточнение
+ const [retiring,setRetiring]=useState(false),[preset,setPreset]=useState(''),[detail,setDetail]=useState('');
  if(error)return <div className="error" role="alert">{errorMessage(error)}</div>;
  if(!data)return null;
  async function set(value:string){
@@ -27,10 +30,8 @@ export function AssetClassBlock({asset,csrf,onExpired}:{asset:string;csrf:string
   if(!confirmAction(next?'установить класс «'+classNames[next]+'»':'снять ручной класс (будет использоваться наблюдаемый)'))return;
   setBusy(true);setFailure(null);try{await api.setAssetClass(asset,csrf,{asset_class:next,revision:data!.business_revision});reload()}catch(e){setFailure(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setBusy(false)}
  }
- async function lifecycle(retire:boolean){
-  let reason='';
-  if(retire){reason=(window.prompt('Причина вывода из учёта (обязательно): списан, дубль, пустой актив…')??'').trim();if(!reason)return}
-  else if(!confirmAction('вернуть актив в учёт'))return;
+ async function lifecycle(retire:boolean,reason=''){
+  if(!retire&&!confirmAction('вернуть актив в учёт'))return;
   setBusy(true);setFailure(null);try{retire?await api.retireAsset(asset,csrf,reason):await api.restoreAsset(asset,csrf);reload()}catch(e){setFailure(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setBusy(false)}
  }
  return <div className="class-block"><div><span className="muted">Класс</span><strong>{classNames[data.class.effective]}</strong><small>{data.class.manual?'задан вручную · по фактам: '+classNames[data.class.observed]:'по фактам: '+(reasons[data.class.observed_reason]??data.class.observed_reason)}</small></div>
@@ -38,7 +39,10 @@ export function AssetClassBlock({asset,csrf,onExpired}:{asset:string;csrf:string
   {failure?<div className="error" role="alert">{errorMessage(failure)}</div>:null}
   <span className="class-counts">ПО: {data.software_count} · компонентов: {data.component_count} · связей: {data.relations.length}</span>
   {data.retired?<div className="retired-note" role="status"><strong>Выведен из учёта</strong> {new Date(data.retired.retired_at).toLocaleString('ru-RU')}: {data.retired.reason}<small>Не показывается в реестре и экспорте, не учитывается в свежести. Новые данные источников сохраняются.</small><button className="button small" disabled={busy} onClick={()=>void lifecycle(false)}>Вернуть в учёт</button></div>
-   :<button className="text-link retire-link" disabled={busy} onClick={()=>void lifecycle(true)}>Вывести из учёта…</button>}</div>;
+   :retiring?<div className="retire-form"><select aria-label="Причина вывода из учёта" value={preset} onChange={e=>setPreset(e.target.value)}><option value="">причина…</option>{retireReasons.map(r=><option key={r} value={r}>{r}</option>)}</select>
+    <input aria-label="Уточнение причины" value={detail} onChange={e=>setDetail(e.target.value)} placeholder={preset==='Другое'?'опишите причину (обязательно)':'уточнение (необязательно)'} maxLength={400}/>
+    <button className="button small" disabled={busy||!preset||(preset==='Другое'&&!detail.trim())} onClick={()=>{const r=(preset==='Другое'?detail.trim():preset+(detail.trim()?': '+detail.trim():''));void lifecycle(true,r).then(()=>{setRetiring(false);setPreset('');setDetail('')})}}>Вывести</button><button className="text-link" onClick={()=>setRetiring(false)}>Отмена</button></div>
+   :<button className="text-link retire-link" disabled={busy} onClick={()=>setRetiring(true)}>Вывести из учёта…</button>}</div>;
 }
 
 export function SoftwareTab({asset,onExpired}:{asset:string;onExpired:()=>void}){

@@ -64,3 +64,4 @@
 .act-print{color:#111;font-size:12px}.act-print h2{font-size:18px;margin:0 0 4px}.act-print p{margin:0 0 14px;color:#333}.act-print dl{display:grid;grid-template-columns:130px 1fr;gap:6px 12px;margin:0 0 16px}.act-print dt{color:#555}.act-print dd{margin:0}.act-print table{white-space:normal;font-size:11px}.act-print th,.act-print td{border:1px solid #bbb!important;padding:6px 8px;color:#111;background:#fff}.act-signs{display:grid;gap:18px;margin-top:34px}
 @media print{body *{visibility:hidden}.act-print,.act-print *{visibility:visible}.act-print{position:absolute;left:0;top:0;width:100%;padding:12mm}.act-shade{position:static;background:none}}
 @media(max-width:700px){.act-sheet{padding:18px}.act-print dl{grid-template-columns:1fr}}
+.retire-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}.retire-form select,.retire-form input{font-size:12px;padding:6px;border:1px solid #dfe7dd;border-radius:5px}

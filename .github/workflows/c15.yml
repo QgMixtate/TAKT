@@ -1,9 +1,9 @@
 name: surveyscan-c15-contract-preparation
 on:
   push:
-    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', '.github/workflows/c15.yml']
+    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', '.github/workflows/c15.yml']
   pull_request:
-    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', '.github/workflows/c15.yml']
+    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', '.github/workflows/c15.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -77,6 +77,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "portable package verify failed ($LASTEXITCODE)" }
           $item = Get-Item $pkg
           Write-Output "portable package: $($item.Length) bytes"
+      - name: prepare-winrm-target.ps1 under Windows PowerShell 5.1 (local account, run twice — idempotent; stand report 13)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pw = ConvertTo-SecureString ([guid]::NewGuid().ToString() + 'aA1!') -AsPlainText -Force
+          New-LocalUser -Name scanci -Password $pw -AccountNeverExpires | Out-Null
+          $acct = "$env:COMPUTERNAME\scanci"
+          & .\v2\deploy\windows\prepare-winrm-target.ps1 -Account $acct -Collector 10.0.0.2 -Kerberos
+          $second = & .\v2\deploy\windows\prepare-winrm-target.ps1 -Account $acct -Collector 10.0.0.2 -Kerberos 6>&1 | Out-String
+          Write-Output $second
+          if (-not ($second -match 'WMI root\\cimv2 rights present')) { throw 'second run must find WMI rights already present' }
+          if (-not (Test-Path "C:\surveyscan-winrm-$env:COMPUTERNAME.pem")) { throw 'public certificate file missing' }
+          Remove-LocalUser -Name scanci
       - name: Compiled agent prepare with an operator-style private config (icacls, no network)
         working-directory: v2
         shell: pwsh

@@ -29,14 +29,16 @@ if (-not $Gpo) {
 }
 
 # 2. WMI namespace root\cimv2: Enable Account (0x1) + Remote Enable (0x20), inherited by sub-namespaces
-$ss = Get-WmiObject -Namespace 'root/cimv2' -Class __SystemSecurity
-$sd = $ss.GetSecurityDescriptor().Descriptor
+# Stand report #13: Get-WmiObject -Class __SystemSecurity may return an object without methods
+# ("GetSecurityDescriptor" call failed); call the singleton methods explicitly by path instead.
+$sd = (Invoke-WmiMethod -Namespace 'root/cimv2' -Path '__SystemSecurity=@' -Name GetSecurityDescriptor).Descriptor
 if ($sd.DACL | Where-Object { $_.Trustee.SidString -eq $sid -and ($_.AccessMask -band 0x21) -eq 0x21 }) { Write-Host '[ok] WMI root\cimv2 rights present' }
 else {
   $trustee = ([wmiclass]'Win32_Trustee').CreateInstance(); $trustee.SidString = $sid
   $ace = ([wmiclass]'Win32_ACE').CreateInstance(); $ace.AccessMask = 0x21; $ace.AceFlags = 0x2; $ace.AceType = 0; $ace.Trustee = $trustee
   $sd.DACL += $ace.psobject.ImmediateBaseObject
-  $r = $ss.SetSecurityDescriptor($sd); if ($r.ReturnValue -ne 0) { throw "WMI SetSecurityDescriptor failed: $($r.ReturnValue)" }
+  $r = Invoke-WmiMethod -Namespace 'root/cimv2' -Path '__SystemSecurity=@' -Name SetSecurityDescriptor -ArgumentList $sd.psobject.ImmediateBaseObject
+  if ($r.ReturnValue -ne 0) { throw "WMI SetSecurityDescriptor failed: $($r.ReturnValue)" }
   Write-Host '[+] WMI root\cimv2: Enable Account + Remote Enable'
 }
 
