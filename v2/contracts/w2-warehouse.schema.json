@@ -147,7 +147,8 @@
       "issued",
       "installed",
       "in_repair",
-      "written_off"
+      "written_off",
+      "lost"
      ]
     },
     "location_id": {
@@ -682,6 +683,273 @@
      "type": "array",
      "items": {
       "$ref": "#/$defs/Reservation"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "Inventory": {
+   "type": "object",
+   "properties": {
+    "inventory_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "location_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "act_no": {
+     "type": "string",
+     "pattern": "^[0-9]{4}-[0-9]{6}$"
+    },
+    "basis": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "state": {
+     "enum": [
+      "open",
+      "closed",
+      "cancelled"
+     ]
+    },
+    "started_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "started_by": {
+     "type": "string"
+    },
+    "closed_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "shortage_movement": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "surplus_movement": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "inventory_id",
+    "location_id",
+    "act_no",
+    "basis",
+    "state",
+    "started_at",
+    "started_by",
+    "closed_at",
+    "shortage_movement",
+    "surplus_movement"
+   ],
+   "additionalProperties": false
+  },
+  "InventoryLine": {
+   "type": "object",
+   "properties": {
+    "item_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "item_name": {
+     "type": "string"
+    },
+    "unit": {
+     "type": "string"
+    },
+    "unit_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "serial": {
+     "oneOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "expected": {
+     "type": "number",
+     "minimum": 0
+    },
+    "counted": {
+     "oneOf": [
+      {
+       "type": "number",
+       "minimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "result": {
+     "enum": [
+      "ok",
+      "shortage",
+      "surplus",
+      "elsewhere"
+     ]
+    },
+    "where": {
+     "oneOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "item_id",
+    "item_name",
+    "unit",
+    "unit_id",
+    "serial",
+    "expected",
+    "counted",
+    "result",
+    "where"
+   ],
+   "additionalProperties": false
+  },
+  "InventoryDetail": {
+   "type": "object",
+   "properties": {
+    "inventory_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "location_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "act_no": {
+     "type": "string",
+     "pattern": "^[0-9]{4}-[0-9]{6}$"
+    },
+    "basis": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "state": {
+     "enum": [
+      "open",
+      "closed",
+      "cancelled"
+     ]
+    },
+    "started_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "started_by": {
+     "type": "string"
+    },
+    "closed_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "shortage_movement": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "surplus_movement": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "lines": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/InventoryLine"
+     }
+    }
+   },
+   "required": [
+    "inventory_id",
+    "location_id",
+    "act_no",
+    "basis",
+    "state",
+    "started_at",
+    "started_by",
+    "closed_at",
+    "shortage_movement",
+    "surplus_movement",
+    "lines"
+   ],
+   "additionalProperties": false
+  },
+  "InventoryList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Inventory"
      }
     }
    },

@@ -77,6 +77,10 @@ try{
  await page.getByRole('tab',{name:'Резервы'}).click();await page.getByLabel('Что резервировать').selectOption({label:'Ноутбук smoke · SMOKE-SN-1'});await page.getByLabel('За кем').selectOption({index:1});
  await page.getByLabel('Основание резерва').fill('Новый сотрудник smoke');await page.getByRole('button',{name:'Зарезервировать'}).click();await expect(page.locator('.warehouse table')).toContainText('Новый сотрудник smoke');
  checks.push('W2 warehouse: issue reversed from the journal (reverse act), unit reserved for an employee');
+ await page.getByRole('tab',{name:'Инвентаризация'}).click();await page.getByLabel('Место инвентаризации').selectOption({label:'Склад smoke'});await page.getByLabel('Основание инвентаризации').fill('Плановая smoke');
+ await page.getByRole('button',{name:'Начать инвентаризацию'}).click();await page.getByLabel('Найденные серийные номера').fill('SMOKE-SN-1');await page.getByRole('button',{name:'Сохранить факт и сверить'}).click();
+ await expect(page.locator('.warehouse table')).toContainText('сходится');page.once('dialog',d=>void d.accept());await page.getByRole('button',{name:'Закрыть и провести'}).click();
+ await expect(page.locator('.warehouse')).toContainText('недостачи нет');checks.push('W2 inventory in the Web: location counted, serial matched, inventory closed without discrepancies');
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('button',{name:/Реестр активов/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');

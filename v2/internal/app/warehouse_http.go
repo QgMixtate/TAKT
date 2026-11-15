@@ -247,5 +247,64 @@ func (r *Registry) warehouseHandlers() map[string]route51 {
 			return res, e
 		}).handler.ServeHTTP(w, req)
 	})}
+	h["GET /api/v1/warehouse/inventories"] = list("warehouse:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ url.Values) (any, error) {
+		items, e := st.Inventories(ctx, tx, id.TenantID, 100)
+		return map[string]any{"items": items}, e
+	})
+	h["GET /api/v1/warehouse/inventories/{inventory_id}"] = route51{"warehouse:read", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if _, ok := queryOnly(w, req); !ok {
+			return
+		}
+		r.warehouseDo(w, req, 200, "warehouse:read", false, func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			return st.InventoryDetail(ctx, tx, id.TenantID, req.PathValue("inventory_id"))
+		})
+	})}
+	h["POST /api/v1/warehouse/inventories"] = route51{"warehouse:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Location string `json:"location_id"`
+			Basis    string `json:"basis"`
+		}
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		write("warehouse:write", 201, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ *http.Request) (any, error) {
+			d, e := st.StartInventory(ctx, tx, id.TenantID, "user:"+id.UserID, body.Location, body.Basis)
+			if e == nil {
+				e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "warehouse.inventory_started", "inventory", d.ID)
+			}
+			return d, e
+		}).handler.ServeHTTP(w, req)
+	})}
+	h["PUT /api/v1/warehouse/inventories/{inventory_id}/count"] = route51{"warehouse:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body warehouse.Count
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		write("warehouse:write", 200, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ *http.Request) (any, error) {
+			return st.SetCount(ctx, tx, id.TenantID, req.PathValue("inventory_id"), body)
+		}).handler.ServeHTTP(w, req)
+	})}
+	for _, verb := range []string{"close", "cancel"} {
+		perm := map[string]string{"close": "warehouse:admin", "cancel": "warehouse:write"}[verb]
+		h["POST /api/v1/warehouse/inventories/{inventory_id}/"+verb] = route51{perm, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			var body struct{}
+			if !readOperationBody(w, req, &body) {
+				return
+			}
+			write(perm, 200, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ *http.Request) (any, error) {
+				var d warehouse.InventoryDetail
+				var e error
+				if verb == "close" {
+					d, e = st.CloseInventory(ctx, tx, id.TenantID, "user:"+id.UserID, req.PathValue("inventory_id"))
+				} else {
+					d, e = st.CancelInventory(ctx, tx, id.TenantID, "user:"+id.UserID, req.PathValue("inventory_id"))
+				}
+				if e == nil {
+					e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, map[string]string{"close": "warehouse.inventory_closed", "cancel": "warehouse.inventory_cancelled"}[verb], "inventory", d.ID)
+				}
+				return d, e
+			}).handler.ServeHTTP(w, req)
+		})}
+	}
 	return h
 }

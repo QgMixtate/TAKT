@@ -1,14 +1,14 @@
 import {useEffect,useState} from 'react';
-import {api,ApiError,errorMessage,type Subject,type WLocation,type WItem,type WUnit,type WStock,type WMovement,type WOperation,type WReservation} from './api';
+import {api,ApiError,errorMessage,type Subject,type WLocation,type WItem,type WUnit,type WStock,type WMovement,type WOperation,type WReservation,type WInventory,type WInventoryDetail} from './api';
 
 // Волна 2: склад и жизненный цикл оборудования (decisions/C41-w2-scope-and-model.md). Операции — одной записью журнала
 // с номером акта; акт печатается из браузера («Печать» → «Сохранить как PDF»).
 
-const stateName:Record<WUnit['state'],[string,string]>={in_stock:['на складе','state-ok'],reserved:['в резерве','state-partial'],issued:['выдан','state-active'],installed:['установлен','state-active'],in_repair:['в ремонте','state-partial'],written_off:['списан','state-unavailable']};
+const stateName:Record<WUnit['state'],[string,string]>={in_stock:['на складе','state-ok'],reserved:['в резерве','state-partial'],issued:['выдан','state-active'],installed:['установлен','state-active'],in_repair:['в ремонте','state-partial'],written_off:['списан','state-unavailable'],lost:['утерян','state-unavailable']};
 export const kindName:Record<WMovement['kind'],string>={receive:'Приход',issue:'Выдача',return:'Возврат',transfer:'Перемещение',repair_out:'В ремонт',repair_in:'Из ремонта',install:'Установка на актив',remove:'Снятие с актива',write_off:'Списание',adjust:'Корректировка',reverse:'Сторно'};
 const actTitle:Partial<Record<WMovement['kind'],string>>={receive:'Акт приёма на склад',issue:'Акт выдачи',return:'Акт возврата',transfer:'Акт перемещения',repair_out:'Акт передачи в ремонт',repair_in:'Акт приёма из ремонта',install:'Акт установки комплектующего',remove:'Акт снятия комплектующего',write_off:'Акт списания'};
 const fmt=(v:string)=>new Date(v).toLocaleString('ru-RU');
-type Tab='units'|'stock'|'reservations'|'operation'|'journal'|'catalog';
+type Tab='units'|'stock'|'reservations'|'inventory'|'operation'|'journal'|'catalog';
 type Ref={locations:WLocation[];items:WItem[];subjects:Subject[]};
 
 export function WarehouseView({csrf,canWrite,isAdmin,onOpenAsset,onExpired}:{csrf:string;canWrite:boolean;isAdmin:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
@@ -19,8 +19,8 @@ export function WarehouseView({csrf,canWrite,isAdmin,onOpenAsset,onExpired}:{csr
  const openAct=(id:string)=>api.wMovement(id).then(setAct).catch(fail);
  return <div className="stack warehouse">
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
-  <div className="tabs" role="tablist">{([['units','Экземпляры'],['stock','Остатки'],['reservations','Резервы'],['operation','Операция'],['journal','Журнал и акты'],['catalog','Справочники']] as [Tab,string][]).filter(([t])=>t!=='operation'||canWrite).map(([t,n])=><button key={t} role="tab" aria-selected={tab===t} className={tab===t?'active':''} onClick={()=>setTab(t)}>{n}</button>)}</div>
-  {tab==='units'?<Units ref_={ref} onOpenAsset={onOpenAsset} onFail={fail}/>:tab==='stock'?<Stock ref_={ref} onFail={fail}/>:tab==='reservations'?<Reservations ref_={ref} csrf={csrf} canWrite={canWrite} onFail={fail}/>:tab==='operation'?<OperationForm ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onDone={m=>{setAct(m);setVersion(v=>v+1)}}/>:tab==='journal'?<Journal ref_={ref} csrf={csrf} canWrite={canWrite} onOpen={id=>void openAct(id)} onReversed={m=>setAct(m)} onFail={fail}/>:<Catalog ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onChanged={()=>setVersion(v=>v+1)}/>}
+  <div className="tabs" role="tablist">{([['units','Экземпляры'],['stock','Остатки'],['reservations','Резервы'],['inventory','Инвентаризация'],['operation','Операция'],['journal','Журнал и акты'],['catalog','Справочники']] as [Tab,string][]).filter(([t])=>t!=='operation'||canWrite).map(([t,n])=><button key={t} role="tab" aria-selected={tab===t} className={tab===t?'active':''} onClick={()=>setTab(t)}>{n}</button>)}</div>
+  {tab==='units'?<Units ref_={ref} onOpenAsset={onOpenAsset} onFail={fail}/>:tab==='stock'?<Stock ref_={ref} onFail={fail}/>:tab==='reservations'?<Reservations ref_={ref} csrf={csrf} canWrite={canWrite} onFail={fail}/>:tab==='inventory'?<InventoryTab ref_={ref} csrf={csrf} canWrite={canWrite} isAdmin={isAdmin} onAct={id=>void openAct(id)} onFail={fail}/>:tab==='operation'?<OperationForm ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onDone={m=>{setAct(m);setVersion(v=>v+1)}}/>:tab==='journal'?<Journal ref_={ref} csrf={csrf} canWrite={canWrite} onOpen={id=>void openAct(id)} onReversed={m=>setAct(m)} onFail={fail}/>:<Catalog ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onChanged={()=>setVersion(v=>v+1)}/>}
   {act?<ActView act={act} ref_={ref} onClose={()=>setAct(null)}/>:null}
  </div>;
 }
@@ -180,4 +180,43 @@ export function AssetWarehouseBlock({asset,onExpired}:{asset:string;onExpired:()
   {self?<p className="muted">Экземпляр {self.item_name} · {self.serial}{self.inventory_no?' · '+self.inventory_no:''}</p>:null}
   {parts.length?<p className="muted">Установлено: {parts.map(p=>p.item_name+' · '+p.serial).join('; ')}</p>:null}
   <ul>{moves.slice(0,8).map(m=><li key={m.movement_id}><span className="mono">{m.act_no}</span> · {kindName[m.kind]} · {new Date(m.occurred_at).toLocaleDateString('ru-RU')} · {m.basis}</li>)}</ul></div>;
+}
+
+const resultName:Record<WInventoryDetail['lines'][number]['result'],[string,string]>={ok:['сходится','state-ok'],shortage:['недостача','state-unavailable'],surplus:['излишек','state-partial'],elsewhere:['числится в другом месте','state-partial']};
+
+// Инвентаризация места (C45.01): снимок учёта → ввод факта (серийные номера списком, количества) → сверка → закрытие
+// актом (администратор): недостача/излишек проводятся корректирующими движениями. Пока открыта — движения по месту запрещены.
+function InventoryTab({ref_:r,csrf,canWrite,isAdmin,onAct,onFail}:{ref_:Ref;csrf:string;canWrite:boolean;isAdmin:boolean;onAct:(id:string)=>void;onFail:(e:unknown)=>void}){
+ const [items,setItems]=useState<WInventory[]|null>(null),[cur,setCur]=useState<WInventoryDetail|null>(null),[n,setN]=useState(0),[busy,setBusy]=useState(false);
+ const [loc,setLoc]=useState(''),[basis,setBasis]=useState(''),[serialItem,setSerialItem]=useState(''),[serials,setSerials]=useState(''),[qty,setQty]=useState<Record<string,string>>({});
+ useEffect(()=>{api.wInventories().then(p=>setItems(p.items)).catch(onFail)},[n]);
+ const open=(id:string)=>api.wInventory(id).then(d=>{setCur(d);const q:Record<string,string>={};d.lines.filter(l=>!l.serial&&l.counted!==null).forEach(l=>q[l.item_id]=String(l.counted));setQty(q);setSerials(d.lines.filter(l=>l.serial&&l.counted).map(l=>l.serial).join('\n'))}).catch(onFail);
+ async function run<T>(fn:()=>Promise<T>,after?:(v:T)=>void){setBusy(true);try{const v=await fn();after?.(v);setN(x=>x+1)}catch(e){onFail(e)}finally{setBusy(false)}}
+ const serialKinds=r.items.filter(i=>i.kind==='serial'),qtyKinds=r.items.filter(i=>i.kind==='quantity');
+ function save(){if(!cur)return;
+  // серийные: «позиция: номер» по строкам; позиция по умолчанию — выбранная; известные номера сопоставляются с позицией из сверки
+  const known=new Map(cur.lines.filter(l=>l.serial).map(l=>[l.serial!.toLowerCase(),l.item_id]));
+  const list=serials.split(/\n|,|;/).map(x=>x.trim()).filter(Boolean).map(sn=>({item_id:known.get(sn.toLowerCase())??serialItem,serial:sn}));
+  if(list.some(x=>!x.item_id)){onFail(new Error('Выберите позицию для серийных номеров, которых нет в учёте места'));return}
+  const quantities=Object.entries(qty).filter(([,v])=>v!=='').map(([item_id,v])=>({item_id,quantity:Number(v)}));
+  void run(()=>api.wCount(csrf,cur.inventory_id,{serials:list,quantities}),setCur)}
+ return <div className="stack">
+  {cur?<div className="table-panel"><div className="table-toolbar"><h2>Инвентаризация {cur.act_no} · {locName(r,cur.location_id)} <span>{cur.state==='open'?'идёт':cur.state==='closed'?'закрыта':'отменена'}</span></h2><button className="text-button" onClick={()=>setCur(null)}>к списку</button></div>
+   {cur.state==='open'&&canWrite?<div className="wh-form">
+    <label className="wide">Найденные серийные номера (по одному в строке; сканер штрихкода вводит как текст)<textarea aria-label="Найденные серийные номера" className="mono" rows={5} value={serials} onChange={e=>setSerials(e.target.value)}/></label>
+    <label>Позиция для неучтённых номеров<select value={serialItem} onChange={e=>setSerialItem(e.target.value)}><option value="">—</option>{serialKinds.map(i=><option key={i.item_id} value={i.item_id}>{i.name}</option>)}</select></label>
+    {qtyKinds.map(i=><label key={i.item_id}>{i.name}, {i.unit}<input aria-label={'Посчитано: '+i.name} type="number" min="0" step="any" value={qty[i.item_id]??''} onChange={e=>setQty({...qty,[i.item_id]:e.target.value})} placeholder="не считали"/></label>)}
+    <div className="wide wh-submit"><button className="button small" disabled={busy} onClick={save}>Сохранить факт и сверить</button>
+     {isAdmin?<button className="button small" disabled={busy||!cur.lines.some(l=>l.counted!==null)} onClick={()=>{if(window.confirm('Закрыть инвентаризацию и провести расхождения?'))void run(()=>api.wInventoryAction(csrf,cur.inventory_id,'close'),setCur)}}>Закрыть и провести</button>:<small className="muted">Закрывает администратор.</small>}
+     <button className="text-link" disabled={busy} onClick={()=>void run(()=>api.wInventoryAction(csrf,cur.inventory_id,'cancel'),setCur)}>Отменить</button></div>
+   </div>:null}
+   <div className="table-scroll"><table><thead><tr><th>Позиция</th><th>Серийный</th><th>По учёту</th><th>Факт</th><th>Итог</th></tr></thead><tbody>{cur.lines.map((l,i)=><tr key={i}><td>{l.item_name}</td><td className="mono">{l.serial??'—'}</td><td>{l.serial?(l.expected?'да':'нет'):l.expected+' '+l.unit}</td><td>{l.counted===null?<span className="muted">не вводилось</span>:l.serial?(l.counted?'найден':'не найден'):l.counted+' '+l.unit}</td><td><span className={'badge '+resultName[l.result][1]}><i/>{resultName[l.result][0]}</span>{l.where?<small>{l.where.split(':')[0]==='issued'?'выдан: '+subjName(r,l.where.split(':')[1]??null):'место: '+locName(r,l.where.split(':')[1]??null)}</small>:null}</td></tr>)}</tbody></table></div>
+   {cur.state==='closed'?<p className="panel-note">Проведено: {cur.shortage_movement?<button className="text-link" onClick={()=>onAct(cur.shortage_movement!)}>акт недостачи</button>:'недостачи нет'} · {cur.surplus_movement?<button className="text-link" onClick={()=>onAct(cur.surplus_movement!)}>акт излишка</button>:'излишка нет'}. Найденные «в другом месте» не перемещены — оформите перемещение или возврат.</p>:null}
+  </div>:<div className="table-panel"><div className="table-toolbar"><h2>Инвентаризации <span>{items?.length??'…'}</span></h2></div>
+   {items&&items.length===0?<div className="empty"><span>☑</span><h3>Инвентаризаций не было</h3></div>:<div className="table-scroll"><table><thead><tr><th>Акт</th><th>Место</th><th>Начата</th><th>Состояние</th><th/></tr></thead><tbody>{(items??[]).map(v=><tr key={v.inventory_id}><td className="mono">{v.act_no}</td><td>{locName(r,v.location_id)}</td><td className="time">{fmt(v.started_at)}</td><td>{v.state==='open'?'идёт':v.state==='closed'?'закрыта':'отменена'}</td><td><button className="button small" onClick={()=>void open(v.inventory_id)}>Открыть</button></td></tr>)}</tbody></table></div>}
+   {canWrite?<div className="wh-line"><select aria-label="Место инвентаризации" value={loc} onChange={e=>setLoc(e.target.value)}><option value="">склад или ячейка…</option>{r.locations.filter(l=>l.kind!=='repair').map(l=><option key={l.location_id} value={l.location_id}>{locName(r,l.location_id)}</option>)}</select>
+    <input aria-label="Основание инвентаризации" value={basis} onChange={e=>setBasis(e.target.value)} placeholder="Основание (приказ, плановая)"/>
+    <button className="button small" disabled={busy||!loc||!basis.trim()} onClick={()=>void run(()=>api.wStartInventory(csrf,loc,basis.trim()),d=>{setCur(d);setBasis('');setSerials('');setQty({})})}>Начать инвентаризацию</button></div>:null}
+  </div>}
+ </div>;
 }

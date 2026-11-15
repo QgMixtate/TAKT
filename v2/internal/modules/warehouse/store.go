@@ -16,6 +16,9 @@ import (
 
 type Store struct{}
 
+// ErrInventoryOpen — по месту идёт инвентаризация: движения и резервы по нему запрещены до её закрытия.
+var ErrInventoryOpen = fmt.Errorf("warehouse: location under inventory: %w", domain.Conflict)
+
 type Location struct {
 	ID     string  `json:"location_id"`
 	Site   string  `json:"site_id"`
@@ -257,6 +260,18 @@ func (s Store) move(ctx context.Context, tx pgx.Tx, tenant, actor string, op Ope
 	if op.ToLocation != "" {
 		if toKind, e = locationKind(ctx, tx, tenant, op.ToLocation); e != nil || toKind == "" {
 			return m, orInvalid(e)
+		}
+	}
+	for _, loc := range []string{op.FromLocation, op.ToLocation} {
+		if loc == "" {
+			continue
+		}
+		var locked bool
+		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM warehouse.inventories WHERE tenant_id=$1 AND location_id=$2 AND state='open')", tenant, loc).Scan(&locked); e != nil {
+			return m, e
+		}
+		if locked {
+			return m, ErrInventoryOpen // по месту идёт инвентаризация (C41.03 п. 7)
 		}
 	}
 	stockKind := func(k string) bool { return k == "warehouse" || k == "bin" }
@@ -666,6 +681,18 @@ func (s Store) Reserve(ctx context.Context, tx pgx.Tx, tenant, actor string, in 
 	var ok bool
 	if e := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM responsibility.subjects WHERE tenant_id=$1 AND subject_id=$2 AND active)", tenant, in.Holder).Scan(&ok); e != nil || !ok {
 		return out, orInvalid(e)
+	}
+	lockLoc := in.Location
+	if in.UnitID != "" && identifier.Valid(in.UnitID) {
+		_ = tx.QueryRow(ctx, "SELECT COALESCE(location_id::text,'') FROM warehouse.units WHERE tenant_id=$1 AND unit_id=$2", tenant, in.UnitID).Scan(&lockLoc)
+	}
+	if identifier.Valid(lockLoc) {
+		var locked bool
+		if e := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM warehouse.inventories WHERE tenant_id=$1 AND location_id=$2 AND state='open')", tenant, lockLoc).Scan(&locked); e != nil {
+			return out, e
+		} else if locked {
+			return out, ErrInventoryOpen
+		}
 	}
 	id := identifier.New()
 	switch {

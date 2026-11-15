@@ -315,3 +315,91 @@ func TestW2ReservationsAndReverse(t *testing.T) {
 		t.Fatalf("10 mice − 4 by reservation = 6 free: %+v", stock.Items)
 	}
 }
+
+// W2-06: инвентаризация ячейки — снимок, движения по месту запрещены, факт, расхождения, закрытие актом с
+// корректирующими движениями; остатки = журнал; ненайденный экземпляр — lost.
+func TestW2Inventory(t *testing.T) {
+	f := registrySetup(t)
+	auth, err := access.NewHTTP(f.users, "https://ui.example", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.NewHTTP(auth, health.Handler(func(context.Context) error { return nil }), f.registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(handler)
+	defer server.Close()
+	b := newBrowser(t, server)
+	csrf := b.login(t, "admin").CSRFToken
+	call := func(method, path, body string, want int, out any) {
+		t.Helper()
+		code, raw, _ := b.request(t, method, path, body, csrf, "https://ui.example", nil)
+		if code != want {
+			t.Fatalf("%s %s: %d (want %d) %s", method, path, code, want, raw)
+		}
+		if out != nil {
+			_ = json.Unmarshal(raw, out)
+		}
+	}
+	var loc, other warehouse.Location
+	call("POST", "/api/v1/warehouse/locations", fmt.Sprintf(`{"site_id":%q,"kind":"warehouse","name":"Склад"}`, siteID), 201, &loc)
+	call("POST", "/api/v1/warehouse/locations", fmt.Sprintf(`{"site_id":%q,"kind":"warehouse","name":"Склад 2"}`, siteID), 201, &other)
+	var pc, cable warehouse.Item
+	call("POST", "/api/v1/warehouse/items", `{"name":"Монитор","kind":"serial"}`, 201, &pc)
+	call("POST", "/api/v1/warehouse/items", `{"name":"Кабель","kind":"quantity","unit":"м"}`, 201, &cable)
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"receive","basis":"Приход","to_location":%q,"lines":[{"item_id":%q,"serial":"M-1"},{"item_id":%q,"serial":"M-2"},{"item_id":%q,"quantity":50}]}`, loc.ID, pc.ID, pc.ID, cable.ID), 201, nil)
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"receive","basis":"Приход","to_location":%q,"lines":[{"item_id":%q,"serial":"M-9"}]}`, other.ID, pc.ID), 201, nil)
+	var inv warehouse.InventoryDetail
+	call("POST", "/api/v1/warehouse/inventories", fmt.Sprintf(`{"location_id":%q,"basis":"Годовая"}`, loc.ID), 201, &inv)
+	if len(inv.Lines) != 3 || inv.State != "open" {
+		t.Fatalf("snapshot: %+v", inv)
+	}
+	call("POST", "/api/v1/warehouse/inventories", fmt.Sprintf(`{"location_id":%q,"basis":"Вторая"}`, loc.ID), 409, nil)
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"receive","basis":"Во время инвентаризации","to_location":%q,"lines":[{"item_id":%q,"quantity":1}]}`, loc.ID, cable.ID), 409, nil)
+	call("POST", "/api/v1/warehouse/inventories/"+inv.ID+"/close", "{}", 422, nil) // факт не введён
+	// факт: M-1 найден, M-2 нет, найден неучтённый M-5 и M-9 (числится на другом складе), кабеля 47 м
+	count := fmt.Sprintf(`{"serials":[{"item_id":%q,"serial":"M-1"},{"item_id":%q,"serial":"M-5"},{"item_id":%q,"serial":"m-9"}],"quantities":[{"item_id":%q,"quantity":47}]}`, pc.ID, pc.ID, pc.ID, cable.ID)
+	call("PUT", "/api/v1/warehouse/inventories/"+inv.ID+"/count", count, 200, &inv)
+	results := map[string]string{}
+	for _, l := range inv.Lines {
+		key := "qty"
+		if l.Serial != nil {
+			key = strings.ToUpper(*l.Serial)
+		}
+		results[key] = l.Result
+	}
+	if results["M-1"] != "ok" || results["M-2"] != "shortage" || results["M-5"] != "surplus" || results["M-9"] != "elsewhere" || results["qty"] != "shortage" {
+		t.Fatalf("discrepancies: %+v", results)
+	}
+	call("PUT", "/api/v1/warehouse/inventories/"+inv.ID+"/count", count, 200, nil) // повтор ввода идемпотентен
+	call("POST", "/api/v1/warehouse/inventories/"+inv.ID+"/close", "{}", 200, &inv)
+	if inv.State != "closed" || inv.Shortage == nil || inv.Surplus == nil {
+		t.Fatalf("closed: %+v", inv)
+	}
+	var state string
+	_ = f.pool.QueryRow(f.ctx, "SELECT state FROM warehouse.units WHERE serial='M-2'").Scan(&state)
+	if state != "lost" {
+		t.Fatal("missing unit must be lost", state)
+	}
+	_ = f.pool.QueryRow(f.ctx, "SELECT state||':'||location_id::text FROM warehouse.units WHERE serial='M-9'").Scan(&state)
+	if state != "in_stock:"+other.ID {
+		t.Fatal("unit found elsewhere is reported, not moved", state)
+	}
+	var stock struct{ Items []warehouse.StockRow }
+	call("GET", "/api/v1/warehouse/stock?location="+loc.ID, "", 200, &stock)
+	if len(stock.Items) != 1 || stock.Items[0].Quantity != 47 {
+		t.Fatalf("stock after inventory: %+v", stock.Items)
+	}
+	var v struct{ Discrepancies []warehouse.Discrepancy }
+	call("GET", "/api/v1/warehouse/verify", "", 200, &v)
+	if len(v.Discrepancies) != 0 {
+		t.Fatalf("stock must equal the journal after inventory: %+v", v.Discrepancies)
+	}
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"receive","basis":"После инвентаризации","to_location":%q,"lines":[{"item_id":%q,"quantity":1}]}`, loc.ID, cable.ID), 201, nil)
+	var list struct{ Items []warehouse.Inventory }
+	call("GET", "/api/v1/warehouse/inventories", "", 200, &list)
+	if len(list.Items) != 1 {
+		t.Fatal("inventory list", list.Items)
+	}
+}
