@@ -244,6 +244,21 @@
       "present",
       "missing"
      ]
+    },
+    "misses": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "missing_since": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -253,7 +268,56 @@
     "icmp",
     "first_seen",
     "last_seen",
-    "state"
+    "state",
+    "misses",
+    "missing_since"
+   ],
+   "additionalProperties": false
+  },
+  "DiscoveryHostEvent": {
+   "type": "object",
+   "properties": {
+    "ip": {
+     "type": "string",
+     "format": "ipv4"
+    },
+    "kind": {
+     "enum": [
+      "appeared",
+      "missing",
+      "returned"
+     ]
+    },
+    "run_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "at": {
+     "type": "string",
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "ip",
+    "kind",
+    "run_id",
+    "at"
+   ],
+   "additionalProperties": false
+  },
+  "DiscoveryHostEventList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "maxItems": 100,
+     "items": {
+      "$ref": "#/$defs/DiscoveryHostEvent"
+     }
+    }
+   },
+   "required": [
+    "items"
    ],
    "additionalProperties": false
   },
@@ -269,6 +333,9 @@
     "min_schedule_minutes": {
      "const": 60
     },
+    "miss_after": {
+     "const": 3
+    },
     "tcp_ports": {
      "type": "array",
      "items": {
@@ -280,6 +347,7 @@
     "max_prefix",
     "rate_per_second",
     "min_schedule_minutes",
+    "miss_after",
     "tcp_ports"
    ],
    "additionalProperties": false

@@ -221,15 +221,122 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 		t.Fatal(code)
 	}
 	code, raw = submit([]sources.FoundHost{{IP: "10.51.0.10", Ports: []int{22}}, {IP: "10.51.0.30", Ports: []int{443}}}, nil, signKey)
-	if code != 200 || json.Unmarshal(raw, &out) != nil || out.Found != 2 || out.New != 1 || out.Missing != 1 {
+	// C21: один пропуск — ещё не «пропал» (порог — 3 полных обследования подряд)
+	if code != 200 || json.Unmarshal(raw, &out) != nil || out.Found != 2 || out.New != 1 || out.Missing != 0 {
 		t.Fatalf("second result %d %s", code, raw)
 	}
 	// повтор того же результата — без изменений
-	if code, raw = submit(nil, nil, signKey); code != 200 || json.Unmarshal(raw, &out) != nil || out.Missing != 1 {
+	if code, raw = submit(nil, nil, signKey); code != 200 || json.Unmarshal(raw, &out) != nil || out.Missing != 0 || out.New != 1 {
 		t.Fatalf("replay of a finished run %d %s", code, raw)
 	}
+	hostState := func(ip string) sources.DiscoveryHost {
+		t.Helper()
+		raw := call("view51", "GET", "/api/v1/discovery/networks/"+n.ID+"/hosts", "", 200)
+		valid("DiscoveryHostPage", raw)
+		var l struct {
+			Items []sources.DiscoveryHost `json:"items"`
+		}
+		_ = json.Unmarshal(raw, &l)
+		for _, h := range l.Items {
+			if h.IP == ip {
+				return h
+			}
+		}
+		t.Fatal("host not listed", ip)
+		return sources.DiscoveryHost{}
+	}
+	pass := func(found []sources.FoundHost, errs []string) sources.DiscoveryOutcome {
+		t.Helper()
+		_ = json.Unmarshal(call("op51", "POST", "/api/v1/discovery/networks/"+n.ID+"/runs", "{}", 202), &run)
+		if code, _ := post("/api/v1/machine/discovery-jobs", []byte("{}")); code != 200 {
+			t.Fatal(code)
+		}
+		code, raw := submit(found, errs, signKey)
+		var o sources.DiscoveryOutcome
+		if code != 200 || json.Unmarshal(raw, &o) != nil {
+			t.Fatalf("pass %d %s", code, raw)
+		}
+		return o
+	}
+	if h := hostState("10.51.0.20"); h.State != "present" || h.Misses != 1 || h.MissingSince != nil {
+		t.Fatalf("one miss: %+v", h)
+	}
+	seen := []sources.FoundHost{{IP: "10.51.0.10", Ports: []int{22}}, {IP: "10.51.0.30", Ports: []int{443}}}
+	// обследование с ошибками (часть адресов не опрошена) пропуск не засчитывает (AC-31)
+	if o := pass(seen, []string{"icmp_unavailable"}); o.Missing != 0 || hostState("10.51.0.20").Misses != 1 {
+		t.Fatalf("partial pass counted a miss: %+v %+v", o, hostState("10.51.0.20"))
+	}
+	if o := pass(seen, nil); o.Missing != 0 || hostState("10.51.0.20").Misses != 2 {
+		t.Fatal("second complete miss", o)
+	}
+	if o := pass(seen, nil); o.Missing != 1 {
+		t.Fatal("third complete miss must mark the host missing", o)
+	}
+	if h := hostState("10.51.0.20"); h.State != "missing" || h.MissingSince == nil || h.Misses != 3 {
+		t.Fatalf("missing after the threshold: %+v", h)
+	}
+	if o := pass(append(seen, sources.FoundHost{IP: "10.51.0.20", Ports: []int{445}}), nil); o.New != 0 || o.Missing != 0 {
+		t.Fatal("return is not a new host", o)
+	}
+	if h := hostState("10.51.0.20"); h.State != "present" || h.Misses != 0 || h.MissingSince != nil {
+		t.Fatalf("returned host: %+v", h)
+	}
+	evRaw := call("view51", "GET", "/api/v1/discovery/networks/"+n.ID+"/events", "", 200)
+	valid("DiscoveryHostEventList", evRaw)
+	var ev struct {
+		Items []sources.DiscoveryHostEvent `json:"items"`
+	}
+	_ = json.Unmarshal(evRaw, &ev)
+	kinds := map[string]int{}
+	for _, e := range ev.Items {
+		if e.IP == "10.51.0.20" {
+			kinds[e.Kind]++
+		}
+	}
+	if len(ev.Items) != 5 || kinds["appeared"] != 1 || kinds["missing"] != 1 || kinds["returned"] != 1 || ev.Items[0].Kind != "returned" {
+		t.Fatalf("presence events: %+v", ev.Items)
+	}
+	// C21.02: присутствие актива — по совпадению его адресов с узлами обследований (контракт c21-presence)
+	presenceRaw, err := os.ReadFile("../../contracts/c21-presence.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pdoc, _ := jsonschema.UnmarshalJSON(strings.NewReader(string(presenceRaw)))
+	if err = compiler.AddResource("urn:surveyscan:c21:presence:1:0", pdoc); err != nil {
+		t.Fatal(err)
+	}
+	pschema, err := compiler.Compile("urn:surveyscan:c21:presence:1:0#/$defs/AssetPresence")
+	if err != nil {
+		t.Fatal(err)
+	}
+	presence := func(uid string) app.AssetPresence {
+		t.Helper()
+		raw := call("view51", "GET", "/api/v1/assets/"+uid+"/presence", "", 200)
+		inst, _ := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
+		if e := pschema.Validate(inst); e != nil {
+			t.Fatalf("AssetPresence violates contract: %v %s", e, raw)
+		}
+		var p app.AssetPresence
+		_ = json.Unmarshal(raw, &p)
+		return p
+	}
+	obs := f.observation("1")
+	obs.Sections[2].Records = []map[string]any{{"name": "eth0", "mac": "aa:bb:cc:dd:ee:20", "addresses": []any{map[string]any{"ip": "10.51.0.20", "prefix": 24}}}}
+	res := f.ingest(t, obs)
+	if res.AssetID == nil {
+		t.Fatalf("asset for presence: %+v", res)
+	}
+	if p := presence(*res.AssetID); p.State != "present" || len(p.Items) != 1 || p.Items[0].IP != "10.51.0.20" || p.Items[0].NetworkName == "" || p.MissAfter != 3 {
+		t.Fatalf("asset presence: %+v", p)
+	}
+	for i := 0; i < 3; i++ {
+		pass(seen, nil)
+	}
+	if p := presence(*res.AssetID); p.State != "missing" || p.Items[0].MissingSince == nil {
+		t.Fatalf("asset presence after 3 misses: %+v", p)
+	}
 	var audits int
-	if err := f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action LIKE 'discovery.%'", tenant).Scan(&audits); err != nil || audits != 3 {
+	if err := f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action LIKE 'discovery.%'", tenant).Scan(&audits); err != nil || audits != 10 {
 		t.Fatal("audit of network creation and runs", audits, err)
 	}
 	// C51.03 шаг B: цель сбора из найденного узла — учётка, отпечаток ключа хоста, регистрация агента цели через grant

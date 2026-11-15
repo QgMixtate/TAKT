@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {api,ApiError,errorMessage,type CollectCredential,type CollectKind,type CollectSecret,type DiscoveryHost,type DiscoveryNetwork,type DiscoveryNetworkPage,type DiscoveryProbe,type DiscoveryRun,type RemoteTarget,type Source,type WinRMTrust} from './api';
+import {api,ApiError,errorMessage,type CollectCredential,type CollectKind,type CollectSecret,type DiscoveryHost,type DiscoveryHostEvent,type DiscoveryNetwork,type DiscoveryNetworkPage,type DiscoveryProbe,type DiscoveryRun,type RemoteTarget,type Source,type WinRMTrust} from './api';
 
 // C51 — «Обследования сети» (ADR D13): вкладки «Подсети», «Учётки сбора», «Цели сбора». Подсети и учётки заводит
 // администратор, обследование запускает оператор, результаты видят все. Формы — в боковой панели.
@@ -38,11 +38,13 @@ function Field({label,hint,children}:{label:string;hint?:ReactNode;children:Reac
  return <label className="field"><span>{label}</span>{children}{hint?<small>{hint}</small>:null}</label>;
 }
 
+const eventKind:Record<DiscoveryHostEvent['kind'],[string,string]>={appeared:['появился','state-ok'],returned:['вернулся','state-ok'],missing:['пропал','state-unavailable']};
+
 function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated}:{csrf:string;isAdmin:boolean;canRun:boolean;onExpired:()=>void;onTargetCreated:()=>void}){
- const [page,setPage]=useState<DiscoveryNetworkPage|null>(null),[open,setOpen]=useState(''),[hosts,setHosts]=useState<DiscoveryHost[]>([]),[runs,setRuns]=useState<DiscoveryRun[]>([]);
+ const [page,setPage]=useState<DiscoveryNetworkPage|null>(null),[open,setOpen]=useState(''),[hosts,setHosts]=useState<DiscoveryHost[]>([]),[runs,setRuns]=useState<DiscoveryRun[]>([]),[events,setEvents]=useState<DiscoveryHostEvent[]>([]);
  const [error,setError]=useState<unknown>(null),[busy,setBusy]=useState(false),[creating,setCreating]=useState(false),[collect,setCollect]=useState<DiscoveryHost|null>(null);
  const load=()=>{api.discoveryNetworks().then(p=>{setPage(p);if(!open&&p.items[0])setOpen(p.items[0].network_id)}).catch(e=>{setError(e);expired(e,onExpired)})};
- const loadOne=(id:string)=>{Promise.all([api.discoveryHosts(id),api.discoveryRuns(id)]).then(([h,r])=>{setHosts(h.items);setRuns(r.items)}).catch(e=>{setError(e);expired(e,onExpired)})};
+ const loadOne=(id:string)=>{Promise.all([api.discoveryHosts(id),api.discoveryRuns(id),api.discoveryEvents(id)]).then(([h,r,v])=>{setHosts(h.items);setRuns(r.items);setEvents(v.items)}).catch(e=>{setError(e);expired(e,onExpired)})};
  useEffect(load,[]);
  useEffect(()=>{if(open)loadOne(open)},[open]);
  useEffect(()=>{const active=page?.items.some(n=>n.last_run&&(n.last_run.state==='queued'||n.last_run.state==='running'));if(!active)return;const t=setInterval(()=>{load();if(open)loadOne(open)},5000);return ()=>clearInterval(t)},[page,open]);
@@ -62,14 +64,15 @@ function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated}:{csrf:strin
     <td className="actions">{canRun&&n.active?<button className="button small" disabled={busy||r?.state==='queued'||r?.state==='running'} onClick={()=>void act(()=>api.startDiscovery(n.network_id,csrf))}>Обследовать</button>:null}
      {isAdmin?<button className="text-link" disabled={busy} onClick={()=>void act(()=>api.patchDiscoveryNetwork(n.network_id,csrf,{revision:n.revision,active:!n.active}))}>{n.active?'Отключить':'Включить'}</button>:null}</td>
    </tr>})}</tbody></table></div>}
-   <p className="panel-note">Правила: подсеть IPv4 не шире /{l.max_prefix} ({2**(32-l.max_prefix)} адресов), не более {l.rate_per_second} проб в секунду, расписание не чаще раза в {l.min_schedule_minutes} мин. TCP-порты: {l.tcp_ports.join(', ')}. Вне заведённых подсетей ничего не сканируется.</p>
+   <p className="panel-note">Правила: подсеть IPv4 не шире /{l.max_prefix} ({2**(32-l.max_prefix)} адресов), не более {l.rate_per_second} проб в секунду, расписание не чаще раза в {l.min_schedule_minutes} мин. TCP-порты: {l.tcp_ports.join(', ')}. Вне заведённых подсетей ничего не сканируется. Узел считается пропавшим только после {l.miss_after} полных обследований подряд без него; обследование с ошибками пропуском не считается.</p>
   </div>
   {net?<div className="table-panel"><div className="table-toolbar"><h2>Узлы {net.name} <span>{hosts.length}</span></h2><small className="mono muted">{net.cidr}</small></div>
    {hosts.length===0?<div className="empty"><span>◌</span><h3>Узлов пока нет</h3><p>Запустите обследование подсети.</p></div>:<div className="table-scroll"><table><thead><tr><th>Адрес</th><th>MAC</th><th>Открытые порты</th><th>Пинг</th><th>Впервые</th><th>Последний раз</th><th>Состояние</th>{isAdmin?<th/>:null}</tr></thead><tbody>
     {hosts.map(h=><tr key={h.ip}><td className="mono">{h.ip}</td><td className="mono">{h.mac??'—'}</td><td>{h.ports.length?h.ports.join(', '):'—'}</td><td>{h.icmp?'да':'—'}</td><td className="time">{time(h.first_seen)}</td><td className="time">{time(h.last_seen)}</td>
-     <td><span className={'badge '+(h.state==='present'?'state-ok':'state-unavailable')}><i/>{h.state==='present'?'на месте':'пропал'}</span></td>
+     <td><span className={'badge '+(h.state==='present'?(h.misses?'state-partial':'state-ok'):'state-unavailable')}><i/>{h.state==='present'?(h.misses?'не найден '+h.misses+' из '+l.miss_after:'на месте'):'пропал'}</span>{h.state==='missing'&&h.missing_since?<small>с {time(h.missing_since)}</small>:null}</td>
      {isAdmin?<td className="actions"><button className="button small" onClick={()=>setCollect(h)}>Собирать…</button></td>:null}</tr>)}
    </tbody></table></div>}
+   {events.length?<div className="history"><h3>Изменения присутствия</h3><ul>{events.slice(0,30).map(v=><li key={v.ip+v.run_id+v.kind}><span className={'badge '+eventKind[v.kind][1]}><i/>{eventKind[v.kind][0]}</span> <span className="mono">{v.ip}</span> · {time(v.at)}</li>)}</ul></div>:null}
    {runs.length?<div className="history"><h3>История обследований</h3><ul>{runs.map(r=><li key={r.run_id}><span className={'badge '+runState[r.state][1]}><i/>{runState[r.state][0]}</span> {time(r.requested_at)} · {r.trigger==='manual'?'вручную':'по расписанию'}{r.found!==null?' · найдено '+r.found+' из '+r.addresses+' адресов':''}{r.errors.length?' · '+r.errors.map(errName).join('; '):''}</li>)}</ul></div>:null}
   </div>:null}
   {creating?<Drawer eyebrow="Обследования сети" title="Новая подсеть" onClose={()=>setCreating(false)}><NetworkForm busy={busy} onExpired={onExpired} onCreate={b=>void act(async()=>{const n=await api.createDiscoveryNetwork(csrf,b);setCreating(false);setOpen(n.network_id)})}/>{error?<div className="error" role="alert">{errorMessage(error)}</div>:null}</Drawer>:null}

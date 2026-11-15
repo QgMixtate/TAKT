@@ -1,0 +1,98 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:surveyscan:c21:presence:1:0",
+ "title": "Присутствие актива в сети по обследованиям подсетей (C21.02)",
+ "$defs": {
+  "AssetPresence": {
+   "description": "GET /api/v1/assets/{asset_uid}/presence (assets:read)",
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "miss_after": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "state": {
+     "enum": [
+      "present",
+      "missing",
+      "unknown"
+     ]
+    },
+    "items": {
+     "type": "array",
+     "maxItems": 64,
+     "items": {
+      "$ref": "#/$defs/HostPresence"
+     }
+    }
+   },
+   "required": [
+    "asset_uid",
+    "miss_after",
+    "state",
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "HostPresence": {
+   "type": "object",
+   "properties": {
+    "network_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "network_name": {
+     "type": "string"
+    },
+    "ip": {
+     "type": "string",
+     "format": "ipv4"
+    },
+    "state": {
+     "enum": [
+      "present",
+      "missing"
+     ]
+    },
+    "misses": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "first_seen": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "last_seen": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "missing_since": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "network_id",
+    "network_name",
+    "ip",
+    "state",
+    "misses",
+    "first_seen",
+    "last_seen",
+    "missing_since"
+   ],
+   "additionalProperties": false
+  }
+ }
+}

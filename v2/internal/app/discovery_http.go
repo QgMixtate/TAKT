@@ -49,7 +49,7 @@ func (r *Registry) discoveryDo(w http.ResponseWriter, req *http.Request, status 
 }
 
 func discoveryLimits() map[string]any {
-	return map[string]any{"max_prefix": sources.DiscoveryMaxPrefix, "rate_per_second": sources.DiscoveryRate, "min_schedule_minutes": sources.DiscoveryMinPeriod, "tcp_ports": sources.DiscoveryPorts}
+	return map[string]any{"max_prefix": sources.DiscoveryMaxPrefix, "rate_per_second": sources.DiscoveryRate, "min_schedule_minutes": sources.DiscoveryMinPeriod, "miss_after": sources.DiscoveryMissAfter, "tcp_ports": sources.DiscoveryPorts}
 }
 
 func (r *Registry) discoveryHandlers() map[string]route51 {
@@ -127,6 +127,18 @@ func (r *Registry) discoveryHandlers() map[string]route51 {
 					return nil, e
 				}
 				items, e := src51.DiscoveryHosts(ctx, tx, id.TenantID, req.PathValue("network_id"))
+				return map[string]any{"items": items}, e
+			})
+		})},
+		"GET /api/v1/discovery/networks/{network_id}/events": {"sources:read", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if _, ok := queryOnly(w, req); !ok {
+				return
+			}
+			r.discoveryDo(w, req, http.StatusOK, "sources:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+				if _, e := src51.DiscoveryNetwork(ctx, tx, id.TenantID, req.PathValue("network_id")); e != nil {
+					return nil, e
+				}
+				items, e := src51.DiscoveryHostEvents(ctx, tx, id.TenantID, req.PathValue("network_id"), 100)
 				return map[string]any{"items": items}, e
 			})
 		})},

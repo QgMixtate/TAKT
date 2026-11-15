@@ -84,6 +84,21 @@ type DiscoveryHost struct {
 	FirstSeen time.Time `json:"first_seen"`
 	LastSeen  time.Time `json:"last_seen"`
 	State     string    `json:"state"`
+	// C21: подряд засчитанные пропуски (полные обследования без узла); missing — при DiscoveryMissAfter.
+	Misses       int        `json:"misses"`
+	MissingSince *time.Time `json:"missing_since"`
+}
+
+// DiscoveryMissAfter — сколько подряд полных обследований без узла нужно, чтобы считать его пропавшим (C21.01:
+// одного пропуска ICMP/TCP мало — узел мог быть выключен на минуту, а проба потеряна).
+const DiscoveryMissAfter = 3
+
+// DiscoveryHostEvent — переход присутствия узла (доказательство: какое обследование и когда).
+type DiscoveryHostEvent struct {
+	IP   string    `json:"ip"`
+	Kind string    `json:"kind"`
+	Run  string    `json:"run_id"`
+	At   time.Time `json:"at"`
 }
 
 // DiscoveryJob — задание для collector.
@@ -280,7 +295,7 @@ FROM sources.discovery_runs WHERE tenant_id=$1 AND network_id=$2 ORDER BY reques
 }
 
 func (Store) DiscoveryHosts(ctx context.Context, tx pgx.Tx, tenant, network string) ([]DiscoveryHost, error) {
-	rows, e := tx.Query(ctx, `SELECT host(ip),mac,ports,icmp,first_seen,last_seen,state FROM sources.discovery_hosts WHERE tenant_id=$1 AND network_id=$2 ORDER BY ip`, tenant, network)
+	rows, e := tx.Query(ctx, `SELECT host(ip),mac,ports,icmp,first_seen,last_seen,state,misses,missing_since FROM sources.discovery_hosts WHERE tenant_id=$1 AND network_id=$2 ORDER BY ip`, tenant, network)
 	if e != nil {
 		return nil, e
 	}
@@ -288,10 +303,28 @@ func (Store) DiscoveryHosts(ctx context.Context, tx pgx.Tx, tenant, network stri
 	out := []DiscoveryHost{}
 	for rows.Next() {
 		var h DiscoveryHost
-		if e = rows.Scan(&h.IP, &h.MAC, &h.Ports, &h.ICMP, &h.FirstSeen, &h.LastSeen, &h.State); e != nil {
+		if e = rows.Scan(&h.IP, &h.MAC, &h.Ports, &h.ICMP, &h.FirstSeen, &h.LastSeen, &h.State, &h.Misses, &h.MissingSince); e != nil {
 			return nil, e
 		}
 		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// DiscoveryHostEvents — последние переходы присутствия узлов подсети (новые сверху).
+func (Store) DiscoveryHostEvents(ctx context.Context, tx pgx.Tx, tenant, network string, limit int) ([]DiscoveryHostEvent, error) {
+	rows, e := tx.Query(ctx, `SELECT host(ip),kind,run_id::text,at FROM sources.discovery_host_events WHERE tenant_id=$1 AND network_id=$2 ORDER BY at DESC, ip LIMIT $3`, tenant, network, limit)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	out := []DiscoveryHostEvent{}
+	for rows.Next() {
+		var v DiscoveryHostEvent
+		if e = rows.Scan(&v.IP, &v.Kind, &v.Run, &v.At); e != nil {
+			return nil, e
+		}
+		out = append(out, v)
 	}
 	return out, rows.Err()
 }
@@ -362,7 +395,9 @@ type DiscoveryOutcome struct {
 }
 
 // CompleteDiscovery принимает результат обследования от collector этой подсети. Узлы вне подсети отбрасываются (scope
-// не расширяется). Present → missing для узлов, не найденных этим обследованием; найденный снова — present.
+// не расширяется). Присутствие (C21): найденный узел — present, пропуски сброшены (был missing — «вернулся»);
+// не найденный в ПОЛНОМ обследовании (без ошибок) получает пропуск, после DiscoveryMissAfter подряд — missing.
+// Обследование с ошибками пропуски не засчитывает: отказ источника не делает узлы пропавшими.
 // Повтор того же результата для завершённого обследования — без изменений (идемпотентно).
 func (Store) CompleteDiscovery(ctx context.Context, tx pgx.Tx, tenant, collector, run string, addresses int, hosts []FoundHost, errs []string) (DiscoveryOutcome, error) {
 	out := DiscoveryOutcome{Run: run}
@@ -424,28 +459,65 @@ WHERE r.tenant_id=$1 AND r.run_id=$2 AND n.collector_id=$3 FOR UPDATE OF r`, ten
 	if e = tx.QueryRow(ctx, "SELECT now()").Scan(&now); e != nil {
 		return out, e
 	}
+	event := func(ip, kind string) error {
+		_, e := tx.Exec(ctx, "INSERT INTO sources.discovery_host_events(tenant_id,network_id,ip,run_id,kind,at) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING", tenant, network, ip, run, kind, now)
+		return e
+	}
 	for ip, h := range clean {
-		var inserted bool
-		if e = tx.QueryRow(ctx, `INSERT INTO sources.discovery_hosts(tenant_id,network_id,ip,mac,ports,icmp,first_seen,last_seen,last_run_id,state) VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8,'present')
-ON CONFLICT (tenant_id,network_id,ip) DO UPDATE SET mac=COALESCE(excluded.mac,sources.discovery_hosts.mac),ports=excluded.ports,icmp=excluded.icmp,last_seen=excluded.last_seen,last_run_id=excluded.last_run_id,state='present'
-RETURNING (xmax=0)`, tenant, network, ip, h.MAC, h.Ports, h.ICMP, now, run).Scan(&inserted); e != nil {
+		var inserted, returned bool
+		if e = tx.QueryRow(ctx, `WITH prev AS (SELECT state FROM sources.discovery_hosts WHERE tenant_id=$1 AND network_id=$2 AND ip=$3)
+INSERT INTO sources.discovery_hosts(tenant_id,network_id,ip,mac,ports,icmp,first_seen,last_seen,last_run_id,state) VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8,'present')
+ON CONFLICT (tenant_id,network_id,ip) DO UPDATE SET mac=COALESCE(excluded.mac,sources.discovery_hosts.mac),ports=excluded.ports,icmp=excluded.icmp,last_seen=excluded.last_seen,last_run_id=excluded.last_run_id,state='present',
+ misses=0,missing_since=NULL,returns=sources.discovery_hosts.returns+CASE WHEN sources.discovery_hosts.state='missing' THEN 1 ELSE 0 END
+RETURNING (xmax=0),COALESCE((SELECT state FROM prev),'')='missing'`, tenant, network, ip, h.MAC, h.Ports, h.ICMP, now, run).Scan(&inserted, &returned); e != nil {
 			return out, discoveryConflict(e)
 		}
-		if inserted {
+		switch {
+		case inserted:
 			out.New++
+			e = event(ip, "appeared")
+		case returned:
+			e = event(ip, "returned")
+		}
+		if e != nil {
+			return out, e
 		}
 	}
 	out.Found = len(clean)
 	final := "done"
-	if len(clean) == 0 && len(cleanErrs) > 0 {
-		final = "failed" // ничего не найдено и есть ошибки — не отмечаем все узлы пропавшими молча
-	} else {
-		tag, e := tx.Exec(ctx, "UPDATE sources.discovery_hosts SET state='missing' WHERE tenant_id=$1 AND network_id=$2 AND state='present' AND last_run_id<>$3", tenant, network, run)
+	switch {
+	case len(clean) == 0 && len(cleanErrs) > 0:
+		final = "failed" // ничего не найдено и есть ошибки — пропуски не засчитываются
+	case len(cleanErrs) == 0:
+		// полный проход: пропуск каждому present-узлу, которого нет в этом обследовании; на пороге — missing
+		rows, e := tx.Query(ctx, `UPDATE sources.discovery_hosts SET misses=misses+1,
+ state=CASE WHEN misses+1>=$4 THEN 'missing' ELSE state END, missing_since=CASE WHEN misses+1>=$4 THEN $5::timestamptz ELSE missing_since END
+WHERE tenant_id=$1 AND network_id=$2 AND state='present' AND last_run_id<>$3 RETURNING host(ip),state`, tenant, network, run, DiscoveryMissAfter, now)
 		if e != nil {
 			return out, e
 		}
-		out.Missing = int(tag.RowsAffected())
+		gone, e := pgx.CollectRows(rows, func(r pgx.CollectableRow) (string, error) {
+			var ip, st string
+			e := r.Scan(&ip, &st)
+			if st != "missing" {
+				ip = ""
+			}
+			return ip, e
+		})
+		if e != nil {
+			return out, e
+		}
+		for _, ip := range gone {
+			if ip == "" {
+				continue
+			}
+			out.Missing++
+			if e = event(ip, "missing"); e != nil {
+				return out, e
+			}
+		}
 	}
+	// обследование с ошибками, но с найденными узлами: найденные обновлены, пропуски не засчитаны (неполный проход)
 	_, e = tx.Exec(ctx, `UPDATE sources.discovery_runs SET state=$3,finished_at=now(),addresses=$4,found=$5,new_hosts=$6,missing=$7,errors=$8 WHERE tenant_id=$1 AND run_id=$2`,
 		tenant, run, final, addresses, out.Found, out.New, out.Missing, cleanErrs)
 	return out, e
@@ -458,4 +530,39 @@ func (Store) DiscoveryTenants(ctx context.Context, tx pgx.Tx) ([]string, error) 
 		return nil, e
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
+// HostPresence — присутствие адреса актива по обследованию подсети (C21.02).
+type HostPresence struct {
+	Network      string     `json:"network_id"`
+	NetworkName  string     `json:"network_name"`
+	IP           string     `json:"ip"`
+	State        string     `json:"state"`
+	Misses       int        `json:"misses"`
+	FirstSeen    time.Time  `json:"first_seen"`
+	LastSeen     time.Time  `json:"last_seen"`
+	MissingSince *time.Time `json:"missing_since"`
+}
+
+// DiscoveryPresence — узлы обследований с этими адресами (адреса актива из его сетевых фактов).
+func (Store) DiscoveryPresence(ctx context.Context, tx pgx.Tx, tenant string, ips []string) ([]HostPresence, error) {
+	out := []HostPresence{}
+	if len(ips) == 0 {
+		return out, nil
+	}
+	rows, e := tx.Query(ctx, `SELECT h.network_id::text,n.name,host(h.ip),h.state,h.misses,h.first_seen,h.last_seen,h.missing_since
+FROM sources.discovery_hosts h JOIN sources.discovery_networks n USING(tenant_id,network_id)
+WHERE h.tenant_id=$1 AND host(h.ip)=ANY($2::text[]) ORDER BY h.ip,n.name LIMIT 64`, tenant, ips)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p HostPresence
+		if e = rows.Scan(&p.Network, &p.NetworkName, &p.IP, &p.State, &p.Misses, &p.FirstSeen, &p.LastSeen, &p.MissingSince); e != nil {
+			return nil, e
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
