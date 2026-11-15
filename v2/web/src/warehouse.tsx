@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {api,ApiError,errorMessage,type Subject,type WLocation,type WItem,type WUnit,type WStock,type WMovement,type WOperation} from './api';
+import {api,ApiError,errorMessage,type Subject,type WLocation,type WItem,type WUnit,type WStock,type WMovement,type WOperation,type WReservation} from './api';
 
 // Волна 2: склад и жизненный цикл оборудования (decisions/C41-w2-scope-and-model.md). Операции — одной записью журнала
 // с номером акта; акт печатается из браузера («Печать» → «Сохранить как PDF»).
@@ -8,7 +8,7 @@ const stateName:Record<WUnit['state'],[string,string]>={in_stock:['на скла
 export const kindName:Record<WMovement['kind'],string>={receive:'Приход',issue:'Выдача',return:'Возврат',transfer:'Перемещение',repair_out:'В ремонт',repair_in:'Из ремонта',install:'Установка на актив',remove:'Снятие с актива',write_off:'Списание',adjust:'Корректировка',reverse:'Сторно'};
 const actTitle:Partial<Record<WMovement['kind'],string>>={receive:'Акт приёма на склад',issue:'Акт выдачи',return:'Акт возврата',transfer:'Акт перемещения',repair_out:'Акт передачи в ремонт',repair_in:'Акт приёма из ремонта',install:'Акт установки комплектующего',remove:'Акт снятия комплектующего',write_off:'Акт списания'};
 const fmt=(v:string)=>new Date(v).toLocaleString('ru-RU');
-type Tab='units'|'stock'|'operation'|'journal'|'catalog';
+type Tab='units'|'stock'|'reservations'|'operation'|'journal'|'catalog';
 type Ref={locations:WLocation[];items:WItem[];subjects:Subject[]};
 
 export function WarehouseView({csrf,canWrite,isAdmin,onOpenAsset,onExpired}:{csrf:string;canWrite:boolean;isAdmin:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
@@ -19,8 +19,8 @@ export function WarehouseView({csrf,canWrite,isAdmin,onOpenAsset,onExpired}:{csr
  const openAct=(id:string)=>api.wMovement(id).then(setAct).catch(fail);
  return <div className="stack warehouse">
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
-  <div className="tabs" role="tablist">{([['units','Экземпляры'],['stock','Остатки'],['operation','Операция'],['journal','Журнал и акты'],['catalog','Справочники']] as [Tab,string][]).filter(([t])=>t!=='operation'||canWrite).map(([t,n])=><button key={t} role="tab" aria-selected={tab===t} className={tab===t?'active':''} onClick={()=>setTab(t)}>{n}</button>)}</div>
-  {tab==='units'?<Units ref_={ref} onOpenAsset={onOpenAsset} onFail={fail}/>:tab==='stock'?<Stock ref_={ref} onFail={fail}/>:tab==='operation'?<OperationForm ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onDone={m=>{setAct(m);setVersion(v=>v+1)}}/>:tab==='journal'?<Journal ref_={ref} onOpen={id=>void openAct(id)} onFail={fail}/>:<Catalog ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onChanged={()=>setVersion(v=>v+1)}/>}
+  <div className="tabs" role="tablist">{([['units','Экземпляры'],['stock','Остатки'],['reservations','Резервы'],['operation','Операция'],['journal','Журнал и акты'],['catalog','Справочники']] as [Tab,string][]).filter(([t])=>t!=='operation'||canWrite).map(([t,n])=><button key={t} role="tab" aria-selected={tab===t} className={tab===t?'active':''} onClick={()=>setTab(t)}>{n}</button>)}</div>
+  {tab==='units'?<Units ref_={ref} onOpenAsset={onOpenAsset} onFail={fail}/>:tab==='stock'?<Stock ref_={ref} onFail={fail}/>:tab==='reservations'?<Reservations ref_={ref} csrf={csrf} canWrite={canWrite} onFail={fail}/>:tab==='operation'?<OperationForm ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onDone={m=>{setAct(m);setVersion(v=>v+1)}}/>:tab==='journal'?<Journal ref_={ref} csrf={csrf} canWrite={canWrite} onOpen={id=>void openAct(id)} onReversed={m=>setAct(m)} onFail={fail}/>:<Catalog ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onChanged={()=>setVersion(v=>v+1)}/>}
   {act?<ActView act={act} ref_={ref} onClose={()=>setAct(null)}/>:null}
  </div>;
 }
@@ -101,14 +101,17 @@ function OperationForm({ref_:r,csrf,isAdmin,onFail,onDone}:{ref_:Ref;csrf:string
  </div>;
 }
 
-function Journal({ref_:r,onOpen,onFail}:{ref_:Ref;onOpen:(id:string)=>void;onFail:(e:unknown)=>void}){
- const [items,setItems]=useState<WMovement[]|null>(null);
- useEffect(()=>{api.wMovements().then(p=>setItems(p.items)).catch(onFail)},[]);
+const reversible=new Set(['issue','return','transfer','repair_in','repair_out','install','remove','receive']);
+function Journal({ref_:r,csrf,canWrite,onOpen,onReversed,onFail}:{ref_:Ref;csrf:string;canWrite:boolean;onOpen:(id:string)=>void;onReversed:(m:WMovement)=>void;onFail:(e:unknown)=>void}){
+ const [items,setItems]=useState<WMovement[]|null>(null),[n,setN]=useState(0);
+ useEffect(()=>{api.wMovements().then(p=>setItems(p.items)).catch(onFail)},[n]);
+ const reversed=new Set((items??[]).filter(m=>m.reverses).map(m=>m.reverses));
+ async function reverse(m:WMovement){const basis=window.prompt('Сторно акта '+m.act_no+'. Основание:');if(!basis?.trim())return;try{onReversed(await api.wReverse(csrf,m.movement_id,basis.trim()));setN(x=>x+1)}catch(e){onFail(e)}}
  return <div className="table-panel"><div className="table-toolbar"><h2>Журнал движений <span>{items?.length??'…'}</span></h2></div>
   {items&&items.length===0?<div className="empty"><span>▤</span><h3>Операций пока нет</h3></div>:<div className="table-scroll"><table><thead><tr><th>Акт</th><th>Операция</th><th>Когда</th><th>Откуда → куда</th><th>Основание</th><th/></tr></thead><tbody>{(items??[]).map(m=><tr key={m.movement_id}>
    <td className="mono">{m.act_no}</td><td>{kindName[m.kind]}</td><td className="time">{fmt(m.occurred_at)}</td>
    <td>{m.from_location?locName(r,m.from_location):m.from_holder?subjName(r,m.from_holder):m.asset_uid&&m.kind==='remove'?'актив '+m.asset_uid.slice(0,8):'—'} → {m.to_location?locName(r,m.to_location):m.to_holder?subjName(r,m.to_holder):m.asset_uid&&m.kind==='install'?'актив '+m.asset_uid.slice(0,8):m.kind==='write_off'?'списано':'—'}</td>
-   <td>{m.basis}</td><td><button className="button small" onClick={()=>onOpen(m.movement_id)}>Акт</button></td></tr>)}</tbody></table></div>}
+   <td>{m.basis}{m.reverses?<small>сторно</small>:reversed.has(m.movement_id)?<small>сторнирован</small>:null}</td><td className="actions"><button className="button small" onClick={()=>onOpen(m.movement_id)}>Акт</button>{canWrite&&reversible.has(m.kind)&&!reversed.has(m.movement_id)?<button className="text-link" onClick={()=>void reverse(m)}>Сторно</button>:null}</td></tr>)}</tbody></table></div>}
  </div>;
 }
 
@@ -145,4 +148,36 @@ function Catalog({ref_:r,csrf,isAdmin,onFail,onChanged}:{ref_:Ref;csrf:string;is
    <input aria-label="Категория" value={item.category} onChange={e=>setItem({...item,category:e.target.value})} placeholder="Категория (необяз.)"/>
    <button className="button small" disabled={busy||!item.name.trim()} onClick={()=>void act(async()=>{await api.wCreateItem(csrf,{name:item.name.trim(),kind:item.kind,unit:item.unit,category:item.category.trim()||undefined});setItem({...item,name:''})})}>Добавить</button></div>:<p className="panel-note">Справочники ведёт администратор.</p>}
  </div></div>;
+}
+
+function Reservations({ref_:r,csrf,canWrite,onFail}:{ref_:Ref;csrf:string;canWrite:boolean;onFail:(e:unknown)=>void}){
+ const [items,setItems]=useState<WReservation[]|null>(null),[n,setN]=useState(0),[units,setUnits]=useState<WUnit[]>([]),[busy,setBusy]=useState(false);
+ const [what,setWhat]=useState(''),[loc,setLoc]=useState(''),[qty,setQty]=useState(''),[holder,setHolder]=useState(''),[basis,setBasis]=useState(''),[days,setDays]=useState('7');
+ useEffect(()=>{api.wReservations().then(p=>setItems(p.items)).catch(onFail);api.wUnits({state:'in_stock'}).then(p=>setUnits(p.items)).catch(onFail)},[n]);
+ const qtyItem=what.startsWith('q:')?what.slice(2):'';
+ async function reserve(){setBusy(true);try{const exp=new Date(Date.now()+Number(days)*86400000).toISOString();await api.wReserve(csrf,qtyItem?{item_id:qtyItem,location_id:loc,quantity:Number(qty),holder_id:holder,basis:basis.trim(),expires_at:exp}:{unit_id:what,holder_id:holder,basis:basis.trim(),expires_at:exp});setWhat('');setQty('');setBasis('');setN(x=>x+1)}catch(e){onFail(e)}finally{setBusy(false)}}
+ async function cancel(id:string){try{await api.wCancelReservation(csrf,id);setN(x=>x+1)}catch(e){onFail(e)}}
+ return <div className="table-panel"><div className="table-toolbar"><h2>Действующие резервы <span>{items?.length??'…'}</span></h2></div>
+  {items&&items.length===0?<div className="empty"><span>◇</span><h3>Резервов нет</h3><p>Резерв закрепляет экземпляр или количество за сотрудником до срока; выдать его другому нельзя.</p></div>:
+  <div className="table-scroll"><table><thead><tr><th>Что</th><th>За кем</th><th>Основание</th><th>До</th><th/></tr></thead><tbody>{(items??[]).map(x=><tr key={x.reservation_id}><td>{x.label}{x.quantity?' — '+x.quantity:''}{x.location_id?<small>{locName(r,x.location_id)}</small>:null}</td><td>{subjName(r,x.holder_id)}</td><td>{x.basis}</td><td className="time">{fmt(x.expires_at)}</td><td>{canWrite?<button className="text-link" onClick={()=>void cancel(x.reservation_id)}>Отменить</button>:null}</td></tr>)}</tbody></table></div>}
+  {canWrite?<div className="wh-line">
+   <select aria-label="Что резервировать" value={what} onChange={e=>setWhat(e.target.value)}><option value="">экземпляр или позиция…</option>{units.map(u=><option key={u.unit_id} value={u.unit_id}>{u.item_name} · {u.serial}</option>)}<optgroup label="Количество">{r.items.filter(i=>i.kind==='quantity').map(i=><option key={i.item_id} value={'q:'+i.item_id}>{i.name} ({i.unit})</option>)}</optgroup></select>
+   {qtyItem?<><select aria-label="Место резерва" value={loc} onChange={e=>setLoc(e.target.value)}><option value="">склад…</option>{r.locations.filter(l=>l.kind!=='repair').map(l=><option key={l.location_id} value={l.location_id}>{locName(r,l.location_id)}</option>)}</select><input aria-label="Количество резерва" type="number" min="0" step="any" value={qty} onChange={e=>setQty(e.target.value)} placeholder="кол-во"/></>:null}
+   <select aria-label="За кем" value={holder} onChange={e=>setHolder(e.target.value)}><option value="">за кем…</option>{r.subjects.filter(s=>s.active).map(s=><option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}</select>
+   <input aria-label="Основание резерва" value={basis} onChange={e=>setBasis(e.target.value)} placeholder="Основание"/>
+   <select aria-label="Срок" value={days} onChange={e=>setDays(e.target.value)}>{['1','3','7','14','30','90'].map(d=><option key={d} value={d}>на {d} дн.</option>)}</select>
+   <button className="button small" disabled={busy||!what||!holder||!basis.trim()||(!!qtyItem&&(!loc||!(Number(qty)>0)))} onClick={()=>void reserve()}>Зарезервировать</button></div>:null}
+ </div>;
+}
+
+// Складская история актива в карточке: экземпляр (если актив учтён на складе), установленные комплектующие, операции.
+export function AssetWarehouseBlock({asset,onExpired}:{asset:string;onExpired:()=>void}){
+ const [units,setUnits]=useState<WUnit[]|null>(null),[moves,setMoves]=useState<WMovement[]>([]);
+ useEffect(()=>{let live=true;Promise.all([api.wUnits({asset}),api.wMovements({asset})]).then(([u,m])=>{if(live){setUnits(u.items);setMoves(m.items)}}).catch(e=>{if(e instanceof ApiError&&e.status===401)onExpired()});return()=>{live=false}},[asset]);
+ if(!units||(units.length===0&&moves.length===0))return null;
+ const self=units.find(u=>u.asset_uid===asset),parts=units.filter(u=>u.installed_on===asset);
+ return <div className="presence-block"><h3>Склад {self?<span className={'badge '+stateName[self.state][1]}><i/>{stateName[self.state][0]}</span>:null}</h3>
+  {self?<p className="muted">Экземпляр {self.item_name} · {self.serial}{self.inventory_no?' · '+self.inventory_no:''}</p>:null}
+  {parts.length?<p className="muted">Установлено: {parts.map(p=>p.item_name+' · '+p.serial).join('; ')}</p>:null}
+  <ul>{moves.slice(0,8).map(m=><li key={m.movement_id}><span className="mono">{m.act_no}</span> · {kindName[m.kind]} · {new Date(m.occurred_at).toLocaleDateString('ru-RU')} · {m.basis}</li>)}</ul></div>;
 }

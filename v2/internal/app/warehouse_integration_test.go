@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/QgMixtate/surveyscan/v2/internal/app"
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/access"
@@ -215,5 +216,102 @@ func TestW2WarehouseIssueReturnConcurrencyWriteOff(t *testing.T) {
 	_ = f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action LIKE 'warehouse.%'", tenant).Scan(&audits)
 	if audits < 12 {
 		t.Fatal("every warehouse operation must be audited", audits)
+	}
+}
+
+// W2-05: резерв экземпляра и количества за сотрудником — чужая выдача отказ, своя по резерву проходит, истечение
+// возвращает в свободное; сторно выдачи возвращает экземпляр, второе сторно и сторно списания невозможны.
+func TestW2ReservationsAndReverse(t *testing.T) {
+	f := registrySetup(t)
+	person, other := identifier.New(), identifier.New()
+	for _, p := range []string{person, other} {
+		if _, err := f.pool.Exec(f.ctx, "INSERT INTO responsibility.subjects(tenant_id,subject_id,kind,name,contact) VALUES($1,$2,'person','Сотрудник','p@example.test')", tenant, p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	auth, err := access.NewHTTP(f.users, "https://ui.example", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.NewHTTP(auth, health.Handler(func(context.Context) error { return nil }), f.registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(handler)
+	defer server.Close()
+	b := newBrowser(t, server)
+	csrf := b.login(t, "admin").CSRFToken
+	call := func(method, path, body string, want int, out any) {
+		t.Helper()
+		code, raw, _ := b.request(t, method, path, body, csrf, "https://ui.example", nil)
+		if code != want {
+			t.Fatalf("%s %s: %d (want %d) %s", method, path, code, want, raw)
+		}
+		if out != nil {
+			_ = json.Unmarshal(raw, out)
+		}
+	}
+	var loc warehouse.Location
+	call("POST", "/api/v1/warehouse/locations", fmt.Sprintf(`{"site_id":%q,"kind":"warehouse","name":"Склад"}`, siteID), 201, &loc)
+	var pc, mouse warehouse.Item
+	call("POST", "/api/v1/warehouse/items", `{"name":"Ноутбук","kind":"serial"}`, 201, &pc)
+	call("POST", "/api/v1/warehouse/items", `{"name":"Мышь","kind":"quantity"}`, 201, &mouse)
+	var in warehouse.Movement
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"receive","basis":"Приход","to_location":%q,"lines":[{"item_id":%q,"serial":"R-1"},{"item_id":%q,"serial":"R-2"},{"item_id":%q,"quantity":10}]}`, loc.ID, pc.ID, pc.ID, mouse.ID), 201, &in)
+	u1, u2 := *in.Lines[0].UnitID, *in.Lines[1].UnitID
+	soon := time.Now().Add(48 * time.Hour).UTC().Format(time.RFC3339)
+	var r1, rq warehouse.Reservation
+	call("POST", "/api/v1/warehouse/reservations", fmt.Sprintf(`{"unit_id":%q,"holder_id":%q,"basis":"Новый сотрудник","expires_at":%q}`, u1, person, soon), 201, &r1)
+	call("POST", "/api/v1/warehouse/reservations", fmt.Sprintf(`{"unit_id":%q,"holder_id":%q,"basis":"Второй резерв","expires_at":%q}`, u1, other, soon), 409, nil)
+	call("POST", "/api/v1/warehouse/reservations", fmt.Sprintf(`{"item_id":%q,"location_id":%q,"quantity":4,"holder_id":%q,"basis":"Отдел","expires_at":%q}`, mouse.ID, loc.ID, person, soon), 201, &rq)
+	call("POST", "/api/v1/warehouse/reservations", fmt.Sprintf(`{"item_id":%q,"location_id":%q,"quantity":7,"holder_id":%q,"basis":"Сверх","expires_at":%q}`, mouse.ID, loc.ID, other, soon), 409, nil)
+	// чужая выдача зарезервированного — отказ; свободного количества — только 6
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"Чужой","from_location":%q,"to_holder":%q,"lines":[{"unit_id":%q}]}`, loc.ID, other, u1), 409, nil)
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"Чужой","from_location":%q,"to_holder":%q,"lines":[{"item_id":%q,"quantity":7}]}`, loc.ID, other, mouse.ID), 409, nil)
+	// своя выдача по резерву
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"По резерву","from_location":%q,"to_holder":%q,"lines":[{"unit_id":%q}]}`, loc.ID, person, u1), 201, nil)
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"По резерву","from_location":%q,"to_holder":%q,"reservation_id":%q,"lines":[{"item_id":%q,"quantity":4}]}`, loc.ID, person, rq.ID, mouse.ID), 201, nil)
+	var list struct{ Items []warehouse.Reservation }
+	call("GET", "/api/v1/warehouse/reservations", "", 200, &list)
+	if len(list.Items) != 0 {
+		t.Fatalf("both reservations fulfilled: %+v", list.Items)
+	}
+	// истечение: резерв u2 с прошедшим сроком (через БД) снимается при следующей операции
+	var r2 warehouse.Reservation
+	call("POST", "/api/v1/warehouse/reservations", fmt.Sprintf(`{"unit_id":%q,"holder_id":%q,"basis":"Истечёт","expires_at":%q}`, u2, other, soon), 201, &r2)
+	if _, err = f.pool.Exec(f.ctx, "UPDATE warehouse.reservations SET expires_at=now()-interval '1 minute' WHERE reservation_id=$1", r2.ID); err != nil {
+		t.Fatal(err)
+	}
+	var issued warehouse.Movement
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"После истечения","from_location":%q,"to_holder":%q,"lines":[{"unit_id":%q}]}`, loc.ID, person, u2), 201, &issued)
+	var state string
+	_ = f.pool.QueryRow(f.ctx, "SELECT state FROM warehouse.reservations WHERE reservation_id=$1", r2.ID).Scan(&state)
+	if state != "expired" {
+		t.Fatal("reservation must expire", state)
+	}
+	// сторно выдачи: экземпляр снова на складе; повторное сторно — конфликт
+	var rev warehouse.Movement
+	call("POST", "/api/v1/warehouse/movements/"+issued.ID+"/reverse", `{"basis":"Ошибочная выдача"}`, 201, &rev)
+	if rev.Kind != "reverse" || rev.Reverses == nil || *rev.Reverses != issued.ID {
+		t.Fatalf("reverse: %+v", rev)
+	}
+	_ = f.pool.QueryRow(f.ctx, "SELECT state FROM warehouse.units WHERE unit_id=$1", u2).Scan(&state)
+	if state != "in_stock" {
+		t.Fatal("reversed issue returns the unit", state)
+	}
+	call("POST", "/api/v1/warehouse/movements/"+issued.ID+"/reverse", `{"basis":"Ещё раз"}`, 409, nil)
+	call("POST", "/api/v1/warehouse/movements/"+in.ID+"/reverse", `{"basis":"Приход серийных"}`, 422, nil)
+	var wo warehouse.Movement
+	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"write_off","basis":"Брак","from_location":%q,"lines":[{"unit_id":%q}]}`, loc.ID, u2), 201, &wo)
+	call("POST", "/api/v1/warehouse/movements/"+wo.ID+"/reverse", `{"basis":"Вернуть"}`, 422, nil)
+	var v struct{ Discrepancies []warehouse.Discrepancy }
+	call("GET", "/api/v1/warehouse/verify", "", 200, &v)
+	if len(v.Discrepancies) != 0 {
+		t.Fatalf("stock must equal the journal after reservations and reversals: %+v", v.Discrepancies)
+	}
+	var stock struct{ Items []warehouse.StockRow }
+	call("GET", "/api/v1/warehouse/stock", "", 200, &stock)
+	if len(stock.Items) != 1 || stock.Items[0].Quantity != 6 || stock.Items[0].Reserved != 0 {
+		t.Fatalf("10 mice − 4 by reservation = 6 free: %+v", stock.Items)
 	}
 }

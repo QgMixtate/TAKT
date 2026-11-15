@@ -72,6 +72,11 @@ try{
  await page.getByRole('button',{name:'Провести и сформировать акт'}).click();await expect(page.getByRole('dialog',{name:/Акт/})).toContainText('Акт выдачи');
  await page.screenshot({path:'../.local/w2-warehouse-act.png',fullPage:true});await page.getByRole('dialog',{name:/Акт/}).getByRole('button',{name:'Закрыть'}).click();
  await page.getByRole('tab',{name:'Экземпляры'}).click();await expect(page.locator('.warehouse table')).toContainText('выдан');checks.push('W2 warehouse in the Web: location and item created, serial unit received and issued, acts shown for printing');
+ await page.getByRole('tab',{name:'Журнал и акты'}).click();page.once('dialog',d=>void d.accept('Ошибочная выдача smoke'));await page.getByRole('button',{name:'Сторно'}).first().click();
+ await expect(page.getByRole('dialog',{name:/Акт/})).toContainText('Сторно');await page.getByRole('dialog',{name:/Акт/}).getByRole('button',{name:'Закрыть'}).click();
+ await page.getByRole('tab',{name:'Резервы'}).click();await page.getByLabel('Что резервировать').selectOption({label:'Ноутбук smoke · SMOKE-SN-1'});await page.getByLabel('За кем').selectOption({index:1});
+ await page.getByLabel('Основание резерва').fill('Новый сотрудник smoke');await page.getByRole('button',{name:'Зарезервировать'}).click();await expect(page.locator('.warehouse table')).toContainText('Новый сотрудник smoke');
+ checks.push('W2 warehouse: issue reversed from the journal (reverse act), unit reserved for an employee');
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('button',{name:/Реестр активов/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');

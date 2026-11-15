@@ -36,6 +36,13 @@ func (r *Registry) warehouseDo(w http.ResponseWriter, req *http.Request, status 
 		cmdbError(w, req, e)
 		return
 	}
+	if write || req.URL.Path == "/api/v1/warehouse/reservations" {
+		// просроченные резервы снимаются до операции: свободный остаток и экземпляры актуальны
+		if _, e = (warehouse.Store{}).ExpireReservations(ctx, tx, id.TenantID); e != nil {
+			registryError(w, e)
+			return
+		}
+	}
 	out, e := fn(ctx, tx, id)
 	if e == nil {
 		e = tx.Commit(ctx)
@@ -193,6 +200,51 @@ func (r *Registry) warehouseHandlers() map[string]route51 {
 		}
 		write("warehouse:write", 201, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ *http.Request) (any, error) {
 			return r.warehouseMove(ctx, tx, id, body)
+		}).handler.ServeHTTP(w, req)
+	})}
+	h["POST /api/v1/warehouse/movements/{movement_id}/reverse"] = route51{"warehouse:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct {
+			Basis string `json:"basis"`
+		}
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		write("warehouse:write", 201, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ *http.Request) (any, error) {
+			m, e := st.Reverse(ctx, tx, id.TenantID, "user:"+id.UserID, req.PathValue("movement_id"), body.Basis)
+			if e == nil {
+				e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "warehouse.reverse", "movement", m.ID)
+			}
+			return m, e
+		}).handler.ServeHTTP(w, req)
+	})}
+	h["GET /api/v1/warehouse/reservations"] = list("warehouse:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ url.Values) (any, error) {
+		items, e := st.Reservations(ctx, tx, id.TenantID, 500)
+		return map[string]any{"items": items}, e
+	})
+	h["POST /api/v1/warehouse/reservations"] = route51{"warehouse:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body warehouse.ReservationInput
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		write("warehouse:write", 201, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ *http.Request) (any, error) {
+			res, e := st.Reserve(ctx, tx, id.TenantID, "user:"+id.UserID, body)
+			if e == nil {
+				e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "warehouse.reserved", "reservation", res.ID)
+			}
+			return res, e
+		}).handler.ServeHTTP(w, req)
+	})}
+	h["POST /api/v1/warehouse/reservations/{reservation_id}/cancel"] = route51{"warehouse:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body struct{}
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		write("warehouse:write", 200, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ *http.Request) (any, error) {
+			res, e := st.CancelReservation(ctx, tx, id.TenantID, req.PathValue("reservation_id"))
+			if e == nil {
+				e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "warehouse.reservation_cancelled", "reservation", res.ID)
+			}
+			return res, e
 		}).handler.ServeHTTP(w, req)
 	})}
 	return h

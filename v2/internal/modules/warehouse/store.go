@@ -78,6 +78,8 @@ type Operation struct {
 	ToHolder     string `json:"to_holder,omitempty"`
 	Asset        string `json:"asset_uid,omitempty"` // install/remove: актив, на который ставят / с которого снимают
 	Lines        []Line `json:"lines"`
+	// Reservation — выдача по резерву (количество): берётся из зарезервированного, резерв закрывается
+	Reservation string `json:"reservation_id,omitempty"`
 }
 
 type MovementLine struct {
@@ -225,6 +227,14 @@ func locationKind(ctx context.Context, tx pgx.Tx, tenant, id string) (string, er
 // остатков (0 строк — Conflict: экземпляр уже выдан/не там, остатка не хватает), запись журнала и номер акта.
 // Возвращает движение; затронутые активы (списание/установка) — для действий вызывающего (вывод из учёта, аудит).
 func (s Store) Move(ctx context.Context, tx pgx.Tx, tenant, actor string, op Operation) (Movement, error) {
+	if op.Reservation != "" && (op.Kind != "issue" || !identifier.Valid(op.Reservation)) {
+		return Movement{}, domain.Invalid
+	}
+	return s.move(ctx, tx, tenant, actor, op, op.Kind, "")
+}
+
+// move — общий путь операции; record — вид в журнале (для сторно — "reverse", а op — обратная операция).
+func (s Store) move(ctx context.Context, tx pgx.Tx, tenant, actor string, op Operation, record, reverses string) (Movement, error) {
 	var m Movement
 	if !text(strings.TrimSpace(op.Basis), 1, 256) || !text(op.Note, 0, 1024) || len(op.Lines) == 0 || len(op.Lines) > 500 {
 		return m, domain.Invalid
@@ -307,7 +317,7 @@ func (s Store) Move(ctx context.Context, tx pgx.Tx, tenant, actor string, op Ope
 		}
 	}
 
-	m = Movement{ID: identifier.New(), Kind: op.Kind, Actor: actor, Basis: strings.TrimSpace(op.Basis), Note: nullable(op.Note), FromLocation: nullable(op.FromLocation), ToLocation: nullable(op.ToLocation), FromHolder: nullable(op.FromHolder), ToHolder: nullable(op.ToHolder), Asset: nullable(op.Asset)}
+	m = Movement{ID: identifier.New(), Kind: record, Reverses: nullable(reverses), Actor: actor, Basis: strings.TrimSpace(op.Basis), Note: nullable(op.Note), FromLocation: nullable(op.FromLocation), ToLocation: nullable(op.ToLocation), FromHolder: nullable(op.FromHolder), ToHolder: nullable(op.ToHolder), Asset: nullable(op.Asset)}
 	if e = tx.QueryRow(ctx, "SELECT now()").Scan(&m.At); e != nil {
 		return m, e
 	}
@@ -317,8 +327,8 @@ ON CONFLICT (tenant_id,year) DO UPDATE SET last=warehouse.act_counters.last+1 RE
 		return m, e
 	}
 	m.ActNo = fmt.Sprintf("%d-%06d", m.At.Year(), no)
-	if _, e = tx.Exec(ctx, `INSERT INTO warehouse.movements(tenant_id,movement_id,kind,act_no,occurred_at,actor_ref,basis,note,from_location,to_location,from_holder,to_holder,asset_uid)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`, tenant, m.ID, m.Kind, m.ActNo, m.At, actor, m.Basis, m.Note, m.FromLocation, m.ToLocation, m.FromHolder, m.ToHolder, m.Asset); e != nil {
+	if _, e = tx.Exec(ctx, `INSERT INTO warehouse.movements(tenant_id,movement_id,kind,act_no,occurred_at,actor_ref,basis,note,from_location,to_location,from_holder,to_holder,asset_uid,reverses)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, tenant, m.ID, m.Kind, m.ActNo, m.At, actor, m.Basis, m.Note, m.FromLocation, m.ToLocation, m.FromHolder, m.ToHolder, m.Asset, m.Reverses); e != nil {
 		return m, conflict(e)
 	}
 	seen := map[string]bool{}
@@ -441,7 +451,11 @@ ON CONFLICT (tenant_id,item_id,location_id) DO UPDATE SET quantity=warehouse.sto
 	case "receive", "return":
 		e = put(op.ToLocation) // возврат количества — на склад от держателя (остатки у людей не ведутся)
 	case "issue":
-		e = take(op.FromLocation) // выдача расходников — списание со склада получателю
+		if op.Reservation != "" {
+			e = takeReserved(ctx, tx, tenant, op, l)
+		} else {
+			e = take(op.FromLocation) // выдача расходников — списание со склада получателю
+		}
 	case "transfer":
 		if e = take(op.FromLocation); e == nil {
 			e = put(op.ToLocation)
@@ -541,5 +555,234 @@ WHERE COALESCE(s.quantity,0) <> COALESCE(t.q,0)`, tenant)
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Discrepancy, error) {
 		var d Discrepancy
 		return d, r.Scan(&d.Item, &d.Location, &d.Stock, &d.Journal)
+	})
+}
+
+// takeReserved — выдача количества по резерву: резерв того же получателя, позиции, места и количества закрывается,
+// остаток и резерв уменьшаются вместе.
+func takeReserved(ctx context.Context, tx pgx.Tx, tenant string, op Operation, l Line) error {
+	tag, e := tx.Exec(ctx, `UPDATE warehouse.reservations SET state='fulfilled' WHERE tenant_id=$1 AND reservation_id=$2 AND state='active' AND unit_id IS NULL
+AND item_id=$3 AND location_id=$4 AND quantity=$5 AND holder_id=$6`, tenant, op.Reservation, l.ItemID, op.FromLocation, l.Quantity, op.ToHolder)
+	if e != nil {
+		return e
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.Conflict // нет такого действующего резерва для этого получателя
+	}
+	tag, e = tx.Exec(ctx, "UPDATE warehouse.stock SET quantity=quantity-$4,reserved=reserved-$4 WHERE tenant_id=$1 AND item_id=$2 AND location_id=$3 AND reserved>=$4 AND quantity>=$4", tenant, l.ItemID, op.FromLocation, l.Quantity)
+	if e != nil {
+		return conflict(e)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.Conflict
+	}
+	return nil
+}
+
+// Reverse — сторно: обратная операция к движению с основанием. Журнал не правится; одно движение сторнируется один
+// раз (уникальный индекс). Списание и сторно не сторнируются; приход серийных экземпляров — только списанием.
+func (s Store) Reverse(ctx context.Context, tx pgx.Tx, tenant, actor, id, basis string) (Movement, error) {
+	orig, e := s.Movement(ctx, tx, tenant, id)
+	if e != nil {
+		return orig, e
+	}
+	val := func(p *string) string {
+		if p == nil {
+			return ""
+		}
+		return *p
+	}
+	op := Operation{Basis: basis, Note: "Сторно акта " + orig.ActNo}
+	from, to, fromH, toH, asset := val(orig.FromLocation), val(orig.ToLocation), val(orig.FromHolder), val(orig.ToHolder), val(orig.Asset)
+	switch orig.Kind {
+	case "issue":
+		op.Kind, op.FromHolder, op.ToLocation = "return", toH, from
+	case "return":
+		op.Kind, op.FromLocation, op.ToHolder = "issue", to, fromH
+	case "transfer":
+		op.Kind, op.FromLocation, op.ToLocation = "transfer", to, from
+	case "repair_in":
+		op.Kind, op.FromLocation, op.ToLocation = "repair_out", to, from
+	case "repair_out":
+		if from == "" {
+			return Movement{}, domain.Invalid // из ремонта — держателю: обычной выдачей после приёма из ремонта
+		}
+		op.Kind, op.FromLocation, op.ToLocation = "repair_in", to, from
+	case "install":
+		op.Kind, op.Asset, op.ToLocation = "remove", asset, from
+	case "remove":
+		op.Kind, op.Asset, op.FromLocation = "install", asset, to
+	case "receive":
+		op.Kind, op.FromLocation = "write_off", to // только количество (ниже)
+	default:
+		return Movement{}, domain.Invalid
+	}
+	for _, l := range orig.Lines {
+		if l.UnitID != nil {
+			if orig.Kind == "receive" {
+				return Movement{}, domain.Invalid
+			}
+			op.Lines = append(op.Lines, Line{UnitID: *l.UnitID})
+		} else {
+			op.Lines = append(op.Lines, Line{ItemID: l.Item, Quantity: l.Quantity})
+		}
+	}
+	return s.move(ctx, tx, tenant, actor, op, "reverse", orig.ID)
+}
+
+// ReservationInput — резерв экземпляра (UnitID) или количества позиции на месте.
+type ReservationInput struct {
+	UnitID    string    `json:"unit_id,omitempty"`
+	ItemID    string    `json:"item_id,omitempty"`
+	Location  string    `json:"location_id,omitempty"`
+	Quantity  float64   `json:"quantity,omitempty"`
+	Holder    string    `json:"holder_id"`
+	Basis     string    `json:"basis"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type Reservation struct {
+	ID        string    `json:"reservation_id"`
+	UnitID    *string   `json:"unit_id"`
+	ItemID    *string   `json:"item_id"`
+	Location  *string   `json:"location_id"`
+	Quantity  *float64  `json:"quantity"`
+	Holder    string    `json:"holder_id"`
+	Basis     string    `json:"basis"`
+	ExpiresAt time.Time `json:"expires_at"`
+	State     string    `json:"state"`
+	CreatedBy string    `json:"created_by"`
+	CreatedAt time.Time `json:"created_at"`
+	Label     string    `json:"label"` // что зарезервировано (модель · серийный или позиция)
+}
+
+// Reserve закрепляет свободный экземпляр или количество за получателем до срока (не больше 90 дней).
+func (s Store) Reserve(ctx context.Context, tx pgx.Tx, tenant, actor string, in ReservationInput) (Reservation, error) {
+	var out Reservation
+	until := time.Until(in.ExpiresAt)
+	if !identifier.Valid(in.Holder) || !text(strings.TrimSpace(in.Basis), 1, 256) || until <= 0 || until > 90*24*time.Hour {
+		return out, domain.Invalid
+	}
+	var ok bool
+	if e := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM responsibility.subjects WHERE tenant_id=$1 AND subject_id=$2 AND active)", tenant, in.Holder).Scan(&ok); e != nil || !ok {
+		return out, orInvalid(e)
+	}
+	id := identifier.New()
+	switch {
+	case in.UnitID != "" && in.ItemID == "" && in.Location == "" && in.Quantity == 0:
+		if !identifier.Valid(in.UnitID) {
+			return out, domain.Invalid
+		}
+		tag, e := tx.Exec(ctx, "UPDATE warehouse.units SET state='reserved',revision=revision+1 WHERE tenant_id=$1 AND unit_id=$2 AND state='in_stock'", tenant, in.UnitID)
+		if e != nil {
+			return out, e
+		}
+		if tag.RowsAffected() == 0 {
+			return out, domain.Conflict // экземпляр не свободен
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO warehouse.reservations(tenant_id,reservation_id,unit_id,holder_id,basis,expires_at,state,created_by) VALUES($1,$2,$3,$4,$5,$6,'active',$7)", tenant, id, in.UnitID, in.Holder, strings.TrimSpace(in.Basis), in.ExpiresAt, actor)
+		if e != nil {
+			return out, conflict(e)
+		}
+	case in.UnitID == "" && identifier.Valid(in.ItemID) && identifier.Valid(in.Location) && in.Quantity > 0 && in.Quantity <= 1e9:
+		tag, e := tx.Exec(ctx, "UPDATE warehouse.stock SET reserved=reserved+$4 WHERE tenant_id=$1 AND item_id=$2 AND location_id=$3 AND quantity-reserved>=$4", tenant, in.ItemID, in.Location, in.Quantity)
+		if e != nil {
+			return out, conflict(e)
+		}
+		if tag.RowsAffected() == 0 {
+			return out, domain.Conflict // свободного остатка не хватает
+		}
+		_, e = tx.Exec(ctx, "INSERT INTO warehouse.reservations(tenant_id,reservation_id,item_id,location_id,quantity,holder_id,basis,expires_at,state,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'active',$9)", tenant, id, in.ItemID, in.Location, in.Quantity, in.Holder, strings.TrimSpace(in.Basis), in.ExpiresAt, actor)
+		if e != nil {
+			return out, conflict(e)
+		}
+	default:
+		return out, domain.Invalid
+	}
+	return s.reservation(ctx, tx, tenant, id)
+}
+
+// release снимает действующий резерв (отмена или истечение) и возвращает экземпляр/количество в свободные.
+func release(ctx context.Context, tx pgx.Tx, tenant, id, state string) (bool, error) {
+	var unit, item, loc *string
+	var qty *float64
+	e := tx.QueryRow(ctx, "UPDATE warehouse.reservations SET state=$3 WHERE tenant_id=$1 AND reservation_id=$2 AND state='active' RETURNING unit_id::text,item_id::text,location_id::text,quantity::float8", tenant, id, state).Scan(&unit, &item, &loc, &qty)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if e != nil {
+		return false, e
+	}
+	if unit != nil {
+		_, e = tx.Exec(ctx, "UPDATE warehouse.units SET state='in_stock',revision=revision+1 WHERE tenant_id=$1 AND unit_id=$2 AND state='reserved'", tenant, *unit)
+	} else {
+		_, e = tx.Exec(ctx, "UPDATE warehouse.stock SET reserved=reserved-$4 WHERE tenant_id=$1 AND item_id=$2 AND location_id=$3", tenant, *item, *loc, *qty)
+	}
+	return true, conflict(e)
+}
+
+// CancelReservation отменяет действующий резерв (не действующий — Conflict).
+func (s Store) CancelReservation(ctx context.Context, tx pgx.Tx, tenant, id string) (Reservation, error) {
+	if !identifier.Valid(id) {
+		return Reservation{}, domain.NotFound
+	}
+	done, e := release(ctx, tx, tenant, id, "cancelled")
+	if e != nil {
+		return Reservation{}, e
+	}
+	r, e := s.reservation(ctx, tx, tenant, id)
+	if e == nil && !done {
+		e = domain.Conflict
+	}
+	return r, e
+}
+
+// ExpireReservations снимает просроченные резервы организации (вызывается перед операциями и чтением резервов).
+func (Store) ExpireReservations(ctx context.Context, tx pgx.Tx, tenant string) (int, error) {
+	rows, e := tx.Query(ctx, "SELECT reservation_id::text FROM warehouse.reservations WHERE tenant_id=$1 AND state='active' AND expires_at<=now() ORDER BY reservation_id LIMIT 500 FOR UPDATE SKIP LOCKED", tenant)
+	if e != nil {
+		return 0, e
+	}
+	ids, e := pgx.CollectRows(rows, pgx.RowTo[string])
+	if e != nil {
+		return 0, e
+	}
+	n := 0
+	for _, id := range ids {
+		done, e := release(ctx, tx, tenant, id, "expired")
+		if e != nil {
+			return n, e
+		}
+		if done {
+			n++
+		}
+	}
+	return n, nil
+}
+
+func (Store) reservation(ctx context.Context, tx pgx.Tx, tenant, id string) (Reservation, error) {
+	var r Reservation
+	e := tx.QueryRow(ctx, `SELECT r.reservation_id::text,r.unit_id::text,r.item_id::text,r.location_id::text,r.quantity::float8,r.holder_id::text,r.basis,r.expires_at,r.state,r.created_by,r.created_at,
+COALESCE(ui.name||' · '||u.serial, i.name, '')
+FROM warehouse.reservations r LEFT JOIN warehouse.units u ON u.tenant_id=r.tenant_id AND u.unit_id=r.unit_id LEFT JOIN warehouse.items ui ON ui.tenant_id=u.tenant_id AND ui.item_id=u.item_id
+LEFT JOIN warehouse.items i ON i.tenant_id=r.tenant_id AND i.item_id=r.item_id WHERE r.tenant_id=$1 AND r.reservation_id=$2`, tenant, id).Scan(&r.ID, &r.UnitID, &r.ItemID, &r.Location, &r.Quantity, &r.Holder, &r.Basis, &r.ExpiresAt, &r.State, &r.CreatedBy, &r.CreatedAt, &r.Label)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return r, domain.NotFound
+	}
+	return r, e
+}
+
+// Reservations — действующие резервы (новые сверху).
+func (Store) Reservations(ctx context.Context, tx pgx.Tx, tenant string, limit int) ([]Reservation, error) {
+	rows, e := tx.Query(ctx, `SELECT r.reservation_id::text,r.unit_id::text,r.item_id::text,r.location_id::text,r.quantity::float8,r.holder_id::text,r.basis,r.expires_at,r.state,r.created_by,r.created_at,
+COALESCE(ui.name||' · '||u.serial, i.name, '')
+FROM warehouse.reservations r LEFT JOIN warehouse.units u ON u.tenant_id=r.tenant_id AND u.unit_id=r.unit_id LEFT JOIN warehouse.items ui ON ui.tenant_id=u.tenant_id AND ui.item_id=u.item_id
+LEFT JOIN warehouse.items i ON i.tenant_id=r.tenant_id AND i.item_id=r.item_id WHERE r.tenant_id=$1 AND r.state='active' ORDER BY r.created_at DESC LIMIT $2`, tenant, limit)
+	if e != nil {
+		return nil, e
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Reservation, error) {
+		var r Reservation
+		return r, row.Scan(&r.ID, &r.UnitID, &r.ItemID, &r.Location, &r.Quantity, &r.Holder, &r.Basis, &r.ExpiresAt, &r.State, &r.CreatedBy, &r.CreatedAt, &r.Label)
 	})
 }

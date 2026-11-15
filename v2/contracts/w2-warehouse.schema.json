@@ -575,6 +575,120 @@
     "discrepancies"
    ],
    "additionalProperties": false
+  },
+  "Reservation": {
+   "type": "object",
+   "properties": {
+    "reservation_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "unit_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "item_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "location_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "quantity": {
+     "oneOf": [
+      {
+       "type": "number",
+       "exclusiveMinimum": 0
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "holder_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "basis": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "expires_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "state": {
+     "enum": [
+      "active",
+      "fulfilled",
+      "cancelled",
+      "expired"
+     ]
+    },
+    "created_by": {
+     "type": "string"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "label": {
+     "type": "string"
+    }
+   },
+   "additionalProperties": false,
+   "required": [
+    "reservation_id",
+    "unit_id",
+    "item_id",
+    "location_id",
+    "quantity",
+    "holder_id",
+    "basis",
+    "expires_at",
+    "state",
+    "created_by",
+    "created_at",
+    "label"
+   ]
+  },
+  "ReservationList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Reservation"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
   }
  }
 }
