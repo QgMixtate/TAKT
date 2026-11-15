@@ -37,20 +37,6 @@ type Identity struct {
 
 var ErrExists = errors.New("portable: state directory already initialised")
 
-func writePrivate(path string, b []byte) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err = f.Write(b); err == nil {
-		err = f.Sync()
-	}
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-	return err
-}
-
 // Init создаёт личность и ключ в пустом/новом каталоге (0700). Существующая личность не перезаписывается.
 func Init(dir, tenant, site, scope string) (Identity, ed25519.PublicKey, error) {
 	var id Identity
@@ -68,11 +54,11 @@ func Init(dir, tenant, site, scope string) (Identity, ed25519.PublicKey, error) 
 		return id, nil, err
 	}
 	id = Identity{Tenant: tenant, Site: site, Scope: scope, SourceID: identifier.New(), Generation: identifier.New(), KeyID: portable.KeyID(pub)}
-	if err = writePrivate(filepath.Join(dir, "signing.key"), []byte(base64.StdEncoding.EncodeToString(priv.Seed()))); err != nil {
+	if err = writePrivate(dir, "signing.key", []byte(base64.StdEncoding.EncodeToString(priv.Seed()))); err != nil {
 		return Identity{}, nil, err
 	}
 	raw, _ := json.MarshalIndent(id, "", "  ")
-	if err = writePrivate(filepath.Join(dir, "identity.json"), raw); err != nil {
+	if err = writePrivate(dir, "identity.json", raw); err != nil {
 		return Identity{}, nil, err
 	}
 	return id, pub, nil
@@ -114,12 +100,10 @@ func nextSequence(dir string) (uint64, error) {
 		}
 	}
 	n++
-	tmp := path + ".tmp"
-	_ = os.Remove(tmp)
-	if err := writePrivate(tmp, []byte(strconv.FormatUint(n, 10))); err != nil {
+	if err := replacePrivate(dir, "sequence", []byte(strconv.FormatUint(n, 10))); err != nil {
 		return 0, err
 	}
-	return n, os.Rename(tmp, path)
+	return n, nil
 }
 
 // Target — одна цель аудита: этот хост или удалённая (SSH/WinRM).
