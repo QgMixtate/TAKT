@@ -15,7 +15,9 @@ type DeviceHint struct {
 }
 
 // Признаки гипервизора: службы и ПО (без учёта регистра). Хранится как литерал: SQL собирается без конкатенации.
-var hypervisorMarkers = []string{"vmms", "hyper-v", "libvirtd", "qemu-kvm", "proxmox", "pve-manager", "vmware esxi", "xenserver", "xen-hypervisor"}
+// Только службы/ПО хоста виртуализации: у гостевых ВМ есть «Hyper-V Guest …», «hv_kvp_daemon» — они не признак
+// (стенд №12: ВМ была показана гипервизором).
+var hypervisorMarkers = []string{"vmms", "hyper-v virtual machine management", "libvirtd", "qemu-kvm", "proxmox-ve", "pve-manager", "vmware esxi", "xenserver", "xen-hypervisor"}
 
 func (Store) DeviceHints(ctx context.Context, tx pgx.Tx, tenant string, assets []string) (map[string]DeviceHint, error) {
 	out := map[string]DeviceHint{}
@@ -48,6 +50,9 @@ FROM unnest($2::uuid[]) a`, tenant, assets, hypervisorMarkers)
 
 func deviceClass(hardware, osName string, hypervisor, noOS bool) DeviceHint {
 	o := strings.ToLower(osName)
+	if class, reason := classify(hardware, osName); class == "virtual_machine" {
+		return DeviceHint{class, reason} // ВМ по модели оборудования — даже если внутри есть службы виртуализации
+	}
 	if hypervisor || strings.Contains(o, "esxi") || strings.Contains(o, "proxmox") {
 		return DeviceHint{"hypervisor", "VIRTUALIZATION_HOST_SOFTWARE"}
 	}

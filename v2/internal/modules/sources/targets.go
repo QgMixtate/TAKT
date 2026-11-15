@@ -29,9 +29,10 @@ type RemoteTarget struct {
 	HostKey       *string    `json:"host_key_sha256"`
 	HostKeyOrigin *string    `json:"host_key_origin"`
 	ServerName    *string    `json:"tls_server_name"`
-	CertSHA256    *string    `json:"tls_cert_sha256"` // WinRM: закреплённый отпечаток сертификата сервера (first_use)
-	CertOrigin    *string    `json:"tls_cert_origin"` // WinRM: admin — PEM задан администратором; first_use — запомнен
-	Transport     *string    `json:"winrm_transport"` // WinRM: https (5986) или http_kerberos (5985, Kerberos по имени ПК)
+	CertSHA256    *string    `json:"tls_cert_sha256"`      // WinRM: закреплённый отпечаток сертификата сервера (first_use)
+	CertOrigin    *string    `json:"tls_cert_origin"`      // WinRM: admin — PEM задан администратором; first_use — запомнен
+	Transport     *string    `json:"winrm_transport"`      // WinRM: https (5986) или http_kerberos (5985, Kerberos по имени ПК)
+	CollectAt     *time.Time `json:"collect_requested_at"` // «Собрать сейчас»: когда запрошен внеочередной сбор
 	Interval      int        `json:"interval_seconds"`
 	Source        *string    `json:"agent_source_id"`
 	State         string     `json:"state"`
@@ -71,6 +72,7 @@ type MachineTarget struct {
 	CertSHA256 *string `json:"tls_cert_sha256"`
 	CertOrigin *string `json:"tls_cert_origin"`
 	Transport  *string `json:"winrm_transport"`
+	CollectAt  *string `json:"collect_requested_at"`
 	Interval   int     `json:"interval_seconds"`
 	Source     *string `json:"agent_source_id"`
 	State      string  `json:"state"`
@@ -191,8 +193,8 @@ func (Store) Target(ctx context.Context, tx pgx.Tx, tenant, id string) (RemoteTa
 	if !identifier.Valid(id) {
 		return t, domain.NotFound
 	}
-	e := tx.QueryRow(ctx, `SELECT target_id::text,collector_id::text,network_id::text,host(address),kind,port,credential_id::text,host_key_sha256,host_key_origin,tls_server_name,tls_cert_sha256,tls_cert_origin,winrm_transport,interval_seconds,agent_source_id::text,state,last_collected_at,last_error,revision::text
-FROM sources.remote_targets WHERE tenant_id=$1 AND target_id=$2`, tenant, id).Scan(&t.ID, &t.Collector, &t.Network, &t.Address, &t.Kind, &t.Port, &t.Credential, &t.HostKey, &t.HostKeyOrigin, &t.ServerName, &t.CertSHA256, &t.CertOrigin, &t.Transport, &t.Interval, &t.Source, &t.State, &t.LastCollected, &t.LastError, &t.Revision)
+	e := tx.QueryRow(ctx, `SELECT target_id::text,collector_id::text,network_id::text,host(address),kind,port,credential_id::text,host_key_sha256,host_key_origin,tls_server_name,tls_cert_sha256,tls_cert_origin,winrm_transport,collect_requested_at,interval_seconds,agent_source_id::text,state,last_collected_at,last_error,revision::text
+FROM sources.remote_targets WHERE tenant_id=$1 AND target_id=$2`, tenant, id).Scan(&t.ID, &t.Collector, &t.Network, &t.Address, &t.Kind, &t.Port, &t.Credential, &t.HostKey, &t.HostKeyOrigin, &t.ServerName, &t.CertSHA256, &t.CertOrigin, &t.Transport, &t.CollectAt, &t.Interval, &t.Source, &t.State, &t.LastCollected, &t.LastError, &t.Revision)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return t, domain.NotFound
 	}
@@ -200,7 +202,7 @@ FROM sources.remote_targets WHERE tenant_id=$1 AND target_id=$2`, tenant, id).Sc
 }
 
 func (Store) Targets(ctx context.Context, tx pgx.Tx, tenant string) ([]RemoteTarget, error) {
-	rows, e := tx.Query(ctx, `SELECT target_id::text,collector_id::text,network_id::text,host(address),kind,port,credential_id::text,host_key_sha256,host_key_origin,tls_server_name,tls_cert_sha256,tls_cert_origin,winrm_transport,interval_seconds,agent_source_id::text,state,last_collected_at,last_error,revision::text
+	rows, e := tx.Query(ctx, `SELECT target_id::text,collector_id::text,network_id::text,host(address),kind,port,credential_id::text,host_key_sha256,host_key_origin,tls_server_name,tls_cert_sha256,tls_cert_origin,winrm_transport,collect_requested_at,interval_seconds,agent_source_id::text,state,last_collected_at,last_error,revision::text
 FROM sources.remote_targets WHERE tenant_id=$1 ORDER BY address, kind`, tenant)
 	if e != nil {
 		return nil, e
@@ -209,7 +211,7 @@ FROM sources.remote_targets WHERE tenant_id=$1 ORDER BY address, kind`, tenant)
 	out := []RemoteTarget{}
 	for rows.Next() {
 		var t RemoteTarget
-		if e = rows.Scan(&t.ID, &t.Collector, &t.Network, &t.Address, &t.Kind, &t.Port, &t.Credential, &t.HostKey, &t.HostKeyOrigin, &t.ServerName, &t.CertSHA256, &t.CertOrigin, &t.Transport, &t.Interval, &t.Source, &t.State, &t.LastCollected, &t.LastError, &t.Revision); e != nil {
+		if e = rows.Scan(&t.ID, &t.Collector, &t.Network, &t.Address, &t.Kind, &t.Port, &t.Credential, &t.HostKey, &t.HostKeyOrigin, &t.ServerName, &t.CertSHA256, &t.CertOrigin, &t.Transport, &t.CollectAt, &t.Interval, &t.Source, &t.State, &t.LastCollected, &t.LastError, &t.Revision); e != nil {
 			return nil, e
 		}
 		out = append(out, t)
@@ -239,7 +241,7 @@ WHERE tenant_id=$1 AND target_id=$2 AND revision::text=$3`, tenant, id, revision
 }
 
 func (Store) collectorTargets(ctx context.Context, tx pgx.Tx, tenant, collector string) ([]MachineTarget, error) {
-	rows, e := tx.Query(ctx, `SELECT t.target_id::text,t.kind,host(t.address),t.port,c.username,t.host_key_sha256,CASE WHEN t.tls_cert_origin='domain_ca' THEN (SELECT w.ca_pem FROM sources.winrm_trust w WHERE w.tenant_id=t.tenant_id) ELSE t.tls_ca_pem END,t.tls_server_name,t.tls_cert_sha256,t.tls_cert_origin,t.winrm_transport,t.interval_seconds,t.agent_source_id::text,t.state,s.site_id::text,
+	rows, e := tx.Query(ctx, `SELECT t.target_id::text,t.kind,host(t.address),t.port,c.username,t.host_key_sha256,CASE WHEN t.tls_cert_origin='domain_ca' THEN (SELECT w.ca_pem FROM sources.winrm_trust w WHERE w.tenant_id=t.tenant_id) ELSE t.tls_ca_pem END,t.tls_server_name,t.tls_cert_sha256,t.tls_cert_origin,t.winrm_transport,t.collect_requested_at::text,t.interval_seconds,t.agent_source_id::text,t.state,s.site_id::text,
 (SELECT n.scope_id::text FROM scope.network_scopes n WHERE n.tenant_id=s.tenant_id AND n.site_id=s.site_id ORDER BY n.scope_id LIMIT 1),t.tenant_id::text
 FROM sources.remote_targets t JOIN sources.collect_credentials c ON c.tenant_id=t.tenant_id AND c.credential_id=t.credential_id JOIN sources.sources s ON s.tenant_id=t.tenant_id AND s.source_id=t.collector_id
 WHERE t.tenant_id=$1 AND t.collector_id=$2 AND t.state<>'disabled' AND c.active ORDER BY t.target_id`, tenant, collector)
@@ -250,7 +252,7 @@ WHERE t.tenant_id=$1 AND t.collector_id=$2 AND t.state<>'disabled' AND c.active 
 	out := []MachineTarget{}
 	for rows.Next() {
 		var t MachineTarget
-		if e = rows.Scan(&t.ID, &t.Kind, &t.Address, &t.Port, &t.Username, &t.HostKey, &t.CAPEM, &t.ServerName, &t.CertSHA256, &t.CertOrigin, &t.Transport, &t.Interval, &t.Source, &t.State, &t.Site, &t.Scope, &t.Tenant); e != nil {
+		if e = rows.Scan(&t.ID, &t.Kind, &t.Address, &t.Port, &t.Username, &t.HostKey, &t.CAPEM, &t.ServerName, &t.CertSHA256, &t.CertOrigin, &t.Transport, &t.CollectAt, &t.Interval, &t.Source, &t.State, &t.Site, &t.Scope, &t.Tenant); e != nil {
 			return nil, e
 		}
 		out = append(out, t)
@@ -472,3 +474,20 @@ var certPinRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // fqdnRe — полное имя ПК для Kerberos (минимум два уровня, не адрес).
 var fqdnRe = regexp.MustCompile(`^(?i)[a-z0-9]([a-z0-9-]{0,62})(\.[a-z0-9]([a-z0-9-]{0,62}))*\.[a-z][a-z0-9-]{0,62}$`)
+
+// RequestCollect — «Собрать сейчас»: отключённая цель или повтор раньше чем через 2 минуты — Conflict.
+func (Store) RequestCollect(ctx context.Context, tx pgx.Tx, tenant, id string) (RemoteTarget, error) {
+	tag, e := tx.Exec(ctx, `UPDATE sources.remote_targets SET collect_requested_at=now()
+WHERE tenant_id=$1 AND target_id=$2 AND state<>'disabled' AND (collect_requested_at IS NULL OR collect_requested_at < now()-interval '2 minutes')`, tenant, id)
+	if e != nil {
+		return RemoteTarget{}, e
+	}
+	t, e := (Store{}).Target(ctx, tx, tenant, id)
+	if e != nil {
+		return t, e
+	}
+	if tag.RowsAffected() != 1 {
+		return t, domain.Conflict
+	}
+	return t, nil
+}

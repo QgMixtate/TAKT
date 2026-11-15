@@ -199,6 +199,20 @@ func (r *Registry) targetHandlers() map[string]route51 {
 				return t, e
 			})
 		})},
+		// стенд №12, дефект 5: внеочередной сбор цели (администратор и оператор, как запуск обследования)
+		"POST /api/v1/discovery/targets/{target_id}/collect": {"jobs:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			var body struct{}
+			if !readOperationBody(w, req, &body) {
+				return
+			}
+			r.discoveryDo(w, req, http.StatusAccepted, "jobs:write", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+				t, e := src51.RequestCollect(ctx, tx, id.TenantID, req.PathValue("target_id"))
+				if e == nil {
+					e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "discovery.target_collect_requested", "remote_target", t.ID)
+				}
+				return t, e
+			})
+		})},
 		"PATCH /api/v1/discovery/targets/{target_id}": {"sources:admin", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			var body struct {
 				Revision     string `json:"revision"`

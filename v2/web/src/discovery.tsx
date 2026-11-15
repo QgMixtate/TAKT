@@ -22,7 +22,7 @@ export function DiscoveryView({csrf,isAdmin,canRun,onExpired}:{csrf:string;isAdm
   <div className="seg-tabs" role="tablist" aria-label="Разделы обследований">{tabs.map(([k,n])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?'active':''} onClick={()=>setTab(k)}>{n}</button>)}</div>
   {tab==='networks'?<NetworksTab csrf={csrf} isAdmin={isAdmin} canRun={canRun} onExpired={onExpired} onTargetCreated={()=>{setVersion(v=>v+1);setTab('targets')}}/>:null}
   {tab==='credentials'&&isAdmin?<CredentialsTab csrf={csrf} onExpired={onExpired}/>:null}
-  {tab==='targets'?<TargetsTab csrf={csrf} isAdmin={isAdmin} version={version} onExpired={onExpired}/>:null}
+  {tab==='targets'?<TargetsTab csrf={csrf} isAdmin={isAdmin} canRun={canRun} version={version} onExpired={onExpired}/>:null}
  </div>;
 }
 
@@ -179,24 +179,25 @@ function CollectForm({host,network,busy,onCreate,onExpired}:{host:DiscoveryHost;
  </form>;
 }
 
-function TargetsTab({csrf,isAdmin,version,onExpired}:{csrf:string;isAdmin:boolean;version:number;onExpired:()=>void}){
+function TargetsTab({csrf,isAdmin,canRun,version,onExpired}:{csrf:string;isAdmin:boolean;canRun:boolean;version:number;onExpired:()=>void}){
  const [items,setItems]=useState<RemoteTarget[]>([]),[error,setError]=useState<unknown>(null),[loaded,setLoaded]=useState(false);
  const load=()=>{api.remoteTargets().then(p=>{setItems(p.items);setLoaded(true)}).catch(e=>{setError(e);expired(e,onExpired)})};
  useEffect(load,[version]);
- useEffect(()=>{if(!items.some(t=>t.state==='pending'||(t.state==='active'&&!t.last_collected_at)))return;const t=setInterval(load,5000);return ()=>clearInterval(t)},[items]);
+ useEffect(()=>{if(!items.some(t=>t.state==='pending'||(t.state==='active'&&!t.last_collected_at)||(t.collect_requested_at&&(!t.last_collected_at||t.collect_requested_at>t.last_collected_at))))return;const t=setInterval(load,5000);return ()=>clearInterval(t)},[items]);
  const act=(t:RemoteTarget,body:{disabled:boolean;reset_host_key?:boolean;reset_tls_cert?:boolean})=>void api.patchRemoteTarget(t.target_id,csrf,{revision:t.revision,...body}).then(load).catch(e=>{setError(e);expired(e,onExpired)});
  const state=(t:RemoteTarget):[string,string]=>t.state==='disabled'?['отключена','']:t.last_error?['ошибка','state-unavailable']:t.state==='pending'?['регистрируется','state-pending']:t.last_collected_at?['работает','state-ok']:['ждёт первого сбора','state-pending'];
  return <div className="stack">{error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   <div className="table-panel"><div className="table-toolbar"><h2>Цели сбора <span>{items.length}</span></h2></div>
    {loaded&&items.length===0?<div className="empty"><span>◎</span><h3>Целей пока нет</h3><p>Откройте подсеть на вкладке «Подсети» и нажмите «Собирать…» у найденного узла.</p></div>:
-   <div className="table-scroll"><table><thead><tr><th>Узел</th><th>Способ</th><th>Состояние</th><th>Последний сбор</th><th>Ключ / сертификат</th>{isAdmin?<th/>:null}</tr></thead><tbody>{items.map(t=>{const [label,cls]=state(t);return <tr key={t.target_id} className={t.state==='disabled'?'muted':''}>
+   <div className="table-scroll"><table><thead><tr><th>Узел</th><th>Способ</th><th>Состояние</th><th>Последний сбор</th><th>Ключ / сертификат</th>{isAdmin||canRun?<th/>:null}</tr></thead><tbody>{items.map(t=>{const [label,cls]=state(t);return <tr key={t.target_id} className={t.state==='disabled'?'muted':''}>
     <td className="mono">{t.address}:{t.port}</td><td>{kindName[t.kind]}</td>
     <td><span className={'badge '+cls}><i/>{label}</span>{t.last_error?<small className="error-text">{errName(t.last_error)}</small>:null}</td>
     <td className="time">{time(t.last_collected_at)}{t.state!=='disabled'&&t.last_collected_at?<small>следующий ≈ {new Date(new Date(t.last_collected_at).getTime()+t.interval_seconds*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})}</small>:null}</td>
     <td>{t.kind==='winrm'?(t.winrm_transport==='http_kerberos'?<small>Kerberos · {t.tls_server_name}</small>:t.tls_cert_origin==='admin'?<small>сертификат задан администратором{t.tls_server_name?' · '+t.tls_server_name:''}</small>:t.tls_cert_origin==='domain_ca'?<small>по CA домена · {t.tls_server_name}</small>:t.tls_cert_sha256?<><span className="mono" title={'SHA-256 '+t.tls_cert_sha256}>{t.tls_cert_sha256.slice(0,16)}…</span><small>сертификат запомнен при первом подключении</small></>:<small>сертификат запомнится при первом подключении</small>):t.kind!=='ssh'?'—':t.host_key_sha256?<><span className="mono" title={t.host_key_sha256}>{t.host_key_sha256.slice(0,18)}…</span><small>{t.host_key_origin==='first_use'?'запомнен при первом подключении':'введён вручную'}</small></>:<small>запомнится при первом подключении</small>}</td>
-    {isAdmin?<td className="actions">{t.kind==='ssh'&&t.host_key_sha256?<button className="text-link" onClick={()=>{if(confirm('Сбросить запомненный ключ хоста '+t.address+'? Делайте это, только если ключ сменился законно (например, после переустановки ОС).'))act(t,{disabled:t.state==='disabled',reset_host_key:true})}}>Сбросить ключ</button>:null}
-     {t.kind==='winrm'&&t.tls_cert_origin==='first_use'?<button className="text-link" onClick={()=>{if(confirm('Сбросить запомненный сертификат WinRM '+t.address+'? Делайте это, только если сертификат сменился законно (перевыпуск, переустановка ОС).'))act(t,{disabled:t.state==='disabled',reset_tls_cert:true})}}>Сбросить сертификат</button>:null}
-     <button className="text-link" onClick={()=>act(t,{disabled:t.state!=='disabled'})}>{t.state==='disabled'?'Включить':'Отключить'}</button></td>:null}
+    {isAdmin||canRun?<td className="actions">{canRun&&t.state!=='disabled'?(t.collect_requested_at&&(!t.last_collected_at||t.collect_requested_at>t.last_collected_at)?<small>сбор запрошен…</small>:<button className="text-link" onClick={()=>void api.collectTargetNow(t.target_id,csrf).then(load).catch(e=>{setError(e);expired(e,onExpired)})}>Собрать сейчас</button>):null}
+     {isAdmin&&t.kind==='ssh'&&t.host_key_sha256?<button className="text-link" onClick={()=>{if(confirm('Сбросить запомненный ключ хоста '+t.address+'? Делайте это, только если ключ сменился законно (например, после переустановки ОС).'))act(t,{disabled:t.state==='disabled',reset_host_key:true})}}>Сбросить ключ</button>:null}
+     {isAdmin&&t.kind==='winrm'&&t.tls_cert_origin==='first_use'?<button className="text-link" onClick={()=>{if(confirm('Сбросить запомненный сертификат WinRM '+t.address+'? Делайте это, только если сертификат сменился законно (перевыпуск, переустановка ОС).'))act(t,{disabled:t.state==='disabled',reset_tls_cert:true})}}>Сбросить сертификат</button>:null}
+     {isAdmin?<button className="text-link" onClick={()=>act(t,{disabled:t.state!=='disabled'})}>{t.state==='disabled'?'Включить':'Отключить'}</button>:null}</td>:null}
    </tr>})}</tbody></table></div>}
   </div>
  </div>;

@@ -39,6 +39,7 @@ type machineTarget struct {
 	CertSHA256 *string `json:"tls_cert_sha256"`
 	CertOrigin *string `json:"tls_cert_origin"`
 	Transport  *string `json:"winrm_transport"`
+	CollectAt  *string `json:"collect_requested_at"` // «Собрать сейчас»: новое значение перезапускает цикл цели — сбор сразу
 	Interval   int     `json:"interval_seconds"`
 	Source     *string `json:"agent_source_id"`
 	State      string  `json:"state"`
@@ -54,7 +55,7 @@ func (t machineTarget) key() string {
 		}
 		return *p
 	}
-	return strings.Join([]string{t.Kind, t.Address, strconv.Itoa(t.Port), t.Username, s(t.HostKey), s(t.CAPEM), s(t.ServerName), s(t.CertSHA256), s(t.CertOrigin), s(t.Transport)}, "\x00")
+	return strings.Join([]string{t.Kind, t.Address, strconv.Itoa(t.Port), t.Username, s(t.HostKey), s(t.CAPEM), s(t.ServerName), s(t.CertSHA256), s(t.CertOrigin), s(t.Transport), s(t.CollectAt)}, "\x00")
 }
 
 // Manager — цели одного collector. Post — запрос к центру по mTLS collector; Listen — слушатель collector для

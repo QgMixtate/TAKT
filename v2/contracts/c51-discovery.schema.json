@@ -841,6 +841,18 @@
      ],
      "description": "WinRM: отпечаток SHA-256 (hex) сертификата сервера, запомненный collector при первом подключении"
     },
+    "collect_requested_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "description": "«Собрать сейчас»: когда запрошен внеочередной сбор (POST /api/v1/discovery/targets/{id}/collect, не чаще раза в 2 минуты)"
+    },
     "winrm_transport": {
      "oneOf": [
       {
@@ -890,7 +902,8 @@
     "host_key_origin",
     "tls_cert_sha256",
     "tls_cert_origin",
-    "winrm_transport"
+    "winrm_transport",
+    "collect_requested_at"
    ],
    "additionalProperties": false
   },

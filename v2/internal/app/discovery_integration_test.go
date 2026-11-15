@@ -294,6 +294,17 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if issued != 1 {
 		t.Fatal("credential issuance must be audited with the collector as actor", issued)
 	}
+	// стенд №12, дефект 5: «Собрать сейчас» — оператор может, повтор раньше 2 минут — 409, collector видит запрос
+	var cn sources.RemoteTarget
+	_ = json.Unmarshal(call("op51", "POST", "/api/v1/discovery/targets/"+tg.ID+"/collect", `{}`, 202), &cn)
+	if cn.CollectAt == nil {
+		t.Fatalf("collect request %+v", cn)
+	}
+	call("op51", "POST", "/api/v1/discovery/targets/"+tg.ID+"/collect", `{}`, 409)
+	call("view51", "POST", "/api/v1/discovery/targets/"+tg.ID+"/collect", `{}`, 403)
+	if code, raw = post("/api/v1/machine/collect-targets", []byte("{}")); code != 200 || !strings.Contains(string(raw), `"collect_requested_at":"`) {
+		t.Fatalf("collector must see the collect request: %d %s", code, raw)
+	}
 	// стенд №12: источник отключённой цели — на паузе (без предупреждений о контакте); после включения — снова в учёте
 	paused := func() bool {
 		t.Helper()
