@@ -87,6 +87,12 @@ try{
  const card=page.getByRole('dialog',{name:/Обращение INC-/});await expect(card).toContainText('новый');await card.getByRole('button',{name:'В работу'}).click();await expect(card).toContainText('в работе');
  page.once('dialog',d=>void d.accept('Smoke: переустановлен драйвер'));await card.getByRole('button',{name:'Решён…'}).click();await expect(card).toContainText('Smoke: переустановлен драйвер');
  await card.getByRole('button',{name:'Закрыть обращение'}).click();checks.push('W3 incident in the Web: registered, taken into work, resolved with a resolution');
+ // C48 каталог услуг: администратор заводит услугу с полем выбора, затем отключает её для портала
+ await page.getByRole('tab',{name:'Каталог услуг'}).click();await page.getByRole('button',{name:'+ Услуга'}).click();const cat=page.getByRole('dialog',{name:'Услуга каталога'});
+ await cat.getByLabel('Название услуги').fill('Smoke: выдать мышь');await cat.getByRole('button',{name:'+ поле'}).click();await cat.getByLabel('Ключ поля').fill('color');await cat.getByLabel('Подпись поля').fill('Цвет');
+ await cat.getByLabel('Тип поля').selectOption('select');await cat.getByLabel('Варианты').fill('чёрная;белая');await cat.getByRole('button',{name:/Сохранить/}).click();await expect(cat).toHaveCount(0);
+ await expect(page.locator('.table-panel')).toContainText('Smoke: выдать мышь');await page.getByRole('button',{name:'Smoke: выдать мышь'}).click();await cat.getByText('доступна на портале').click();await cat.getByRole('button',{name:/Сохранить/}).click();
+ await expect(page.locator('.table-panel')).toContainText('отключена');await page.getByRole('tab',{name:'Очередь'}).click();checks.push('C48 service catalog in the Web: service with a select field created and disabled for the portal');
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('button',{name:/Реестр активов/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');

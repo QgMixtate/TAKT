@@ -10,6 +10,7 @@ import (
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/access"
 	accessport "github.com/QgMixtate/surveyscan/v2/internal/modules/access/port"
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/itsm"
+	"github.com/QgMixtate/surveyscan/v2/internal/modules/warehouse"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/domain"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/identifier"
 )
@@ -34,7 +35,17 @@ func (r *Registry) itsmDo(w http.ResponseWriter, req *http.Request, status int, 
 	if e == nil {
 		e = tx.Commit(ctx)
 	}
+	var incompatible *warehouse.IncompatibleError
+	var reserved *warehouse.ReservedError
 	switch {
+	case errors.As(e, &reserved):
+		access.APIError(w, 409, "UNIT_RESERVED")
+	case errors.As(e, &incompatible):
+		access.APIError(w, 409, "INCOMPATIBLE_COMPONENT")
+	case errors.Is(e, warehouse.ErrInventoryOpen):
+		access.APIError(w, 409, "LOCATION_UNDER_INVENTORY")
+	case errors.Is(e, itsm.ErrNotApprover):
+		access.APIError(w, 403, "NOT_APPROVER") // решает только согласующий (человек, член команды) или администратор
 	case errors.Is(e, itsm.ErrNoSubject):
 		access.APIError(w, 422, "NO_PERSON_SUBJECT") // у пользователя нет записи в оргструктуре
 	case e != nil:
@@ -157,6 +168,125 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 		d, e := st.Detail(ctx, tx, id.TenantID, ticket, true)
 		return d, "itsm.ticket_linked", e
 	})
+	// Каталог услуг (C48): чтение — itsm:read, изменение — администратор.
+	h["GET /api/v1/itsm/catalog"] = route51{"itsm:read", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if _, ok := queryOnly(w, req); !ok {
+			return
+		}
+		r.itsmDo(w, req, 200, "itsm:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			items, e := st.Catalog(ctx, tx, id.TenantID, false)
+			return map[string]any{"items": items}, e
+		})
+	})}
+	saveCatalog := func(status int) http.HandlerFunc {
+		return func(w http.ResponseWriter, req *http.Request) {
+			var body itsm.CatalogItem
+			if !readOperationBody(w, req, &body) {
+				return
+			}
+			r.itsmDo(w, req, status, "itsm:admin", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+				body.ID = req.PathValue("item_id")
+				if body.ID == "" {
+					body.Active = true
+				}
+				it, e := st.SaveCatalogItem(ctx, tx, id.TenantID, body)
+				if e == nil {
+					e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "itsm.catalog_saved", "catalog_item", it.ID)
+				}
+				return it, e
+			})
+		}
+	}
+	h["POST /api/v1/itsm/catalog"] = route51{"itsm:admin", saveCatalog(201)}
+	h["POST /api/v1/itsm/catalog/{item_id}"] = route51{"itsm:admin", saveCatalog(200)}
+	type approval struct {
+		Revision string `json:"revision"`
+		Approve  bool   `json:"approve"`
+		Comment  string `json:"comment"`
+	}
+	decide := func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, admin bool, ticket string, b *approval) (itsm.Detail, error) {
+		d, e := st.Approve(ctx, tx, id.TenantID, actor(id), me, ticket, b.Revision, admin, b.Approve, b.Comment)
+		if e != nil {
+			return d, e
+		}
+		action := "itsm.request_approved"
+		if !b.Approve {
+			action = "itsm.request_rejected"
+		}
+		return d, r.Audit.Record(ctx, tx, id.TenantID, id.UserID, action, "ticket", d.ID)
+	}
+	h["POST /api/v1/itsm/tickets/{ticket_id}/approve"] = route51{"itsm:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body approval
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		r.itsmDo(w, req, 200, "itsm:write", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			_, e := r.Auth.Authorize(ctx, tx, id.CredentialID, id.TenantID, "itsm:admin")
+			admin := e == nil
+			me, e := st.MySubject(ctx, tx, id.TenantID, id.UserID)
+			if e != nil && !(admin && errors.Is(e, itsm.ErrNoSubject)) {
+				return nil, e
+			}
+			return decide(ctx, tx, id, me, admin, req.PathValue("ticket_id"), &body)
+		})
+	})}
+	// Исполнение складской услуги (W3-05): выдача со склада заявителю с актом, связь заявки с движением и переход
+	// «исполнено» — одна транзакция; повтор или одновременное исполнение — конфликт, вторая выдача откатывается.
+	type fulfill struct {
+		Revision     string  `json:"revision"`
+		FromLocation string  `json:"from_location"`
+		UnitID       string  `json:"unit_id"`
+		Quantity     float64 `json:"quantity"`
+		Text         string  `json:"text"`
+	}
+	h["POST /api/v1/itsm/tickets/{ticket_id}/fulfill"] = route51{"itsm:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var b fulfill
+		if !readOperationBody(w, req, &b) {
+			return
+		}
+		r.itsmDo(w, req, 200, "itsm:write", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			if _, e := r.Auth.Authorize(ctx, tx, id.CredentialID, id.TenantID, "warehouse:write"); e != nil {
+				return nil, e
+			}
+			d, e := st.Detail(ctx, tx, id.TenantID, req.PathValue("ticket_id"), true)
+			if e != nil {
+				return nil, e
+			}
+			if d.Request == nil || d.Request.WarehouseItem == nil || d.Requester == nil {
+				return nil, domain.Invalid // не складская услуга
+			}
+			if d.State != "in_fulfillment" {
+				return nil, domain.Conflict // уже исполнена, ждёт согласования или закрыта
+			}
+			if d.Revision != b.Revision {
+				return nil, domain.Revision
+			}
+			if (b.UnitID == "") == (b.Quantity == 0) {
+				return nil, domain.Invalid // либо экземпляр, либо количество
+			}
+			if _, e = (warehouse.Store{}).ExpireReservations(ctx, tx, id.TenantID); e != nil {
+				return nil, e
+			}
+			line := warehouse.Line{UnitID: b.UnitID}
+			if b.UnitID == "" {
+				line = warehouse.Line{ItemID: *d.Request.WarehouseItem, Quantity: b.Quantity}
+			}
+			m, e := r.warehouseMove(ctx, tx, id, warehouse.Operation{Kind: "issue", Basis: "Заявка " + d.Number + ": " + d.Title,
+				FromLocation: b.FromLocation, ToHolder: *d.Requester, Lines: []warehouse.Line{line}})
+			if e != nil {
+				return nil, e
+			}
+			for _, l := range m.Lines {
+				if l.Item != *d.Request.WarehouseItem {
+					return nil, domain.Invalid // выдаётся только позиция, указанная в услуге
+				}
+			}
+			if d, e = st.Fulfilled(ctx, tx, id.TenantID, actor(id), d.ID, b.Revision, m.ID, m.ActNo, b.Text); e != nil {
+				return nil, e
+			}
+			return d, r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "itsm.request_fulfilled", "ticket", d.ID)
+		})
+	})}
 	// Портал заявителя (роль requester, вход по AD): только свои обращения; внутренние комментарии не видны (W3-09).
 	portal := func(route string, status int, read bool, newBody func() any, fn func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, req *http.Request, body any) (any, error)) {
 		h[route] = route51{"itsm:portal", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -189,8 +319,11 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 			return itsm.Detail{}, domain.NotFound // чужое обращение не раскрывается
 		}
 		d.Allowed = []string{}
-		if d.State == "resolved" {
+		switch d.State {
+		case "resolved":
 			d.Allowed = []string{"closed", "in_progress"} // «решено» / «не решено»
+		case "fulfilled":
+			d.Allowed = []string{"closed", "in_fulfillment"} // «выполнено» / «не выполнено»
 		}
 		return d, nil
 	}
@@ -241,12 +374,12 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 		if e != nil {
 			return nil, e
 		}
-		if d.State != "resolved" {
-			return nil, domain.Conflict
+		if len(d.Allowed) != 2 {
+			return nil, domain.Conflict // подтверждать нечего: обращение не решено / заявка не исполнена
 		}
-		to := "closed"
+		to := d.Allowed[0]
 		if !b.Solved {
-			to = "in_progress" // «не решено» — повторное открытие
+			to = d.Allowed[1] // «не решено» — повторное открытие
 		}
 		if _, e = st.Transition(ctx, tx, id.TenantID, actor(id), d.ID, b.Revision, to, b.Text); e != nil {
 			return nil, e
@@ -255,6 +388,43 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 			return nil, e
 		}
 		return own(ctx, tx, id.TenantID, me, d.ID)
+	})
+	portal("GET /api/v1/portal/catalog", 200, true, nil, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, _ string, _ *http.Request, _ any) (any, error) {
+		items, e := st.Catalog(ctx, tx, id.TenantID, true)
+		for i := range items {
+			items[i].Approver, items[i].Team, items[i].WarehouseItem = nil, nil, nil // внутренняя настройка услуги заявителю не нужна
+		}
+		return map[string]any{"items": items}, e
+	})
+	type portalRequest struct {
+		Item    string            `json:"catalog_item_id"`
+		Values  map[string]string `json:"form_values"`
+		Urgency int               `json:"urgency"`
+	}
+	portal("POST /api/v1/portal/requests", 201, false, func() any { return &portalRequest{} }, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, _ *http.Request, body any) (any, error) {
+		b := body.(*portalRequest)
+		d, e := st.CreateRequest(ctx, tx, id.TenantID, actor(id), me, b.Item, b.Values, b.Urgency)
+		if e != nil {
+			return nil, e
+		}
+		if e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "itsm.portal_request_created", "ticket", d.ID); e != nil {
+			return nil, e
+		}
+		return own(ctx, tx, id.TenantID, me, d.ID)
+	})
+	// Согласующий — сотрудник с портала (руководитель): видит ждущие его решения заявки и решает по ним.
+	portal("GET /api/v1/portal/approvals", 200, true, nil, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, _ *http.Request, _ any) (any, error) {
+		items, e := st.PendingApprovals(ctx, tx, id.TenantID, me)
+		return map[string]any{"items": items}, e
+	})
+	portal("POST /api/v1/portal/tickets/{ticket_id}/approve", 200, false, func() any { return &approval{} }, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, req *http.Request, body any) (any, error) {
+		d, e := decide(ctx, tx, id, me, false, req.PathValue("ticket_id"), body.(*approval))
+		if e != nil {
+			return nil, e
+		}
+		d.Events = []itsm.Event{} // согласующему — решение и состояние, не переписка
+		d.Allowed = []string{}
+		return d, nil
 	})
 	return h
 }

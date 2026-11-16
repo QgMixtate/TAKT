@@ -33,6 +33,12 @@ var transitions = map[string]map[string][]string{
 		"known_error":   {"resolved", "cancelled"},
 		"resolved":      {"investigating", "closed"},
 	},
+	// заявка (C48): pending_approval → in_fulfillment | rejected — только решением согласующего (Approve)
+	"request": {
+		"pending_approval": {"cancelled"},
+		"in_fulfillment":   {"fulfilled", "cancelled"},
+		"fulfilled":        {"in_fulfillment", "closed"}, // «не выполнено» заявителем или закрытие
+	},
 }
 
 var initial = map[string]string{"incident": "new", "problem": "new"}
@@ -98,6 +104,8 @@ type Detail struct {
 	Events  []Event  `json:"events"`
 	// Workarounds — обходные решения проблем, связанных с этим инцидентом (W3-04)
 	Workarounds []string `json:"workarounds"`
+	// Request — услуга, значения формы, согласование (только у заявок)
+	Request *Request `json:"request"`
 }
 
 type Input struct {
@@ -149,12 +157,19 @@ func event(ctx context.Context, tx pgx.Tx, tenant, ticket, actor, kind string, p
 	return e
 }
 
-// Create регистрирует обращение (сейчас — инцидент и проблему; заявки и изменения — C48/C49).
+// Create регистрирует инцидент или проблему (заявка — CreateRequest по услуге каталога; изменения — C49).
 func (s Store) Create(ctx context.Context, tx pgx.Tx, tenant, actor string, in Input) (Detail, error) {
+	state, known := initial[in.Kind]
+	if !known {
+		return Detail{}, domain.Invalid
+	}
+	return s.create(ctx, tx, tenant, actor, in, state, nil, nil, nil)
+}
+
+func (s Store) create(ctx context.Context, tx pgx.Tx, tenant, actor string, in Input, state string, catalog *string, values []byte, team *string) (Detail, error) {
 	title, ok1 := clean(in.Title, 1, 256)
 	desc, ok2 := clean(in.Description, 0, 8000)
-	state, known := initial[in.Kind]
-	if !ok1 || !ok2 || !known || in.Impact < 1 || in.Impact > 3 || in.Urgency < 1 || in.Urgency > 3 {
+	if !ok1 || !ok2 || in.Impact < 1 || in.Impact > 3 || in.Urgency < 1 || in.Urgency > 3 {
 		return Detail{}, domain.Invalid
 	}
 	if in.Requester != "" {
@@ -173,8 +188,8 @@ ON CONFLICT (tenant_id,prefix,year) DO UPDATE SET last=itsm.ticket_counters.last
 		return Detail{}, e
 	}
 	number := fmt.Sprintf("%s-%d-%06d", prefix[in.Kind], at.Year(), no)
-	if _, e := tx.Exec(ctx, `INSERT INTO itsm.tickets(tenant_id,ticket_id,kind,number,title,description,impact,urgency,priority,state,requester_id,created_by,created_at,updated_at)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)`, tenant, id, in.Kind, number, title, desc, in.Impact, in.Urgency, Priority(in.Impact, in.Urgency), state, nullable(in.Requester), actor, at); e != nil {
+	if _, e := tx.Exec(ctx, `INSERT INTO itsm.tickets(tenant_id,ticket_id,kind,number,title,description,impact,urgency,priority,state,requester_id,created_by,created_at,updated_at,catalog_item_id,form_values,team_id)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$14,$15,$16)`, tenant, id, in.Kind, number, title, desc, in.Impact, in.Urgency, Priority(in.Impact, in.Urgency), state, nullable(in.Requester), actor, at, catalog, values, team); e != nil {
 		return Detail{}, pgConflict(e)
 	}
 	if e := event(ctx, tx, tenant, id, actor, "created", true, map[string]any{"state": state, "priority": Priority(in.Impact, in.Urgency)}, nil); e != nil {
@@ -249,6 +264,27 @@ AND p.state NOT IN ('closed','cancelled') AND (EXISTS(SELECT 1 FROM itsm.ticket_
 	if d.Workarounds == nil {
 		d.Workarounds = []string{}
 	}
+	if e != nil || d.Kind != "request" {
+		return d, e
+	}
+	r := &Request{}
+	var values []byte
+	if e = tx.QueryRow(ctx, `SELECT c.item_id::text,c.name,COALESCE(t.form_values,'{}'::jsonb),c.approver_id::text,c.warehouse_item_id::text FROM itsm.tickets t
+JOIN itsm.catalog_items c ON c.tenant_id=t.tenant_id AND c.item_id=t.catalog_item_id WHERE t.tenant_id=$1 AND t.ticket_id=$2`, tenant, id).Scan(&r.CatalogItem, &r.CatalogName, &values, &r.Approver, &r.WarehouseItem); e != nil {
+		return d, e
+	}
+	if e = json.Unmarshal(values, &r.Values); e != nil {
+		return d, e
+	}
+	a := &Approval{}
+	e = tx.QueryRow(ctx, "SELECT approver_id::text,decision,comment,decided_by,decided_at FROM itsm.approvals WHERE tenant_id=$1 AND ticket_id=$2", tenant, id).Scan(&a.Approver, &a.Decision, &a.Comment, &a.DecidedBy, &a.DecidedAt)
+	switch {
+	case errors.Is(e, pgx.ErrNoRows):
+		e = nil
+	case e == nil:
+		r.Approval = a
+	}
+	d.Request = r
 	return d, e
 }
 
@@ -258,7 +294,7 @@ type Filter struct{ Kind, State, Assignee, Team, Requester, Query string }
 func (Store) List(ctx context.Context, tx pgx.Tx, tenant string, f Filter, limit int) ([]Ticket, error) {
 	rows, e := tx.Query(ctx, `SELECT t.ticket_id::text,t.kind,t.number,t.title,t.description,t.impact,t.urgency,t.priority,t.state,t.requester_id::text,t.assignee_id::text,t.team_id::text,
 t.resolution,t.workaround,t.reopen_count,t.created_by,t.created_at,t.updated_at,t.resolved_at,t.closed_at,t.revision::text FROM itsm.tickets t WHERE t.tenant_id=$1
-AND ($2='' OR t.kind=$2) AND ($3='' OR ($3='open' AND t.state NOT IN ('closed','cancelled','resolved')) OR t.state=$3)
+AND ($2='' OR t.kind=$2) AND ($3='' OR ($3='open' AND t.state NOT IN ('closed','cancelled','resolved','fulfilled','rejected')) OR t.state=$3)
 AND ($4='' OR t.assignee_id::text=$4) AND ($5='' OR t.team_id::text=$5) AND ($6='' OR t.requester_id::text=$6)
 AND ($7='' OR lower(t.number)=lower($7) OR lower(t.title) LIKE '%'||lower($7)||'%')
 ORDER BY t.priority, t.created_at LIMIT $8`, tenant, f.Kind, f.State, f.Assignee, f.Team, f.Requester, f.Query, limit)
@@ -289,14 +325,14 @@ func (s Store) Transition(ctx context.Context, tx pgx.Tx, tenant, actor, id, rev
 		return d, domain.Conflict
 	}
 	note, ok := clean(text, 0, 4000)
-	if !ok || (to == "resolved" || to == "known_error") && note == "" {
+	if !ok || (to == "resolved" || to == "known_error" || to == "fulfilled") && note == "" {
 		return d, domain.Invalid
 	}
-	reopen := d.State == "resolved" && (to == "in_progress" || to == "investigating")
+	reopen := (d.State == "resolved" || d.State == "fulfilled") && to != "closed"
 	tag, e := tx.Exec(ctx, `UPDATE itsm.tickets SET state=$4,updated_at=now(),revision=revision+1,
-resolution=CASE WHEN $4='resolved' THEN $5 ELSE resolution END,
+resolution=CASE WHEN $4 IN ('resolved','fulfilled') THEN $5 ELSE resolution END,
 workaround=CASE WHEN $4='known_error' THEN $5 ELSE workaround END,
-resolved_at=CASE WHEN $4='resolved' THEN now() WHEN $6 THEN NULL ELSE resolved_at END,
+resolved_at=CASE WHEN $4 IN ('resolved','fulfilled') THEN now() WHEN $6 THEN NULL ELSE resolved_at END,
 closed_at=CASE WHEN $4 IN ('closed','cancelled') THEN now() ELSE closed_at END,
 reopen_count=reopen_count+CASE WHEN $6 THEN 1 ELSE 0 END
 WHERE tenant_id=$1 AND ticket_id=$2 AND revision::text=$3`, tenant, id, revision, to, nullable(note), reopen)

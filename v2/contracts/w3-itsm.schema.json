@@ -231,7 +231,9 @@
       "assigned",
       "comment",
       "linked",
-      "priority"
+      "priority",
+      "approval",
+      "fulfilled"
      ]
     },
     "public": {
@@ -475,6 +477,16 @@
      "items": {
       "type": "string"
      }
+    },
+    "request": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/Request"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -502,7 +514,8 @@
     "allowed_transitions",
     "links",
     "events",
-    "workarounds"
+    "workarounds",
+    "request"
    ],
    "additionalProperties": false
   },
@@ -557,6 +570,249 @@
     "roles",
     "expires_at",
     "csrf_token"
+   ],
+   "additionalProperties": false
+  },
+  "Field": {
+   "type": "object",
+   "properties": {
+    "key": {
+     "type": "string",
+     "pattern": "^[a-z][a-z0-9_]{0,31}$"
+    },
+    "label": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "type": {
+     "enum": [
+      "text",
+      "textarea",
+      "select"
+     ]
+    },
+    "required": {
+     "type": "boolean"
+    },
+    "options": {
+     "type": "array",
+     "maxItems": 50,
+     "items": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+     }
+    }
+   },
+   "required": [
+    "key",
+    "label",
+    "type",
+    "required",
+    "options"
+   ],
+   "additionalProperties": false
+  },
+  "CatalogItem": {
+   "type": "object",
+   "properties": {
+    "item_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "description": {
+     "type": "string",
+     "maxLength": 4000
+    },
+    "form": {
+     "type": "array",
+     "maxItems": 20,
+     "items": {
+      "$ref": "#/$defs/Field"
+     }
+    },
+    "approver_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "team_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "warehouse_item_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "active": {
+     "type": "boolean"
+    },
+    "revision": {
+     "type": "string",
+     "pattern": "^[0-9]+$"
+    }
+   },
+   "required": [
+    "item_id",
+    "name",
+    "description",
+    "form",
+    "approver_id",
+    "team_id",
+    "warehouse_item_id",
+    "active",
+    "revision"
+   ],
+   "additionalProperties": false
+  },
+  "CatalogList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/CatalogItem"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "Approval": {
+   "type": "object",
+   "properties": {
+    "approver_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "decision": {
+     "enum": [
+      "approved",
+      "rejected"
+     ]
+    },
+    "comment": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 2000
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "decided_by": {
+     "type": "string"
+    },
+    "decided_at": {
+     "type": "string",
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "approver_id",
+    "decision",
+    "comment",
+    "decided_by",
+    "decided_at"
+   ],
+   "additionalProperties": false
+  },
+  "Request": {
+   "type": "object",
+   "properties": {
+    "catalog_item_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "catalog_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "form_values": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "string",
+      "maxLength": 1000
+     }
+    },
+    "approver_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "warehouse_item_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "approval": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/Approval"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "catalog_item_id",
+    "catalog_name",
+    "form_values",
+    "approver_id",
+    "warehouse_item_id",
+    "approval"
    ],
    "additionalProperties": false
   }
