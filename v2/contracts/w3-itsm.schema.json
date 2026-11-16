@@ -1,0 +1,525 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:surveyscan:w3:itsm:1:0",
+ "title": "Обращения ITSM (волна 3; decisions/C46-w3-itsm-scope-and-model.md)",
+ "$defs": {
+  "Ticket": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "kind": {
+     "enum": [
+      "incident",
+      "request",
+      "change",
+      "problem"
+     ]
+    },
+    "number": {
+     "type": "string",
+     "pattern": "^(INC|REQ|CHG|PRB)-[0-9]{4}-[0-9]{6}$"
+    },
+    "title": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "description": {
+     "type": "string",
+     "maxLength": 8000
+    },
+    "impact": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 3
+    },
+    "urgency": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 3
+    },
+    "priority": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 4
+    },
+    "state": {
+     "enum": [
+      "new",
+      "assigned",
+      "in_progress",
+      "waiting_customer",
+      "resolved",
+      "closed",
+      "cancelled",
+      "investigating",
+      "known_error",
+      "submitted",
+      "pending_approval",
+      "approved",
+      "rejected",
+      "in_fulfillment",
+      "fulfilled",
+      "draft",
+      "scheduled",
+      "completed",
+      "rolled_back"
+     ]
+    },
+    "requester_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "assignee_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "team_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "resolution": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 4000
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "workaround": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 4000
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "reopen_count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "created_by": {
+     "type": "string"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "updated_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "resolved_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "closed_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "revision": {
+     "type": "string",
+     "pattern": "^[0-9]+$"
+    }
+   },
+   "required": [
+    "ticket_id",
+    "kind",
+    "number",
+    "title",
+    "description",
+    "impact",
+    "urgency",
+    "priority",
+    "state",
+    "requester_id",
+    "assignee_id",
+    "team_id",
+    "resolution",
+    "workaround",
+    "reopen_count",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "resolved_at",
+    "closed_at",
+    "revision"
+   ],
+   "additionalProperties": false
+  },
+  "Link": {
+   "type": "object",
+   "properties": {
+    "target_kind": {
+     "enum": [
+      "asset",
+      "service",
+      "ticket",
+      "movement"
+     ]
+    },
+    "target_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "label": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "target_kind",
+    "target_id",
+    "label"
+   ],
+   "additionalProperties": false
+  },
+  "Event": {
+   "type": "object",
+   "properties": {
+    "event_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "kind": {
+     "enum": [
+      "created",
+      "state",
+      "assigned",
+      "comment",
+      "linked",
+      "priority"
+     ]
+    },
+    "public": {
+     "type": "boolean"
+    },
+    "detail": {
+     "type": "object"
+    },
+    "text": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 8000
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "actor_ref": {
+     "type": "string"
+    },
+    "occurred_at": {
+     "type": "string",
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "event_id",
+    "kind",
+    "public",
+    "detail",
+    "text",
+    "actor_ref",
+    "occurred_at"
+   ],
+   "additionalProperties": false
+  },
+  "TicketDetail": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "kind": {
+     "enum": [
+      "incident",
+      "request",
+      "change",
+      "problem"
+     ]
+    },
+    "number": {
+     "type": "string",
+     "pattern": "^(INC|REQ|CHG|PRB)-[0-9]{4}-[0-9]{6}$"
+    },
+    "title": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "description": {
+     "type": "string",
+     "maxLength": 8000
+    },
+    "impact": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 3
+    },
+    "urgency": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 3
+    },
+    "priority": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 4
+    },
+    "state": {
+     "enum": [
+      "new",
+      "assigned",
+      "in_progress",
+      "waiting_customer",
+      "resolved",
+      "closed",
+      "cancelled",
+      "investigating",
+      "known_error",
+      "submitted",
+      "pending_approval",
+      "approved",
+      "rejected",
+      "in_fulfillment",
+      "fulfilled",
+      "draft",
+      "scheduled",
+      "completed",
+      "rolled_back"
+     ]
+    },
+    "requester_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "assignee_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "team_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "resolution": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 4000
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "workaround": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 4000
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "reopen_count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "created_by": {
+     "type": "string"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "updated_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "resolved_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "closed_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "revision": {
+     "type": "string",
+     "pattern": "^[0-9]+$"
+    },
+    "allowed_transitions": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "new",
+       "assigned",
+       "in_progress",
+       "waiting_customer",
+       "resolved",
+       "closed",
+       "cancelled",
+       "investigating",
+       "known_error",
+       "submitted",
+       "pending_approval",
+       "approved",
+       "rejected",
+       "in_fulfillment",
+       "fulfilled",
+       "draft",
+       "scheduled",
+       "completed",
+       "rolled_back"
+      ]
+     }
+    },
+    "links": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Link"
+     }
+    },
+    "events": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Event"
+     }
+    },
+    "workarounds": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "ticket_id",
+    "kind",
+    "number",
+    "title",
+    "description",
+    "impact",
+    "urgency",
+    "priority",
+    "state",
+    "requester_id",
+    "assignee_id",
+    "team_id",
+    "resolution",
+    "workaround",
+    "reopen_count",
+    "created_by",
+    "created_at",
+    "updated_at",
+    "resolved_at",
+    "closed_at",
+    "revision",
+    "allowed_transitions",
+    "links",
+    "events",
+    "workarounds"
+   ],
+   "additionalProperties": false
+  },
+  "TicketList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Ticket"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  }
+ }
+}

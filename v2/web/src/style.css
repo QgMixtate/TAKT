@@ -65,3 +65,6 @@
 @media print{body *{visibility:hidden}.act-print,.act-print *{visibility:visible}.act-print{position:absolute;left:0;top:0;width:100%;padding:12mm}.act-shade{position:static;background:none}}
 @media(max-width:700px){.act-sheet{padding:18px}.act-print dl{grid-template-columns:1fr}}
 .retire-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}.retire-form select,.retire-form input{font-size:12px;padding:6px;border:1px solid #dfe7dd;border-radius:5px}
+.ticket-card .ticket-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0}.ticket-card .ticket-actions select{font-size:11px}
+.ticket-feed,.ticket-links{list-style:none;padding:0;margin:0;font-size:12px}.ticket-feed li{padding:8px 0;border-bottom:1px solid #eef2e9;display:grid;gap:3px}.ticket-feed li.internal{background:#fbf8ee;padding-left:8px}.ticket-feed small{color:#9aa892}
+.ticket-comment{display:grid;gap:8px;margin-top:12px}.ticket-comment textarea{font:inherit;font-size:12px;padding:8px;border:1px solid #dfe7dd;border-radius:5px}.check{font-size:11px;display:inline-flex;gap:5px;align-items:center}

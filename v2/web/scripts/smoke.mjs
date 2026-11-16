@@ -36,7 +36,7 @@ try{
  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:'../.local/c51-discovery-web.png',fullPage:true});checks.push('C51 discovery: tabs, /16 refused with a visible error in the drawer, subnet created, run by button, real collector result shown');
  // C51.03: учётка в боковой панели (секрет не возвращается), «Собирать…» у узла без отпечатка ключа → цель сбора
  await page.getByRole('tab',{name:'Учётки сбора'}).click();await page.getByRole('button',{name:'+ Новая учётка'}).click();drawer=page.getByRole('dialog',{name:'Новая учётка'});
- await drawer.getByLabel('Название').fill('Linux RO');await drawer.getByLabel('Логин').fill('scanprobe');await drawer.getByLabel('Пароль').fill('web-smoke-secret-51');
+ await drawer.getByLabel('Название').fill('Linux RO');await drawer.getByLabel('Логин').fill('scanprobe');await drawer.getByLabel('по паролю').check();await drawer.getByLabel('Пароль').fill('web-smoke-secret-51');
  const credReply=page.waitForResponse(r=>r.url().endsWith('/api/v1/discovery/credentials')&&r.request().method()==='POST');await drawer.getByRole('button',{name:/Сохранить учётку/}).click();
  const credBody=await (await credReply).text();if(credBody.includes('web-smoke-secret-51'))throw new Error('collect credential secret returned to the browser');
  await expect(page.getByRole('cell',{name:'Linux RO'})).toBeVisible();await expect(page.getByRole('heading',{name:/CA домена для WinRM/})).toBeVisible();await expect(page.getByRole('button',{name:'+ Загрузить сертификат CA'})).toBeVisible();
@@ -81,6 +81,12 @@ try{
  await page.getByRole('button',{name:'Начать инвентаризацию'}).click();await page.getByLabel('Найденные серийные номера').fill('SMOKE-SN-1');await page.getByRole('button',{name:'Сохранить факт и сверить'}).click();
  await expect(page.locator('.warehouse table')).toContainText('сходится');page.once('dialog',d=>void d.accept());await page.getByRole('button',{name:'Закрыть и провести'}).click();
  await expect(page.locator('.warehouse')).toContainText('недостачи нет');checks.push('W2 inventory in the Web: location counted, serial matched, inventory closed without discrepancies');
+ // W3 обращения: регистрация инцидента → в работу → решён (с решением) — журнал в карточке
+ await page.getByRole('button',{name:/Обращения/}).click();await page.getByRole('button',{name:'+ Обращение'}).click();
+ const nt=page.getByRole('dialog',{name:'Новое обращение'});await nt.getByLabel('Тема').fill('Smoke: не печатает принтер');await nt.getByRole('button',{name:/Зарегистрировать/}).click();
+ const card=page.getByRole('dialog',{name:/Обращение INC-/});await expect(card).toContainText('новый');await card.getByRole('button',{name:'В работу'}).click();await expect(card).toContainText('в работе');
+ page.once('dialog',d=>void d.accept('Smoke: переустановлен драйвер'));await card.getByRole('button',{name:'Решён…'}).click();await expect(card).toContainText('Smoke: переустановлен драйвер');
+ await card.getByRole('button',{name:'Закрыть обращение'}).click();checks.push('W3 incident in the Web: registered, taken into work, resolved with a resolution');
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('button',{name:/Реестр активов/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');
