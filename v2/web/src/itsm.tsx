@@ -1,27 +1,33 @@
 import {useEffect,useState} from 'react';
-import {api,ApiError,errorMessage,type CalendarEntry,type CatalogField,type CatalogItem,type ChangeWindow,type Subject,type Ticket,type TicketDetail,type TicketKind,type WItem,type WLocation,type WUnit} from './api';
+import {api,ApiError,errorMessage,type CalendarEntry,type CatalogField,type CatalogItem,type ChangeWindow,type SlaSettings,type SlaTimer,type Subject,type Ticket,type TicketDetail,type TicketKind,type WItem,type WLocation,type WUnit} from './api';
 
 // Волна 3 (C47): обращения — очередь, регистрация, карточка с переходами, назначением, журналом и связями.
 // C48: каталог услуг (администратор), заявки — согласование и исполнение со склада. C49: изменения — окно, риск,
-// согласование администратором, предупреждение о пересечении окон, календарь. SLA — C50.
+// согласование администратором, предупреждение о пересечении окон, календарь. C50: SLA — сроки в рабочих часах.
 
 export const kindName:Record<TicketKind,string>={incident:'Инцидент',request:'Заявка',change:'Изменение',problem:'Проблема'};
 const stateName:Record<string,[string,string]>={new:['новый','state-pending'],assigned:['назначен','state-pending'],in_progress:['в работе','state-active'],waiting_customer:['ждём заявителя','state-partial'],resolved:['решён','state-ok'],closed:['закрыт','state-ok'],cancelled:['отменён','state-unavailable'],investigating:['расследование','state-active'],known_error:['известная ошибка','state-partial'],pending_approval:['на согласовании','state-pending'],in_fulfillment:['в исполнении','state-active'],fulfilled:['исполнена','state-ok'],rejected:['отклонена','state-unavailable'],draft:['черновик','state-pending'],submitted:['на согласовании','state-pending'],approved:['согласовано','state-active'],scheduled:['запланировано','state-active'],completed:['выполнено','state-ok'],rolled_back:['откат','state-partial']};
 const actionName:Record<string,string>={in_progress:'В работу',waiting_customer:'Ждём заявителя',resolved:'Решён…',closed:'Закрыть',cancelled:'Отменить',investigating:'Расследовать',known_error:'Известная ошибка…',fulfilled:'Исполнено…',in_fulfillment:'Вернуть в исполнение',submitted:'На согласование',scheduled:'Запланировать',completed:'Выполнено…',rolled_back:'Откат…'};
+const slaName:Record<SlaTimer['status'],[string,string]>={running:['идёт','state-active'],paused:['пауза','state-pending'],warning:['скоро срок','state-partial'],breached:['нарушен','state-unavailable'],met:['в срок','state-ok'],missed:['просрочен','state-unavailable']};
+const metricName:Record<SlaTimer['metric'],string>={response:'Реакция',resolution:'Решение'};
+const span=(m:number)=>m>=60?Math.floor(m/60)+' ч'+(m%60?' '+m%60+' мин':''):m+' мин';
+// худший таймер обращения для очереди: нарушение важнее предупреждения, идущий — с ближайшим сроком
+function slaBadge(list:SlaTimer[]){const rank={breached:0,missed:1,warning:2,running:3,paused:4,met:5};const t=[...list].sort((a,b)=>rank[a.status]-rank[b.status])[0];if(!t)return <span className="muted">—</span>;
+ return <span className={'badge '+slaName[t.status][1]} title={metricName[t.metric]}><i/>{t.status==='running'&&t.due_at?'до '+new Date(t.due_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):slaName[t.status][0]}</span>}
 const riskName:Record<ChangeWindow['risk'],string>={low:'низкий',medium:'средний',high:'высокий'};
 const prio=(p:number)=>'P'+p;
 const fmt=(v:string)=>new Date(v).toLocaleString('ru-RU');
 
 export function TicketsView({csrf,canWrite,canAdmin,onOpenAsset,onExpired}:{csrf:string;canWrite:boolean;canAdmin:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
- const [kind,setKind]=useState(''),[state,setState]=useState('open'),[mine,setMine]=useState(false),[q,setQ]=useState(''),[items,setItems]=useState<Ticket[]|null>(null),[open,setOpen]=useState<string|null>(null),[creating,setCreating]=useState(false),[subjects,setSubjects]=useState<Subject[]>([]),[error,setError]=useState<unknown>(null),[n,setN]=useState(0),[tab,setTab]=useState<'queue'|'catalog'|'calendar'>('queue');
+ const [kind,setKind]=useState(''),[state,setState]=useState('open'),[mine,setMine]=useState(false),[q,setQ]=useState(''),[items,setItems]=useState<Ticket[]|null>(null),[open,setOpen]=useState<string|null>(null),[creating,setCreating]=useState(false),[subjects,setSubjects]=useState<Subject[]>([]),[error,setError]=useState<unknown>(null),[n,setN]=useState(0),[tab,setTab]=useState<'queue'|'catalog'|'calendar'|'sla'>('queue');
  const fail=(e:unknown)=>{setError(e);if(e instanceof ApiError&&e.status===401)onExpired()};
  useEffect(()=>{api.subjects().then(p=>setSubjects(p.items)).catch(fail)},[]);
  useEffect(()=>{const t=setTimeout(()=>api.tickets({kind,state,mine,q}).then(p=>{setItems(p.items);setError(null)}).catch(fail),250);return()=>clearTimeout(t)},[kind,state,mine,q,n]);
  const name=(id:string|null)=>id?(subjects.find(s=>s.subject_id===id)?.name??id.slice(0,8)):'—';
  return <div className="stack">
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
-  <div className="ticket-tabs" role="tablist"><button role="tab" aria-selected={tab==='queue'} className={tab==='queue'?'active':''} onClick={()=>setTab('queue')}>Очередь</button><button role="tab" aria-selected={tab==='calendar'} className={tab==='calendar'?'active':''} onClick={()=>setTab('calendar')}>Календарь изменений</button><button role="tab" aria-selected={tab==='catalog'} className={tab==='catalog'?'active':''} onClick={()=>setTab('catalog')}>Каталог услуг</button></div>
-  {tab==='catalog'?<CatalogAdmin csrf={csrf} canAdmin={canAdmin} subjects={subjects} onFail={fail}/>:tab==='calendar'?<ChangeCalendar onOpen={setOpen} onFail={fail}/>:<>
+  <div className="ticket-tabs" role="tablist"><button role="tab" aria-selected={tab==='queue'} className={tab==='queue'?'active':''} onClick={()=>setTab('queue')}>Очередь</button><button role="tab" aria-selected={tab==='calendar'} className={tab==='calendar'?'active':''} onClick={()=>setTab('calendar')}>Календарь изменений</button><button role="tab" aria-selected={tab==='catalog'} className={tab==='catalog'?'active':''} onClick={()=>setTab('catalog')}>Каталог услуг</button><button role="tab" aria-selected={tab==='sla'} className={tab==='sla'?'active':''} onClick={()=>setTab('sla')}>SLA</button></div>
+  {tab==='catalog'?<CatalogAdmin csrf={csrf} canAdmin={canAdmin} subjects={subjects} onFail={fail}/>:tab==='calendar'?<ChangeCalendar onOpen={setOpen} onFail={fail}/>:tab==='sla'?<SlaAdmin csrf={csrf} canAdmin={canAdmin} onFail={fail}/>:<>
   <div className="table-panel"><div className="table-toolbar"><h2>Обращения <span>{items?.length??'…'}</span></h2><div className="filters">
    <label className="search-field"><span>⌕</span><input aria-label="Поиск обращения" placeholder="Номер или тема…" value={q} onChange={e=>setQ(e.target.value)}/></label>
    <select aria-label="Вид обращения" value={kind} onChange={e=>setKind(e.target.value)}><option value="">Все виды</option>{(['incident','request','change','problem'] as TicketKind[]).map(k=><option key={k} value={k}>{kindName[k]}</option>)}</select>
@@ -29,9 +35,9 @@ export function TicketsView({csrf,canWrite,canAdmin,onOpenAsset,onExpired}:{csrf
    <label className="check"><input type="checkbox" checked={mine} onChange={e=>setMine(e.target.checked)}/> мои</label>
    {canWrite?<button className="button small" onClick={()=>setCreating(true)}>+ Обращение</button>:null}</div></div>
    {items&&items.length===0?<div className="empty"><span>☏</span><h3>Обращений нет</h3><p>Зарегистрируйте инцидент или проблему.</p></div>:
-   <div className="table-scroll"><table><thead><tr><th>Номер</th><th>Тема</th><th>Приоритет</th><th>Состояние</th><th>Исполнитель / команда</th><th>Создано</th></tr></thead><tbody>{(items??[]).map(t=><tr key={t.ticket_id}>
+   <div className="table-scroll"><table><thead><tr><th>Номер</th><th>Тема</th><th>Приоритет</th><th>Состояние</th><th>SLA</th><th>Исполнитель / команда</th><th>Создано</th></tr></thead><tbody>{(items??[]).map(t=><tr key={t.ticket_id}>
     <td><button className="asset-link" onClick={()=>setOpen(t.ticket_id)}><span><strong className="mono">{t.number}</strong><small>{kindName[t.kind]}</small></span></button></td><td>{t.title}</td>
-    <td><span className={'badge '+(t.priority<=2?'state-unavailable':'state-pending')}><i/>{prio(t.priority)}</span></td><td><span className={'badge '+(stateName[t.state]?.[1]??'')}><i/>{stateName[t.state]?.[0]??t.state}</span></td>
+    <td><span className={'badge '+(t.priority<=2?'state-unavailable':'state-pending')}><i/>{prio(t.priority)}</span></td><td><span className={'badge '+(stateName[t.state]?.[1]??'')}><i/>{stateName[t.state]?.[0]??t.state}</span></td><td>{slaBadge(t.sla)}</td>
     <td>{name(t.assignee_id)}{t.team_id?<small>{name(t.team_id)}</small>:null}</td><td className="time">{fmt(t.created_at)}</td></tr>)}</tbody></table></div>}
   </div>
   </>}
@@ -68,6 +74,7 @@ function TicketCard({id,csrf,canWrite,canAdmin,subjects,onOpenAsset,onFail,onClo
   <h2>{d.title}</h2>
   <p><span className={'badge '+(stateName[d.state]?.[1]??'')}><i/>{stateName[d.state]?.[0]??d.state}</span> <span className="badge"><i/>{prio(d.priority)}</span>{d.reopen_count?<small> · открыт повторно: {d.reopen_count}</small>:null}</p>
   {d.description?<p>{d.description}</p>:null}
+  {d.sla.length?<div className="request-block" aria-label="SLA">{d.sla.map(x=><p key={x.metric}><strong>{metricName[x.metric]}:</strong> <span className={'badge '+slaName[x.status][1]}><i/>{slaName[x.status][0]}</span> {span(x.elapsed_minutes)} из {span(x.target_minutes)} рабочего времени{x.due_at?' · срок '+fmt(x.due_at):''}</p>)}</div>:null}
   {d.change?<ChangeBlock d={d} canWrite={canWrite} canAdmin={canAdmin} busy={busy} onAct={act}/>:null}
   {d.request?<RequestBlock d={d} csrf={csrf} canWrite={canWrite} busy={busy} name={name} onAct={act}/>:null}
   {d.workarounds.length?<div className="map-notice ok" role="status">Обходное решение: {d.workarounds.join('; ')}</div>:null}
@@ -79,7 +86,7 @@ function TicketCard({id,csrf,canWrite,canAdmin,subjects,onOpenAsset,onFail,onClo
    <button className="text-link" disabled={busy||!team} onClick={()=>{const reason=window.prompt('Причина эскалации / передачи:')??'';void act('assign',{revision:d.revision,team_id:team,reason})}}>Передать команде</button></div>:null}
   <h3>Связи</h3><ul className="ticket-links">{d.links.map(l=><li key={l.target_kind+l.target_id}>{l.target_kind==='asset'?<button className="text-link" onClick={()=>onOpenAsset(l.target_id)}>актив {l.label||l.target_id.slice(0,8)} ↗</button>:<span>{({ticket:'обращение',service:'сервис',movement:'склад'} as Record<string,string>)[l.target_kind]} {l.label||l.target_id.slice(0,8)}</span>}</li>)}</ul>
   {canWrite?<div className="wh-line"><select aria-label="Вид связи" value={linkKind} onChange={e=>setLinkKind(e.target.value as 'asset'|'ticket'|'service')}><option value="asset">актив</option><option value="ticket">обращение</option><option value="service">сервис</option></select><input aria-label="UID для связи" className="mono" value={link} onChange={e=>setLink(e.target.value)} placeholder="UID"/><button className="text-link" disabled={busy||!/^[0-9a-f-]{36}$/.test(link.trim())} onClick={()=>{void act('links',{target_kind:linkKind,target_id:link.trim()});setLink('')}}>Связать</button></div>:null}
-  <h3>Журнал</h3><ul className="ticket-feed">{d.events.map(e=><li key={e.event_id} className={e.public?'':'internal'}><small>{fmt(e.occurred_at)} · {e.actor_ref.replace(/^user:/,'').slice(0,8)}{e.public?'':' · внутренний'}</small><span>{e.kind==='state'?'Состояние: '+(stateName[String(e.detail.to)]?.[0]??String(e.detail.to)):e.kind==='assigned'?'Назначение'+(e.detail.team_id?' команде '+name(String(e.detail.team_id)):'')+(e.detail.assignee_id?' исполнителю '+name(String(e.detail.assignee_id)):''):e.kind==='created'?'Создано':e.kind==='linked'?'Связь: '+String(e.detail.target_kind):e.kind==='approval'?(e.detail.decision==='approved'?'Согласовано':'Отклонено'):e.kind==='window'?'Окно изменения задано':e.kind==='fulfilled'?'Выдано со склада, акт '+String(e.detail.act_no):e.kind==='comment'?'':e.kind}{e.text?(e.kind==='comment'?'':' — ')+e.text:''}</span></li>)}</ul>
+  <h3>Журнал</h3><ul className="ticket-feed">{d.events.map(e=><li key={e.event_id} className={e.public?'':'internal'}><small>{fmt(e.occurred_at)} · {e.actor_ref.replace(/^user:/,'').slice(0,8)}{e.public?'':' · внутренний'}</small><span>{e.kind==='state'?'Состояние: '+(stateName[String(e.detail.to)]?.[0]??String(e.detail.to)):e.kind==='assigned'?'Назначение'+(e.detail.team_id?' команде '+name(String(e.detail.team_id)):'')+(e.detail.assignee_id?' исполнителю '+name(String(e.detail.assignee_id)):''):e.kind==='created'?'Создано':e.kind==='linked'?'Связь: '+String(e.detail.target_kind):e.kind==='approval'?(e.detail.decision==='approved'?'Согласовано':'Отклонено'):e.kind==='sla'?'SLA '+(e.detail.metric==='response'?'реакции':'решения')+': '+(e.detail.mark==='breached'?'срок нарушен':'скоро срок'):e.kind==='window'?'Окно изменения задано':e.kind==='fulfilled'?'Выдано со склада, акт '+String(e.detail.act_no):e.kind==='comment'?'':e.kind}{e.text?(e.kind==='comment'?'':' — ')+e.text:''}</span></li>)}</ul>
   {canWrite?<div className="ticket-comment"><textarea aria-label="Комментарий" rows={3} value={text} onChange={e=>setText(e.target.value)} placeholder="Комментарий"/><label className="check"><input type="checkbox" checked={internal} onChange={e=>setInternal(e.target.checked)}/> внутренний (заявитель не увидит)</label><button className="button small" disabled={busy||!text.trim()} onClick={()=>{void act('comments',{text:text.trim(),internal});setText('')}}>Добавить</button></div>:null}
  </aside></div>;
 }
@@ -176,5 +183,36 @@ function CatalogAdmin({csrf,canAdmin,subjects,onFail}:{csrf:string;canAdmin:bool
     <label className="check"><input type="checkbox" checked={f.required} onChange={e=>setField(i,{required:e.target.checked})}/> обязательное</label><button className="text-link" onClick={()=>setEdit({...edit,form:(edit.form??[]).filter((_,j)=>j!==i)})}>убрать</button></div>)}
    <button className="text-link" disabled={(edit.form??[]).length>=20} onClick={()=>setEdit({...edit,form:[...(edit.form??[]),blankField()]})}>+ поле</button>
    <button className="button primary" disabled={busy||!(edit.name??'').trim()} onClick={()=>void save()}>Сохранить <span>→</span></button></aside></div>:null}
+ </div>;
+}
+
+const hm=(m:number)=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+const mins=(v:string)=>{const [h,m]=v.split(':').map(Number);return h*60+m};
+const dayNames=['пн','вт','ср','чт','пт','сб','вс'];
+
+// SLA: рабочие часы организации и сроки реакции/решения по приоритету (в рабочих часах). Изменяет администратор.
+function SlaAdmin({csrf,canAdmin,onFail}:{csrf:string;canAdmin:boolean;onFail:(e:unknown)=>void}){
+ const [s,setS]=useState<SlaSettings|null>(null),[busy,setBusy]=useState(false),[saved,setSaved]=useState(false);
+ useEffect(()=>{api.sla().then(setS).catch(onFail)},[]);
+ if(!s)return null;
+ const h=s.hours;
+ const setHours=(p:Partial<SlaSettings['hours']>)=>{setSaved(false);setS({...s,hours:{...h,...p}})};
+ const setPolicy=(i:number,p:Partial<SlaSettings['policies'][number]>)=>{setSaved(false);setS({...s,policies:s.policies.map((x,j)=>j===i?{...x,...p}:x)})};
+ async function save(){if(!s)return;setBusy(true);try{setS(await api.saveSla(csrf,s));setSaved(true)}catch(e){onFail(e)}finally{setBusy(false)}}
+ const hours=(m:number)=>Math.round(m/6)/10;
+ return <div className="table-panel"><div className="table-toolbar"><h2>SLA</h2>{saved?<span className="muted" role="status">Сохранено</span>:null}</div>
+  <div className="wh-form" aria-label="Рабочие часы">
+   <label>Часовой пояс<input aria-label="Часовой пояс" disabled={!canAdmin} value={h.timezone} onChange={e=>setHours({timezone:e.target.value})}/></label>
+   <label>Начало дня<input aria-label="Начало рабочего дня" type="time" disabled={!canAdmin} value={hm(h.start_minute)} onChange={e=>setHours({start_minute:mins(e.target.value)})}/></label>
+   <label>Конец дня<input aria-label="Конец рабочего дня" type="time" disabled={!canAdmin} value={h.end_minute===1440?'23:59':hm(h.end_minute)} onChange={e=>{const v=mins(e.target.value);setHours({end_minute:v===1439?1440:v})}}/></label>
+   <label>Предупреждать на, %<input aria-label="Порог предупреждения" type="number" min={50} max={99} disabled={!canAdmin} value={h.warn_percent} onChange={e=>setHours({warn_percent:Number(e.target.value)})}/></label>
+   <div className="wide">{dayNames.map((n,i)=><label key={n} className="check"><input type="checkbox" disabled={!canAdmin} checked={h.days.includes(i+1)} onChange={e=>setHours({days:e.target.checked?[...h.days,i+1].sort():h.days.filter(d=>d!==i+1)})}/> {n}</label>)}</div>
+  </div>
+  <div className="table-scroll"><table><thead><tr><th>Вид</th><th>Приоритет</th><th>Реакция, раб. ч</th><th>Решение, раб. ч</th></tr></thead><tbody>{s.policies.map((p,i)=><tr key={p.kind+p.priority}>
+   <td>{p.kind==='incident'?'Инцидент':'Заявка'}</td><td>P{p.priority}</td>
+   <td><input aria-label={'Реакция '+p.kind+' P'+p.priority} type="number" min={0.1} step={0.1} disabled={!canAdmin} value={hours(p.response_minutes)} onChange={e=>setPolicy(i,{response_minutes:Math.max(1,Math.round(Number(e.target.value)*60))})}/></td>
+   <td><input aria-label={'Решение '+p.kind+' P'+p.priority} type="number" min={0.1} step={0.1} disabled={!canAdmin} value={hours(p.resolution_minutes)} onChange={e=>setPolicy(i,{resolution_minutes:Math.max(1,Math.round(Number(e.target.value)*60))})}/></td></tr>)}</tbody></table></div>
+  <p className="muted">Сроки считаются только в рабочие часы; пауза «ждём заявителя» и согласование заявки не считаются. Новые сроки действуют для новых обращений.</p>
+  {canAdmin?<button className="button primary" disabled={busy||h.days.length===0} onClick={()=>void save()}>Сохранить SLA <span>→</span></button>:null}
  </div>;
 }

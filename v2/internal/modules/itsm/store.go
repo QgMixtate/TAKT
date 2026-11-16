@@ -89,6 +89,8 @@ type Ticket struct {
 	ResolvedAt  *time.Time `json:"resolved_at"`
 	ClosedAt    *time.Time `json:"closed_at"`
 	Revision    string     `json:"revision"`
+	// SLA — таймеры реакции и решения (инцидент, заявка; у остальных — пусто)
+	SLA []Timer `json:"sla"`
 }
 
 type Link struct {
@@ -207,6 +209,12 @@ VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13,$14,$15,$16)`, tenant, id,
 	if e := event(ctx, tx, tenant, id, actor, "created", true, map[string]any{"state": state, "priority": Priority(in.Impact, in.Urgency)}, nil); e != nil {
 		return Detail{}, e
 	}
+	if e := s.startSLA(ctx, tx, tenant, id, in.Kind, state, Priority(in.Impact, in.Urgency), at); e != nil {
+		return Detail{}, e
+	}
+	if e := s.publish(ctx, tx, tenant, id, "ticket.created.v1", nil); e != nil {
+		return Detail{}, e
+	}
 	for kind, target := range map[string]string{"asset": in.Asset, "service": in.Service} {
 		if target != "" {
 			if e := s.Link(ctx, tx, tenant, actor, id, kind, target); e != nil {
@@ -223,7 +231,7 @@ func scanTicket(r pgx.Row, t *Ticket) error {
 }
 
 // Detail — обращение со связями и журналом; internal=false скрывает внутренние комментарии (заявитель, W3-09).
-func (Store) Detail(ctx context.Context, tx pgx.Tx, tenant, id string, internal bool) (Detail, error) {
+func (s Store) Detail(ctx context.Context, tx pgx.Tx, tenant, id string, internal bool) (Detail, error) {
 	var d Detail
 	if !identifier.Valid(id) {
 		return d, domain.NotFound
@@ -237,6 +245,11 @@ t.resolution,t.workaround,t.reopen_count,t.created_by,t.created_at,t.updated_at,
 		return d, e
 	}
 	d.Allowed = append([]string{}, transitions[d.Kind][d.State]...)
+	views, e := s.slaViews(ctx, tx, tenant, []string{id})
+	if e != nil {
+		return d, e
+	}
+	d.SLA = append([]Timer{}, views[id]...)
 	rows, e := tx.Query(ctx, `SELECT l.target_kind,l.target_id::text,COALESCE(CASE l.target_kind
  WHEN 'ticket' THEN (SELECT o.number||' '||o.title FROM itsm.tickets o WHERE o.tenant_id=l.tenant_id AND o.ticket_id=l.target_id)
  WHEN 'service' THEN (SELECT s.name FROM cmdb.services s WHERE s.tenant_id=l.tenant_id AND s.service_uid=l.target_id)
@@ -299,7 +312,7 @@ JOIN itsm.catalog_items c ON c.tenant_id=t.tenant_id AND c.item_id=t.catalog_ite
 // Filter — очередь: вид, состояние (open — все незакрытые), исполнитель, команда, заявитель, поиск по номеру/теме.
 type Filter struct{ Kind, State, Assignee, Team, Requester, Query string }
 
-func (Store) List(ctx context.Context, tx pgx.Tx, tenant string, f Filter, limit int) ([]Ticket, error) {
+func (s Store) List(ctx context.Context, tx pgx.Tx, tenant string, f Filter, limit int) ([]Ticket, error) {
 	rows, e := tx.Query(ctx, `SELECT t.ticket_id::text,t.kind,t.number,t.title,t.description,t.impact,t.urgency,t.priority,t.state,t.requester_id::text,t.assignee_id::text,t.team_id::text,
 t.resolution,t.workaround,t.reopen_count,t.created_by,t.created_at,t.updated_at,t.resolved_at,t.closed_at,t.revision::text FROM itsm.tickets t WHERE t.tenant_id=$1
 AND ($2='' OR t.kind=$2) AND ($3='' OR ($3='open' AND t.state NOT IN ('closed','cancelled','resolved','fulfilled','rejected','completed','rolled_back')) OR t.state=$3)
@@ -309,10 +322,26 @@ ORDER BY t.priority, t.created_at LIMIT $8`, tenant, f.Kind, f.State, f.Assignee
 	if e != nil {
 		return nil, e
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Ticket, error) {
+	list, e := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Ticket, error) {
 		var t Ticket
 		return t, scanTicket(r, &t)
 	})
+	if e != nil {
+		return nil, e
+	}
+	return s.withSLA(ctx, tx, tenant, list)
+}
+
+func (s Store) withSLA(ctx context.Context, tx pgx.Tx, tenant string, list []Ticket) ([]Ticket, error) {
+	ids := make([]string, len(list))
+	for i, t := range list {
+		ids[i] = t.ID
+	}
+	views, e := s.slaViews(ctx, tx, tenant, ids)
+	for i := range list {
+		list[i].SLA = append([]Timer{}, views[list[i].ID]...)
+	}
+	return list, e
 }
 
 // Transition — смена состояния по таблице процесса с проверкой ревизии (конкурентное изменение — Revision).
@@ -378,6 +407,25 @@ WHERE tenant_id=$1 AND ticket_id=$2 AND revision::text=$3`, tenant, id, revision
 	if e = event(ctx, tx, tenant, id, actor, "state", true, detail, nullable(note)); e != nil {
 		return d, e
 	}
+	actions := []string{"respond"}
+	if d.State == "waiting_customer" || d.State == "pending_approval" {
+		actions = append(actions, "resume")
+	}
+	switch to {
+	case "waiting_customer":
+		actions = append(actions, "pause")
+	case "resolved", "fulfilled", "closed", "cancelled", "rejected", "completed", "rolled_back":
+		actions = append(actions, "stop")
+	}
+	if reopen {
+		actions = append(actions, "restart")
+	}
+	if e = s.slaChange(ctx, tx, tenant, id, actor, actions...); e != nil {
+		return d, e
+	}
+	if e = s.publish(ctx, tx, tenant, id, "ticket.state_changed.v1", map[string]string{"from": d.State}); e != nil {
+		return d, e
+	}
 	return s.Detail(ctx, tx, tenant, id, true)
 }
 
@@ -418,6 +466,12 @@ WHERE tenant_id=$1 AND ticket_id=$2 AND revision::text=$3 AND state NOT IN ('clo
 		return cur, domain.Revision
 	}
 	if e = event(ctx, tx, tenant, id, actor, "assigned", true, map[string]any{"assignee_id": nullable(assignee), "team_id": nullable(team)}, nullable(note)); e != nil {
+		return Detail{}, e
+	}
+	if e = s.slaChange(ctx, tx, tenant, id, actor, "respond"); e != nil {
+		return Detail{}, e
+	}
+	if e = s.publish(ctx, tx, tenant, id, "ticket.assigned.v1", nil); e != nil {
 		return Detail{}, e
 	}
 	return s.Detail(ctx, tx, tenant, id, true)

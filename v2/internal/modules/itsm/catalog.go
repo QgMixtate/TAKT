@@ -308,11 +308,21 @@ WHERE tenant_id=$1 AND ticket_id=$2 AND revision::text=$3 AND state IN ('pending
 	if e = event(ctx, tx, tenant, id, actor, "approval", true, map[string]any{"decision": decision, "from": d.State, "to": to}, nullable(note)); e != nil {
 		return d, e
 	}
+	action := "resume"
+	if !approve {
+		action = "stop"
+	}
+	if e = s.slaChange(ctx, tx, tenant, id, actor, action); e != nil {
+		return d, e
+	}
+	if e = s.publish(ctx, tx, tenant, id, "ticket.state_changed.v1", map[string]string{"from": d.State}); e != nil {
+		return d, e
+	}
 	return s.Detail(ctx, tx, tenant, id, true)
 }
 
 // PendingApprovals — заявки, ждущие решения этого человека (лично или как члена команды-согласующей).
-func (Store) PendingApprovals(ctx context.Context, tx pgx.Tx, tenant, me string) ([]Ticket, error) {
+func (s Store) PendingApprovals(ctx context.Context, tx pgx.Tx, tenant, me string) ([]Ticket, error) {
 	rows, e := tx.Query(ctx, `SELECT t.ticket_id::text,t.kind,t.number,t.title,t.description,t.impact,t.urgency,t.priority,t.state,t.requester_id::text,t.assignee_id::text,t.team_id::text,
 t.resolution,t.workaround,t.reopen_count,t.created_by,t.created_at,t.updated_at,t.resolved_at,t.closed_at,t.revision::text FROM itsm.tickets t JOIN itsm.catalog_items c ON c.tenant_id=t.tenant_id AND c.item_id=t.catalog_item_id
 WHERE t.tenant_id=$1 AND t.state='pending_approval' AND (c.approver_id::text=$2 OR EXISTS(SELECT 1 FROM responsibility.team_members m
@@ -320,10 +330,14 @@ WHERE t.tenant_id=$1 AND t.state='pending_approval' AND (c.approver_id::text=$2 
 	if e != nil {
 		return nil, e
 	}
-	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Ticket, error) {
+	list, e := pgx.CollectRows(rows, func(r pgx.CollectableRow) (Ticket, error) {
 		var t Ticket
 		return t, scanTicket(r, &t)
 	})
+	if e != nil {
+		return nil, e
+	}
+	return s.withSLA(ctx, tx, tenant, list)
 }
 
 // Fulfilled — отметка исполнения складом: связь с движением и переход in_fulfillment → fulfilled (по ревизии);

@@ -17,20 +17,46 @@ type Event struct {
 }
 type Writer struct{}
 
+var ticketNumber = regexp.MustCompile(`^(INC|REQ|CHG|PRB)-[0-9]{4}-[0-9]{6}$`)
+var ticketState = regexp.MustCompile(`^[a-z_]{1,32}$`)
+
 func (Writer) Emit(ctx context.Context, tx pgx.Tx, event Event) error {
 	if _, e := strconv.ParseUint(event.Version, 10, 64); e != nil {
 		return domain.Invalid
 	}
 
-	kinds := map[string][3]string{"asset.created.v1": {"Assets", "asset", "asset_uid"}, "asset.facts_changed.v1": {"Assets", "asset", "asset_uid"}, "responsibility.assigned.v1": {"Responsibility", "asset", "asset_uid"}, "observation.recorded.v1": {"Inventory", "observation", "observation_id"}, "source.contact_updated.v1": {"Sources", "source", "source_id"}, "source.profile_updated.v1": {"Sources", "source", "source_id"}}
+	kinds := map[string][3]string{"asset.created.v1": {"Assets", "asset", "asset_uid"}, "asset.facts_changed.v1": {"Assets", "asset", "asset_uid"}, "responsibility.assigned.v1": {"Responsibility", "asset", "asset_uid"}, "observation.recorded.v1": {"Inventory", "observation", "observation_id"}, "source.contact_updated.v1": {"Sources", "source", "source_id"}, "source.profile_updated.v1": {"Sources", "source", "source_id"},
+		// W3 (C50.02): события обращений — новый контракт W3 вне C03 (decisions/C46), только для webhook
+		"ticket.created.v1": {"ITSM", "ticket", "ticket_id"}, "ticket.state_changed.v1": {"ITSM", "ticket", "ticket_id"}, "ticket.assigned.v1": {"ITSM", "ticket", "ticket_id"},
+		"ticket.sla_warning.v1": {"ITSM", "ticket", "ticket_id"}, "ticket.sla_breached.v1": {"ITSM", "ticket", "ticket_id"}}
 	binding, ok := kinds[event.Type]
 	if !ok || binding[0] != event.Producer || binding[1] != event.Aggregate || event.Data[binding[2]] != event.AssetID || !identifier.Valid(event.Tenant) || !identifier.Valid(event.AssetID) || event.Version == "0" {
 		return domain.Invalid
 	}
 	for key, value := range event.Data {
 		switch key {
-		case "asset_uid", "observation_id", "source_id", "subject_id":
+		case "asset_uid", "observation_id", "source_id", "subject_id", "ticket_id":
 			if !identifier.Valid(value) {
+				return domain.Invalid
+			}
+		case "number":
+			if !ticketNumber.MatchString(value) {
+				return domain.Invalid
+			}
+		case "kind":
+			if value != "incident" && value != "request" && value != "change" && value != "problem" {
+				return domain.Invalid
+			}
+		case "state", "from":
+			if !ticketState.MatchString(value) {
+				return domain.Invalid
+			}
+		case "priority":
+			if len(value) != 1 || value < "1" || value > "4" {
+				return domain.Invalid
+			}
+		case "metric":
+			if value != "response" && value != "resolution" {
 				return domain.Invalid
 			}
 		case "reason_code":

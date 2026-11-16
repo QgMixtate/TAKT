@@ -203,6 +203,7 @@ func run(args []string) error {
 		go registry.WatchIntegrations(ctx) // уведомления, включённые в Web через api-процесс, подхватываются здесь
 		go registry.DirectoryMaintain(ctx, func(m string) { fmt.Println(m) })
 		go registry.DiscoveryMaintain(ctx, func(m string) { fmt.Println(m) }) // C51: расписание обследований
+		go registry.SLAMaintain(ctx, func(m string) { fmt.Println(m) })       // W3 C50.01: предупреждения и нарушения SLA
 		go registry.RetentionMaintain(ctx, func(m string) { fmt.Println(m) }) // C36.03 // C31.05: тенанты с настройками из Web или конфигурации
 		if registry.Search != nil {
 			go registry.SearchMaintain(ctx, func(m string) { fmt.Println(m) })

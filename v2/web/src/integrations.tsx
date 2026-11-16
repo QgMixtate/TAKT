@@ -77,7 +77,7 @@ export function CSVPanel({csrf,canWrite,onExpired,onImported}:{csrf:string;canWr
 }
 
 // C31.03 — исходящие уведомления (webhook): подписки, секрет подписи (показывается один раз), доставки и ручной повтор.
-const eventNames:Record<string,string>={'asset.created.v1':'Новый актив','asset.facts_changed.v1':'Изменение актива','responsibility.assigned.v1':'Смена ответственного','observation.recorded.v1':'Получены данные сбора','source.contact_updated.v1':'Контакт источника','source.profile_updated.v1':'Профиль источника'};
+const eventNames:Record<string,string>={'ticket.created.v1':'Новое обращение','ticket.state_changed.v1':'Смена состояния обращения','ticket.assigned.v1':'Назначение обращения','ticket.sla_warning.v1':'SLA: скоро нарушение','ticket.sla_breached.v1':'SLA: нарушение срока','asset.created.v1':'Новый актив','asset.facts_changed.v1':'Изменение актива','responsibility.assigned.v1':'Смена ответственного','observation.recorded.v1':'Получены данные сбора','source.contact_updated.v1':'Контакт источника','source.profile_updated.v1':'Профиль источника'};
 const deliveryNames:Record<string,string>={pending:'в очереди',delivered:'доставлено',dead:'не доставлено'};
 
 export function WebhooksView({csrf,onExpired}:{csrf:string;onExpired:()=>void}){

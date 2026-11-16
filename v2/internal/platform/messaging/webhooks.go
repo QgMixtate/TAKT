@@ -21,9 +21,11 @@ const (
 	WebhookMaxAttempts = 5
 )
 
-// WebhookEventTypes — события, на которые можно подписаться (типы outbox C03).
+// WebhookEventTypes — события, на которые можно подписаться (типы outbox C03 и события обращений W3).
 var WebhookEventTypes = map[string]bool{"asset.created.v1": true, "asset.facts_changed.v1": true, "responsibility.assigned.v1": true,
-	"observation.recorded.v1": true, "source.contact_updated.v1": true, "source.profile_updated.v1": true}
+	"observation.recorded.v1": true, "source.contact_updated.v1": true, "source.profile_updated.v1": true,
+	// W3 (C50.02): обращения ITSM
+	"ticket.created.v1": true, "ticket.state_changed.v1": true, "ticket.assigned.v1": true, "ticket.sla_warning.v1": true, "ticket.sla_breached.v1": true}
 
 type WebhookSubscription struct {
 	ID         string    `json:"subscription_id"`

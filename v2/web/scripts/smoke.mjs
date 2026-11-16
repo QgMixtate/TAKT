@@ -100,6 +100,10 @@ try{
  await expect(chg).toContainText('риск средний');await chg.getByRole('button',{name:'На согласование'}).click();await expect(chg).toContainText('на согласовании');await chg.getByRole('button',{name:'Согласовать изменение'}).click();await expect(chg).toContainText('согласовано');
  await chg.getByRole('button',{name:'Запланировать'}).click();await expect(chg).toContainText('запланировано');await chg.getByRole('button',{name:'Закрыть обращение'}).click();
  await page.getByRole('tab',{name:'Календарь изменений'}).click();await expect(page.locator('.table-panel')).toContainText('Smoke: обновление прошивки');await page.getByRole('tab',{name:'Очередь'}).click();checks.push('C49 change in the Web: window set, submitted, approved by admin, scheduled and shown in the change calendar');
+ // C50 SLA: очередь показывает срок инцидента; администратор меняет порог предупреждения и сохраняет
+ await page.getByLabel('Состояние обращения').selectOption('');await expect(page.locator('.table-panel thead')).toContainText('SLA');await expect(page.locator('.table-panel tbody')).toContainText(/в срок|до |идёт|нарушен|просрочен/);
+ await page.getByRole('tab',{name:'SLA'}).click();await page.getByLabel('Порог предупреждения').fill('85');await page.getByRole('button',{name:/Сохранить SLA/}).click();await expect(page.getByRole('status')).toContainText('Сохранено');
+ await page.getByRole('tab',{name:'Очередь'}).click();checks.push('C50 SLA in the Web: queue shows ticket SLA, admin saves business hours and targets');
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('button',{name:/Реестр активов/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');

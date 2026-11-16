@@ -319,7 +319,12 @@
        "responsibility.assigned.v1",
        "observation.recorded.v1",
        "source.contact_updated.v1",
-       "source.profile_updated.v1"
+       "source.profile_updated.v1",
+       "ticket.created.v1",
+       "ticket.state_changed.v1",
+       "ticket.assigned.v1",
+       "ticket.sla_warning.v1",
+       "ticket.sla_breached.v1"
       ]
      }
     },
@@ -379,7 +384,12 @@
        "responsibility.assigned.v1",
        "observation.recorded.v1",
        "source.contact_updated.v1",
-       "source.profile_updated.v1"
+       "source.profile_updated.v1",
+       "ticket.created.v1",
+       "ticket.state_changed.v1",
+       "ticket.assigned.v1",
+       "ticket.sla_warning.v1",
+       "ticket.sla_breached.v1"
       ]
      }
     },
@@ -434,7 +444,12 @@
       "responsibility.assigned.v1",
       "observation.recorded.v1",
       "source.contact_updated.v1",
-      "source.profile_updated.v1"
+      "source.profile_updated.v1",
+      "ticket.created.v1",
+      "ticket.state_changed.v1",
+      "ticket.assigned.v1",
+      "ticket.sla_warning.v1",
+      "ticket.sla_breached.v1"
      ]
     },
     "occurred_at": {
@@ -553,7 +568,12 @@
       "responsibility.assigned.v1",
       "observation.recorded.v1",
       "source.contact_updated.v1",
-      "source.profile_updated.v1"
+      "source.profile_updated.v1",
+      "ticket.created.v1",
+      "ticket.state_changed.v1",
+      "ticket.assigned.v1",
+      "ticket.sla_warning.v1",
+      "ticket.sla_breached.v1"
      ]
     },
     "tenant_id": {

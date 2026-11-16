@@ -180,6 +180,28 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 		d, e := st.Detail(ctx, tx, id.TenantID, ticket, true)
 		return d, "itsm.ticket_linked", e
 	})
+	// SLA (C50.01): рабочие часы и сроки — чтение всем сотрудникам ИТ, изменение — администратор.
+	h["GET /api/v1/itsm/sla"] = route51{"itsm:read", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if _, ok := queryOnly(w, req); !ok {
+			return
+		}
+		r.itsmDo(w, req, 200, "itsm:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			return st.SLA(ctx, tx, id.TenantID)
+		})
+	})}
+	h["PUT /api/v1/itsm/sla"] = route51{"itsm:admin", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var body itsm.SLASettings
+		if !readOperationBody(w, req, &body) {
+			return
+		}
+		r.itsmDo(w, req, 200, "itsm:admin", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			out, e := st.SetSLA(ctx, tx, id.TenantID, body)
+			if e == nil {
+				e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "itsm.sla_saved", "sla", id.TenantID)
+			}
+			return out, e
+		})
+	})}
 	// Изменения (C49): окно и календарь окон.
 	type window struct {
 		Revision string `json:"revision"`
@@ -464,4 +486,53 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 		return d, nil
 	})
 	return h
+}
+
+// SLAPass — один фоновый проход SLA по всем организациям: предупреждения и нарушения сроков (журнал и события).
+func (r *Registry) SLAPass(ctx context.Context) (int, error) {
+	st := itsm.Store{}
+	tx, e := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if e != nil {
+		return 0, e
+	}
+	tenants, e := st.SLATenants(ctx, tx)
+	_ = tx.Rollback(ctx)
+	if e != nil {
+		return 0, e
+	}
+	total := 0
+	for _, tenant := range tenants {
+		tx, e := r.Pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+		if e != nil {
+			return total, e
+		}
+		n, e := st.Sweep(ctx, tx, tenant)
+		if e == nil {
+			e = tx.Commit(ctx)
+		}
+		_ = tx.Rollback(ctx)
+		if e != nil {
+			return total, e
+		}
+		total += n
+	}
+	return total, nil
+}
+
+// SLAMaintain — фоновая роль: проход SLA раз в минуту (несколько worker безопасны — блокировки обращений).
+func (r *Registry) SLAMaintain(ctx context.Context, log func(string)) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		task, done := context.WithTimeout(ctx, 5*time.Minute)
+		if _, e := r.SLAPass(task); e != nil {
+			log("sla pass failed: " + e.Error())
+		}
+		done()
+	}
 }
