@@ -399,6 +399,48 @@ func (c *Collector) Handler() http.Handler {
 		_, _ = w.Write(b)
 	})
 
+	// C52.01: установка агента по коду — collector пересылает в центр сертификат УЦ и регистрацию (без входа).
+	mux.HandleFunc("GET /api/v1/registration/ca", func(w http.ResponseWriter, r *http.Request) {
+		req, e := http.NewRequestWithContext(r.Context(), "GET", c.Config.CenterURL+"/api/v1/registration/ca", nil)
+		if e != nil {
+			failure(w, 503, "CENTER_UNAVAILABLE")
+			return
+		}
+		response, e := c.client.Do(req)
+		if e != nil {
+			failure(w, 503, "CENTER_UNAVAILABLE")
+			return
+		}
+		defer response.Body.Close()
+		b, e := io.ReadAll(io.LimitReader(response.Body, 65537))
+		if e != nil || len(b) > 65536 {
+			failure(w, 503, "CENTER_UNAVAILABLE")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(response.StatusCode)
+		_, _ = w.Write(b)
+	})
+	mux.HandleFunc("POST /api/v1/registration", func(w http.ResponseWriter, r *http.Request) {
+		if r.TLS == nil {
+			failure(w, 401, "AUTHENTICATION_REQUIRED")
+			return
+		}
+		raw, e := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
+		if e != nil || !json.Valid(raw) {
+			failure(w, 422, "SCHEMA_INVALID")
+			return
+		}
+		status, b, e := c.post(r.Context(), "/api/v1/registration", raw, "")
+		if e != nil {
+			failure(w, 503, "CENTER_UNAVAILABLE")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(status)
+		_, _ = w.Write(b)
+	})
 	mux.HandleFunc("POST /api/v1/machine/enroll", func(w http.ResponseWriter, r *http.Request) {
 		if r.TLS == nil {
 			failure(w, 401, "AUTHENTICATION_REQUIRED")

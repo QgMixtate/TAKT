@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -26,6 +27,9 @@ type MachineAPI struct {
 	Maintain func(context.Context)
 	Sources  *sources.MachineService
 	Uploads  *imports.UploadService
+	// CA — сертификат УЦ центра; Fingerprint — его SHA-256 (установка по коду, C52.01)
+	CA          *x509.Certificate
+	Fingerprint string
 }
 
 func (m *MachineAPI) decode(w http.ResponseWriter, r *http.Request, name string, out any) bool {

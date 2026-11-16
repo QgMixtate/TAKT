@@ -244,7 +244,7 @@ func ConfigureMachine(path string, r *Registry, auth *access.Service) (string, *
 	if remote != nil {
 		uploads.Signer = bao.Operation{Client: remote, Alias: "center"}
 	}
-	r.Machine = &MachineAPI{Sources: machine, Uploads: uploads}
+	r.Machine = &MachineAPI{Sources: machine, Uploads: uploads, CA: ca, Fingerprint: CenterFingerprint(ca)}
 	if remote != nil {
 		r.Machine.Maintain = remote.Maintain
 		r.Machine.Ready = remote.Check

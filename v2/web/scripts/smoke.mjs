@@ -104,6 +104,11 @@ try{
  await page.getByLabel('Состояние обращения').selectOption('');await expect(page.locator('.table-panel thead')).toContainText('SLA');await expect(page.locator('.table-panel tbody')).toContainText(/в срок|до |идёт|нарушен|просрочен/);
  await page.getByRole('tab',{name:'SLA'}).click();await page.getByLabel('Порог предупреждения').fill('85');await page.getByRole('button',{name:/Сохранить SLA/}).click();await expect(page.getByRole('status')).toContainText('Сохранено');
  await page.getByRole('tab',{name:'Очередь'}).click();checks.push('C50 SLA in the Web: queue shows ticket SLA, admin saves business hours and targets');
+ // C52.01 установка по коду: администратор создаёт код collector — код показан один раз с командами, затем отзывает
+ await page.getByRole('button',{name:/Источники данных/}).click();const inst=page.locator('section',{has:page.getByRole('heading',{name:/Установка/})});await inst.getByRole('button',{name:'Открыть'}).click();
+ await inst.getByLabel('Комментарий к коду').fill('Smoke: площадка');await inst.getByRole('button',{name:'Создать код'}).click();await expect(inst.getByRole('status')).toContainText(/Код: SSR-[0-9A-Z]{5}-/);await expect(inst).toContainText('surveyscan-collector register');
+ await inst.getByRole('button',{name:'Скрыть код'}).click();await expect(inst.locator('tbody')).toContainText('действует');page.once('dialog',d=>void d.accept());await inst.getByRole('button',{name:'Отозвать'}).first().click();await expect(inst.locator('tbody')).toContainText('отозван');
+ checks.push('C52 install in the Web: registration code created once with install commands and centre fingerprint, then revoked');
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('button',{name:/Реестр активов/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');

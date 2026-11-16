@@ -1,0 +1,306 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:surveyscan:c52:registration:1:0",
+ "title": "Установка по коду (C52.01; decisions/C52-rust-agents-and-installers.md)",
+ "$defs": {
+  "RegistrationCode": {
+   "type": "object",
+   "properties": {
+    "code_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "source_kind": {
+     "enum": [
+      "agent",
+      "collector"
+     ]
+    },
+    "site_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "collector_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "inventory_platform": {
+     "oneOf": [
+      {
+       "enum": [
+        "windows/amd64",
+        "linux/amd64"
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "max_uses": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10000
+    },
+    "used": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "expires_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "revoked_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "comment": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "created_by": {
+     "type": "string"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "state": {
+     "enum": [
+      "active",
+      "exhausted",
+      "expired",
+      "revoked"
+     ]
+    },
+    "code": {
+     "type": "string",
+     "pattern": "^SSR-[0-9A-HJKMNP-TV-Z]{5}(-[0-9A-HJKMNP-TV-Z]{5}){3}$"
+    },
+    "center_fingerprint": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    }
+   },
+   "required": [
+    "code_id",
+    "source_kind",
+    "site_id",
+    "collector_id",
+    "inventory_platform",
+    "max_uses",
+    "used",
+    "expires_at",
+    "revoked_at",
+    "comment",
+    "created_by",
+    "created_at",
+    "state"
+   ],
+   "additionalProperties": false
+  },
+  "RegistrationCodeList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/RegistrationCode"
+     }
+    },
+    "center_fingerprint": {
+     "oneOf": [
+      {
+       "type": "string",
+       "pattern": "^[0-9a-f]{64}$"
+      },
+      {
+       "const": ""
+      }
+     ]
+    }
+   },
+   "required": [
+    "items",
+    "center_fingerprint"
+   ],
+   "additionalProperties": false
+  },
+  "RegistrationUseList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "source_id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "hostname": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 255
+       },
+       "registered_at": {
+        "type": "string",
+        "format": "date-time"
+       }
+      },
+      "required": [
+       "source_id",
+       "hostname",
+       "registered_at"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "RegistrationRequest": {
+   "type": "object",
+   "properties": {
+    "registration_code": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 64
+    },
+    "source_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "csr_sha256": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    },
+    "signing_public_key": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "hostname": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 255
+    },
+    "inventory_platform": {
+     "enum": [
+      "windows/amd64",
+      "linux/amd64"
+     ]
+    },
+    "acquisition": {
+     "const": "agent"
+    }
+   },
+   "required": [
+    "registration_code",
+    "source_id",
+    "csr_sha256",
+    "signing_public_key",
+    "hostname"
+   ],
+   "additionalProperties": false
+  },
+  "RegistrationResult": {
+   "type": "object",
+   "properties": {
+    "grant": {
+     "type": "object",
+     "properties": {
+      "grant_id": {
+       "type": "string",
+       "format": "uuid"
+      },
+      "source_id": {
+       "type": "string",
+       "format": "uuid"
+      },
+      "expires_at": {
+       "type": "string",
+       "format": "date-time"
+      },
+      "enrollment_token": {
+       "type": "string",
+       "pattern": "^[A-Za-z0-9_-]{43}$"
+      }
+     },
+     "required": [
+      "grant_id",
+      "source_id",
+      "expires_at",
+      "enrollment_token"
+     ],
+     "additionalProperties": false
+    },
+    "tenant_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "site_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "network_scope_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "collector_source_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "grant",
+    "tenant_id",
+    "site_id",
+    "network_scope_id",
+    "collector_source_id"
+   ],
+   "additionalProperties": false
+  },
+  "CenterCA": {
+   "type": "object",
+   "properties": {
+    "ca_pem": {
+     "type": "string",
+     "minLength": 1
+    },
+    "center_fingerprint": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    }
+   },
+   "required": [
+    "ca_pem",
+    "center_fingerprint"
+   ],
+   "additionalProperties": false
+  }
+ }
+}

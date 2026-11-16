@@ -32,9 +32,12 @@ func run() error {
 		return err
 	}
 	if len(os.Args) < 2 {
-		return fmt.Errorf("используйте prepare/enroll/bind-host/renew/run/run12/run-ssh12 --config /secure/agent.json")
+		return fmt.Errorf("используйте register (установка по коду) или prepare/enroll/bind-host/renew/run/run12/run-ssh12 --config /secure/agent.json")
 	}
 	command := os.Args[1]
+	if command == "register" {
+		return registerCommand(os.Args[2:])
+	}
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	configPath := flags.String("config", "", "private config")
 	grantPath := flags.String("grant-file", "", "private enrollment grant")
@@ -142,4 +145,31 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+// registerCommand — установка по коду из Web (C52.01): адрес collector площадки, код и отпечаток центра. Код можно
+// передать переменной SURVEYSCAN_REGISTRATION_CODE (не виден в списке процессов).
+func registerCommand(args []string) error {
+	flags := flag.NewFlagSet("register", flag.ContinueOnError)
+	collector := flags.String("collector", "", "https://collector:port площадки")
+	code := flags.String("code", "", "код регистрации из Web (или SURVEYSCAN_REGISTRATION_CODE)")
+	fingerprint := flags.String("fingerprint", "", "отпечаток центра из Web (SHA-256)")
+	config := flags.String("config", "", "путь конфигурации агента (будет создана)")
+	state := flags.String("state", "", "каталог состояния агента")
+	if e := flags.Parse(args); e != nil {
+		return e
+	}
+	if *code == "" {
+		*code = os.Getenv("SURVEYSCAN_REGISTRATION_CODE")
+	}
+	if flags.NArg() != 0 || *collector == "" || *code == "" || *fingerprint == "" || *config == "" || *state == "" {
+		return fmt.Errorf("register --collector URL --code КОД --fingerprint ОТПЕЧАТОК --config ПУТЬ --state КАТАЛОГ")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if e := agent.Register(ctx, agent.RegisterOptions{CollectorURL: *collector, Code: *code, Fingerprint: *fingerprint, ConfigPath: *config, StateDir: *state}); e != nil {
+		return e
+	}
+	fmt.Println("agent_registered")
+	return nil
 }

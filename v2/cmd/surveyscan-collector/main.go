@@ -17,8 +17,11 @@ func run(args []string) error {
 	if len(args) == 1 && (args[0] == "version" || args[0] == "--version") {
 		return buildinfo.Print(os.Stdout, "collector")
 	}
+	if len(args) > 0 && args[0] == "register" {
+		return register(args[1:])
+	}
 	if len(args) == 0 || (args[0] != "run" && args[0] != "renew") {
-		return fmt.Errorf("supported commands: run/renew --config PRIVATE_FILE, version")
+		return fmt.Errorf("supported commands: register (установка по коду), run/renew --config PRIVATE_FILE, version")
 	}
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -45,6 +48,35 @@ func run(args []string) error {
 	fmt.Println("collector HTTPS relay started; pending data retained until verified center result")
 	return relay.Run(ctx)
 }
+
+// register — установка по коду из Web (C52.01). Код можно передать переменной SURVEYSCAN_REGISTRATION_CODE.
+func register(args []string) error {
+	flags := flag.NewFlagSet("register", flag.ContinueOnError)
+	center := flags.String("center", "", "https://адрес центра")
+	code := flags.String("code", "", "код регистрации из Web")
+	fingerprint := flags.String("fingerprint", "", "отпечаток центра из Web")
+	dir := flags.String("dir", "", "каталог конфигурации и ключей")
+	state := flags.String("state", "", "каталог состояния")
+	listen := flags.String("listen", "0.0.0.0:8443", "адрес приёма агентов")
+	if e := flags.Parse(args); e != nil {
+		return e
+	}
+	if *code == "" {
+		*code = os.Getenv("SURVEYSCAN_REGISTRATION_CODE")
+	}
+	if flags.NArg() != 0 || *center == "" || *code == "" || *fingerprint == "" || *dir == "" || *state == "" {
+		return fmt.Errorf("register --center URL --code КОД --fingerprint ОТПЕЧАТОК --dir КАТАЛОГ --state КАТАЛОГ [--listen 0.0.0.0:8443]")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	source, e := collector.Register(ctx, collector.RegisterOptions{CenterURL: *center, Code: *code, Fingerprint: *fingerprint, Dir: *dir, StateDir: *state, Listen: *listen})
+	if e != nil {
+		return e
+	}
+	fmt.Println("collector_registered " + source)
+	return nil
+}
+
 func main() {
 	if e := run(os.Args[1:]); e != nil {
 		fmt.Fprintln(os.Stderr, e)
