@@ -160,6 +160,21 @@ func (h *HTTP) Wrap(action string, sessionOnly bool, next http.Handler) http.Han
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), identityContextKey{}, id)))
 	})
 }
+
+// OriginOK, SetSession, Fail — для входа через каталог (портал обращений), который собирает слой приложения.
+func (h *HTTP) OriginOK(r *http.Request) bool { return h.originOK(r) }
+func (h *HTTP) SetSession(w http.ResponseWriter, session Session, raw string) {
+	http.SetCookie(w, &http.Cookie{Name: "surveyscan_session", Value: raw, Path: "/", HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteStrictMode, Expires: session.ExpiresAt, MaxAge: 28800})
+	respond(w, 201, session)
+}
+func Fail(w http.ResponseWriter, e error) { fail(w, e) }
+func (h *HTTP) Throttle(ctx context.Context, username string) error {
+	return h.service.Throttle(ctx, username)
+}
+func (h *HTTP) DirectorySession(ctx context.Context, tenant, login string) (Session, string, error) {
+	return h.service.DirectorySession(ctx, tenant, login)
+}
+
 func (h *HTTP) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/auth/sessions", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), loginRequestTimeout)

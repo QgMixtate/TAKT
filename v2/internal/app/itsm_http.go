@@ -157,5 +157,104 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 		d, e := st.Detail(ctx, tx, id.TenantID, ticket, true)
 		return d, "itsm.ticket_linked", e
 	})
+	// Портал заявителя (роль requester, вход по AD): только свои обращения; внутренние комментарии не видны (W3-09).
+	portal := func(route string, status int, read bool, newBody func() any, fn func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, req *http.Request, body any) (any, error)) {
+		h[route] = route51{"itsm:portal", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			var body any
+			if read {
+				if _, ok := queryOnly(w, req); !ok {
+					return
+				}
+			} else {
+				body = newBody()
+				if !readOperationBody(w, req, body) {
+					return
+				}
+			}
+			r.itsmDo(w, req, status, "itsm:portal", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+				me, e := st.MySubject(ctx, tx, id.TenantID, id.UserID)
+				if e != nil {
+					return nil, e
+				}
+				return fn(ctx, tx, id, me, req, body)
+			})
+		})}
+	}
+	own := func(ctx context.Context, tx pgx.Tx, tenant, me, ticket string) (itsm.Detail, error) {
+		d, e := st.Detail(ctx, tx, tenant, ticket, false)
+		if e != nil {
+			return d, e
+		}
+		if d.Requester == nil || *d.Requester != me {
+			return itsm.Detail{}, domain.NotFound // чужое обращение не раскрывается
+		}
+		d.Allowed = []string{}
+		if d.State == "resolved" {
+			d.Allowed = []string{"closed", "in_progress"} // «решено» / «не решено»
+		}
+		return d, nil
+	}
+	portal("GET /api/v1/portal/tickets", 200, true, nil, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, _ *http.Request, _ any) (any, error) {
+		items, e := st.List(ctx, tx, id.TenantID, itsm.Filter{Requester: me}, 200)
+		return map[string]any{"items": items}, e
+	})
+	type portalTicket struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Urgency     int    `json:"urgency"`
+	}
+	portal("POST /api/v1/portal/tickets", 201, false, func() any { return &portalTicket{} }, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, _ *http.Request, body any) (any, error) {
+		b := body.(*portalTicket)
+		// заявитель сообщает срочность; влияние оценивает оператор при разборе (по умолчанию — низкое)
+		d, e := st.Create(ctx, tx, id.TenantID, actor(id), itsm.Input{Kind: "incident", Title: b.Title, Description: b.Description, Impact: 3, Urgency: b.Urgency, Requester: me})
+		if e != nil {
+			return nil, e
+		}
+		if e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "itsm.portal_ticket_created", "ticket", d.ID); e != nil {
+			return nil, e
+		}
+		return own(ctx, tx, id.TenantID, me, d.ID)
+	})
+	portal("GET /api/v1/portal/tickets/{ticket_id}", 200, true, nil, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, req *http.Request, _ any) (any, error) {
+		return own(ctx, tx, id.TenantID, me, req.PathValue("ticket_id"))
+	})
+	type portalComment struct {
+		Text string `json:"text"`
+	}
+	portal("POST /api/v1/portal/tickets/{ticket_id}/comments", 201, false, func() any { return &portalComment{} }, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, req *http.Request, body any) (any, error) {
+		if _, e := own(ctx, tx, id.TenantID, me, req.PathValue("ticket_id")); e != nil {
+			return nil, e
+		}
+		if _, e := st.Comment(ctx, tx, id.TenantID, actor(id), req.PathValue("ticket_id"), body.(*portalComment).Text, true); e != nil {
+			return nil, e
+		}
+		return own(ctx, tx, id.TenantID, me, req.PathValue("ticket_id"))
+	})
+	type confirm struct {
+		Revision string `json:"revision"`
+		Solved   bool   `json:"solved"`
+		Text     string `json:"text"`
+	}
+	portal("POST /api/v1/portal/tickets/{ticket_id}/confirm", 200, false, func() any { return &confirm{} }, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, me string, req *http.Request, body any) (any, error) {
+		b := body.(*confirm)
+		d, e := own(ctx, tx, id.TenantID, me, req.PathValue("ticket_id"))
+		if e != nil {
+			return nil, e
+		}
+		if d.State != "resolved" {
+			return nil, domain.Conflict
+		}
+		to := "closed"
+		if !b.Solved {
+			to = "in_progress" // «не решено» — повторное открытие
+		}
+		if _, e = st.Transition(ctx, tx, id.TenantID, actor(id), d.ID, b.Revision, to, b.Text); e != nil {
+			return nil, e
+		}
+		if e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "itsm.portal_ticket_"+to, "ticket", d.ID); e != nil {
+			return nil, e
+		}
+		return own(ctx, tx, id.TenantID, me, d.ID)
+	})
 	return h
 }

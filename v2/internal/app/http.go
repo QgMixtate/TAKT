@@ -13,6 +13,9 @@ import (
 func NewHTTP(auth *access.HTTP, health http.Handler, registry ...*Registry) (http.Handler, error) {
 	mux := http.NewServeMux()
 	auth.Register(mux)
+	if len(registry) > 0 && registry[0] != nil {
+		mux.HandleFunc("POST /api/v1/auth/directory-sessions", registry[0].directoryLoginHandler(auth)) // портал: вход по AD
+	}
 	mux.HandleFunc("GET /api/v1/contracts/c12", func(w http.ResponseWriter, r *http.Request) {
 		b, e := contracts.Files.ReadFile("c12.openapi.json")
 		if e != nil {

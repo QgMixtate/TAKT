@@ -520,6 +520,45 @@
     "items"
    ],
    "additionalProperties": false
+  },
+  "PortalSession": {
+   "description": "POST /api/v1/auth/directory-sessions — сессия заявителя (вход по AD); C03 Session не меняется",
+   "type": "object",
+   "properties": {
+    "user_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "tenant_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "roles": {
+     "type": "array",
+     "items": {
+      "const": "requester"
+     },
+     "minItems": 1,
+     "maxItems": 1
+    },
+    "expires_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "csrf_token": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "user_id",
+    "tenant_id",
+    "roles",
+    "expires_at",
+    "csrf_token"
+   ],
+   "additionalProperties": false
   }
  }
 }

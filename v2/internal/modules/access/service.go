@@ -181,7 +181,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (out Ses
 	var salt, stored []byte
 	var enabled bool
 	stage = "user_lookup"
-	e := s.pool.QueryRow(ctx, `SELECT u.user_id::text,u.tenant_id::text,u.role,u.revision::text,u.password_salt,u.password_hash,u.enabled AND t.status='active' FROM access.users u JOIN access.tenants t USING(tenant_id) WHERE username=$1`, username).Scan(&userID, &tenantID, &role, &revision, &salt, &stored, &enabled)
+	e := s.pool.QueryRow(ctx, `SELECT u.user_id::text,u.tenant_id::text,u.role,u.revision::text,u.password_salt,u.password_hash,u.enabled AND t.status='active' FROM access.users u JOIN access.tenants t USING(tenant_id) WHERE username=$1 AND u.auth_source='local'`, username).Scan(&userID, &tenantID, &role, &revision, &salt, &stored, &enabled)
 	missing := errors.Is(e, pgx.ErrNoRows)
 	if e != nil && !missing {
 		return Session{}, "", e
@@ -198,13 +198,81 @@ func (s *Service) Login(ctx context.Context, username, password string) (out Ses
 		return Session{}, "", ErrAuth
 	}
 	stage = "session_begin"
+	return s.newSession(ctx, userID, tenantID, role, revision, &stage)
+}
+
+// Throttle — тот же предел попыток входа, что у входа по паролю (для входа через каталог: до обращения к AD).
+func (s *Service) Throttle(ctx context.Context, username string) error {
+	username = normalize(username)
+	if !usernamePattern.MatchString(username) {
+		return ErrAuth
+	}
+	return s.rate(ctx, username)
+}
+
+// DirectoryUsername — локальное имя пользователя для сотрудника из каталога: «ad.» + логин AD (без домена).
+func DirectoryUsername(login string) (string, bool) {
+	u := normalize("ad." + strings.TrimSpace(login))
+	return u, usernamePattern.MatchString(u) && len(login) > 0
+}
+
+// DirectorySession — вход сотрудника, чей пароль уже проверил каталог (C46.01): находит или создаёт пользователя
+// «заявитель» без локального пароля и выдаёт сессию браузера. Пользователь с тем же именем, но локальный или с другой
+// ролью, — отказ (повышения прав через каталог нет).
+func (s *Service) DirectorySession(ctx context.Context, tenantID, login string) (Session, string, error) {
+	username, ok := DirectoryUsername(login)
+	if !ok || !identifier.Valid(tenantID) {
+		return Session{}, "", ErrAuth
+	}
+	stage := "directory_user"
+	tx, e := s.pool.Begin(ctx)
+	if e != nil {
+		return Session{}, "", e
+	}
+	defer tx.Rollback(ctx)
+	if _, e = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(734933406)"); e != nil {
+		return Session{}, "", e
+	}
+	var userID, tenant, role, source, revision string
+	var enabled bool
+	e = tx.QueryRow(ctx, "SELECT user_id::text,tenant_id::text,role,auth_source,revision::text,enabled FROM access.users WHERE username=$1", username).Scan(&userID, &tenant, &role, &source, &revision, &enabled)
+	switch {
+	case errors.Is(e, pgx.ErrNoRows):
+		salt, unusable := make([]byte, 16), make([]byte, 32)
+		if _, e = rand.Read(salt); e != nil {
+			return Session{}, "", e
+		}
+		if _, e = rand.Read(unusable); e != nil { // локального пароля нет: хэш случайный и ни с чем не совпадёт
+			return Session{}, "", e
+		}
+		userID = identifier.New()
+		if e = tx.QueryRow(ctx, "INSERT INTO access.users(user_id,tenant_id,username,password_salt,password_hash,role,auth_source) VALUES($1,$2,$3,$4,$5,'requester','directory') RETURNING revision::text",
+			userID, tenantID, username, salt, unusable).Scan(&revision); e != nil {
+			return Session{}, "", e
+		}
+		if e = s.event(ctx, tx, port.Identity{TenantID: tenantID, UserID: userID}, "user.directory_created", userID); e != nil {
+			return Session{}, "", e
+		}
+	case e != nil:
+		return Session{}, "", e
+	case tenant != tenantID || source != "directory" || role != "requester" || !enabled:
+		return Session{}, "", ErrAuth
+	}
+	if e = tx.Commit(ctx); e != nil {
+		return Session{}, "", e
+	}
+	return s.newSession(ctx, userID, tenantID, "requester", revision, &stage)
+}
+
+// newSession — сессия браузера для уже проверенного пользователя (общая часть входа по паролю и через каталог).
+func (s *Service) newSession(ctx context.Context, userID, tenantID, role, revision string, stage *string) (Session, string, error) {
 	tx, e := s.pool.Begin(ctx)
 	if e != nil {
 		return Session{}, "", e
 	}
 	defer tx.Rollback(ctx)
 	var current bool
-	stage = "user_recheck"
+	*stage = "user_recheck"
 	e = tx.QueryRow(ctx, `SELECT u.enabled AND u.revision::text=$2 AND t.status='active' FROM access.users u JOIN access.tenants t USING(tenant_id) WHERE u.user_id=$1 FOR UPDATE OF u FOR SHARE OF t`, userID, revision).Scan(&current)
 	if e != nil {
 		return Session{}, "", e
@@ -213,7 +281,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (out Ses
 		return Session{}, "", ErrAuth
 	}
 	var active int
-	stage = "active_sessions"
+	*stage = "active_sessions"
 	if e = tx.QueryRow(ctx, "SELECT count(*) FROM access.credentials WHERE user_id=$1 AND kind='session' AND revoked_at IS NULL AND expires_at>clock_timestamp() AND user_revision::text=$2", userID, revision).Scan(&active); e != nil {
 		return Session{}, "", e
 	}
@@ -221,7 +289,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (out Ses
 	// новый вход упирался в отказ. Теперь вход вытесняет самые старые сессии этого пользователя (с аудитом).
 	for ; active >= 5; active-- {
 		var oldest string
-		stage = "session_evict"
+		*stage = "session_evict"
 		if e = tx.QueryRow(ctx, "UPDATE access.credentials SET revoked_at=clock_timestamp() WHERE credential_id=(SELECT credential_id FROM access.credentials WHERE user_id=$1 AND kind='session' AND revoked_at IS NULL AND expires_at>clock_timestamp() AND user_revision::text=$2 ORDER BY created_at,credential_id LIMIT 1 FOR UPDATE) RETURNING credential_id::text", userID, revision).Scan(&oldest); e != nil {
 			return Session{}, "", e
 		}
@@ -231,16 +299,16 @@ func (s *Service) Login(ctx context.Context, username, password string) (out Ses
 	}
 	raw, csrf, id := secret(), secret(), identifier.New()
 	var expires time.Time
-	stage = "session_insert"
+	*stage = "session_insert"
 	e = tx.QueryRow(ctx, "INSERT INTO access.credentials(credential_id,tenant_id,user_id,user_revision,kind,secret_hash,csrf_hash,name,expires_at) VALUES($1,$2,$3,$4,'session',$5,$6,'browser',clock_timestamp()+interval '8 hours') RETURNING expires_at", id, tenantID, userID, revision, Digest(raw), Digest(csrf)).Scan(&expires)
 	if e != nil {
 		return Session{}, "", e
 	}
-	stage = "audit"
+	*stage = "audit"
 	if e = s.event(ctx, tx, port.Identity{TenantID: tenantID, UserID: userID}, "session.created", id); e != nil {
 		return Session{}, "", e
 	}
-	stage = "commit"
+	*stage = "commit"
 	if e = tx.Commit(ctx); e != nil {
 		return Session{}, "", e
 	}
@@ -282,8 +350,12 @@ func (s *Service) Authenticate(ctx context.Context, raw, kind, csrf string, muta
 	return id, nil
 }
 func allowed(id port.Identity, action string) bool {
-	if (id.Kind != "session" && id.Kind != "cli") || (id.Role != "admin" && id.Role != "operator" && id.Role != "viewer") {
+	if (id.Kind != "session" && id.Kind != "cli") || (id.Role != "admin" && id.Role != "operator" && id.Role != "viewer" && id.Role != "requester") {
 		return false
+	}
+	// заявитель (сотрудник с портала, вход по AD) — только свои обращения и каталог услуг; остальное закрыто
+	if id.Role == "requester" {
+		return id.Kind == "session" && (action == "auth:self" || action == "itsm:portal")
 	}
 	if id.Kind == "cli" {
 		if action != "assets:read" && action != "sources:read" {

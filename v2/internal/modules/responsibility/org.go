@@ -395,3 +395,32 @@ AND ($3='' OR a.asset_uid>NULLIF($3,'')::uuid) AND $2<>'' ORDER BY 1 LIMIT $4`, 
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
+
+// DirectoryCandidate — запись оргструктуры из каталога для входа на портал по логину AD.
+type DirectoryCandidate struct{ Tenant, Subject, ExternalID string }
+
+// DirectoryLoginCandidates — активные записи из каталога с этим логином (во всех организациях: при входе
+// организация неизвестна; больше одной — вход отклоняется вызывающим).
+func (Store) DirectoryLoginCandidates(ctx context.Context, tx pgx.Tx, login string) ([]DirectoryCandidate, error) {
+	rows, e := tx.Query(ctx, "SELECT tenant_id::text,subject_id::text,external_id FROM responsibility.subjects WHERE origin='ldap' AND active AND kind='person' AND lower(directory_login)=lower($1) LIMIT 3", login)
+	if e != nil {
+		return nil, e
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (DirectoryCandidate, error) {
+		var c DirectoryCandidate
+		return c, r.Scan(&c.Tenant, &c.Subject, &c.ExternalID)
+	})
+}
+
+// LinkPortalUser связывает запись оргструктуры с пользователем портала (заявитель видит свои обращения по ней).
+// Запись, уже связанная с другим пользователем (например, локальной учёткой оператора), — Conflict.
+func (Store) LinkPortalUser(ctx context.Context, tx pgx.Tx, tenant, subject, user string) error {
+	tag, e := tx.Exec(ctx, "UPDATE responsibility.subjects SET user_id=$3 WHERE tenant_id=$1 AND subject_id=$2 AND (user_id IS NULL OR user_id=$3)", tenant, subject, user)
+	if e != nil {
+		return e
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.Conflict
+	}
+	return nil
+}

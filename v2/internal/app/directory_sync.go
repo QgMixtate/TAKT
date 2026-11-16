@@ -549,3 +549,48 @@ func directoryHint(e error) string {
 	}
 	return msg
 }
+
+// ErrDirectoryLogin — логин/пароль сотрудника не подтверждены каталогом (без подробностей причины).
+var ErrDirectoryLogin = errors.New("directory login failed")
+
+// Authenticate проверяет пароль сотрудника в каталоге (портал обращений, C46.01): служебной учёткой находит ровно
+// одну запись пользователя по атрибуту логина (с фильтром пользователей и без отключённых в AD), затем выполняет
+// bind от имени этой записи. Пустой пароль отвергается до обращения к каталогу (анонимный bind в LDAP «успешен»).
+// Возвращает неизменяемый идентификатор записи (GUID) для сверки с записью оргструктуры.
+func (d *DirectorySync) Authenticate(login, password string) (string, error) {
+	if strings.TrimSpace(login) == "" || len(login) > 256 || password == "" || len(password) > 1024 {
+		return "", ErrDirectoryLogin
+	}
+	c, e := d.connect()
+	if e != nil {
+		return "", e
+	}
+	defer c.Close()
+	cfg := d.Config
+	filter := "(&" + cfg.UserFilter + "(" + cfg.LoginAttribute + "=" + ldap.EscapeFilter(login) + "))"
+	users, e := d.search(c, cfg.BaseDN, ldap.ScopeWholeSubtree, filter, []string{cfg.GUIDAttribute, "userAccountControl"})
+	if e != nil {
+		return "", e
+	}
+	if len(users) != 1 {
+		return "", ErrDirectoryLogin
+	}
+	u := users[0]
+	if uac, _ := strconv.Atoi(u.GetAttributeValue("userAccountControl")); uac&2 != 0 {
+		return "", ErrDirectoryLogin // учётка отключена в AD
+	}
+	guid := d.guid(u)
+	if guid == "" {
+		return "", ErrDirectoryLogin
+	}
+	user, e := ldap.DialURL(cfg.URL, ldap.DialWithTLSConfig(d.tls))
+	if e != nil {
+		return "", fmt.Errorf("directory unavailable: %w", e)
+	}
+	defer user.Close()
+	user.SetTimeout(30 * time.Second)
+	if e = user.Bind(u.DN, password); e != nil {
+		return "", ErrDirectoryLogin
+	}
+	return guid, nil
+}
