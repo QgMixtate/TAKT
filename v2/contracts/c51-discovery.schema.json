@@ -750,6 +750,17 @@
     "targets": {
      "type": "integer",
      "minimum": 0
+    },
+    "public_key": {
+     "oneOf": [
+      {
+       "type": "string",
+       "pattern": "^ssh-ed25519 [A-Za-z0-9+/=]+ surveyscan-collect$"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -760,7 +771,8 @@
     "active",
     "revision",
     "secret_changed_at",
-    "targets"
+    "targets",
+    "public_key"
    ],
    "additionalProperties": false,
    "description": "Учётка сбора без секрета: секрет хранится только в хранилище секретов центра и не возвращается"

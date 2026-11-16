@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"golang.org/x/crypto/ssh"
 	"io"
 	"math/big"
 	"net"
@@ -358,6 +359,34 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	f.registry.Secrets = app.FileSecrets{Dir: t.TempDir()}
 	var cred sources.CollectCredential
 	_ = json.Unmarshal(call("admin", "POST", "/api/v1/discovery/credentials", `{"name":"Linux RO","kind":"ssh","username":"scanprobe","secret":{"password":"c51-target-secret"}}`, 201), &cred)
+	// ключ, созданный центром: закрытый — только в хранилище секретов, открытый — в ответе (строка authorized_keys)
+	genRaw := call("admin", "POST", "/api/v1/discovery/credentials", `{"name":"Linux gen","kind":"ssh","username":"scanprobe","secret":{"generate":true}}`, 201)
+	var gen sources.CollectCredential
+	valid("CollectCredential", genRaw)
+	_ = json.Unmarshal(genRaw, &gen)
+	if gen.PublicKey == nil || !strings.HasPrefix(*gen.PublicKey, "ssh-ed25519 ") || strings.Contains(string(genRaw), "PRIVATE KEY") {
+		t.Fatalf("generated credential: %s", genRaw)
+	}
+	stored, ok, err := f.registry.Secrets.Get(f.ctx, tenant, sources.CredentialSecretKey(gen.ID))
+	if err != nil || !ok {
+		t.Fatal("generated private key must be stored", err)
+	}
+	var sec struct {
+		PrivateKey string `json:"private_key"`
+	}
+	_ = json.Unmarshal(stored, &sec)
+	signer, err := ssh.ParsePrivateKey([]byte(sec.PrivateKey))
+	if err != nil || !strings.HasPrefix(*gen.PublicKey, strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))) {
+		t.Fatal("stored private key must match the shown public key", err)
+	}
+	call("admin", "POST", "/api/v1/discovery/credentials", `{"name":"bad gen","kind":"ssh","username":"x","secret":{"generate":true,"password":"p"}}`, 422)
+	call("admin", "POST", "/api/v1/discovery/credentials", `{"name":"bad gen2","kind":"winrm","username":"x","secret":{"generate":true}}`, 422)
+	// смена секрета на пароль очищает открытый ключ
+	var patched sources.CollectCredential
+	_ = json.Unmarshal(call("admin", "PATCH", "/api/v1/discovery/credentials/"+gen.ID, `{"revision":"`+gen.Revision+`","secret":{"password":"new-secret"}}`, 200), &patched)
+	if patched.PublicKey != nil {
+		t.Fatal("public key must be cleared when the secret is replaced", *patched.PublicKey)
+	}
 	hostKey := "SHA256:" + strings.Repeat("A", 43)
 	target51 := func(extra string) string {
 		return fmt.Sprintf(`{"collector_id":%q,"network_id":%q,"address":"10.51.0.10","kind":"ssh","credential_id":%q%s}`, collector, n.ID, cred.ID, extra)

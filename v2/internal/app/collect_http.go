@@ -2,8 +2,12 @@ package app
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"golang.org/x/crypto/ssh"
 	"io"
 	"mime"
 	"net/http"
@@ -32,6 +36,8 @@ type CollectSecret struct {
 	AuthKey      string `json:"auth_key,omitempty"`
 	PrivProtocol string `json:"priv_protocol,omitempty"` // snmp: AES|AES256
 	PrivKey      string `json:"priv_key,omitempty"`
+	// Generate — ssh: центр сам создаёт пару ed25519; закрытый ключ не покидает центр, открытый показывается в Web
+	Generate bool `json:"generate,omitempty"`
 }
 
 func (s CollectSecret) valid(kind string) bool {
@@ -41,6 +47,9 @@ func (s CollectSecret) valid(kind string) bool {
 	}
 	switch kind {
 	case "ssh":
+		if s.Generate {
+			return s.Password == "" && s.PrivateKey == "" && s.Passphrase == "" && s.AuthKey == "" && s.PrivKey == ""
+		}
 		return (s.Password != "") != (s.PrivateKey != "") && s.AuthKey == "" && s.PrivKey == "" && (s.PrivateKey == "" || strings.Contains(s.PrivateKey, "PRIVATE KEY"))
 	case "winrm":
 		return s.Password != "" && s.PrivateKey == "" && s.AuthKey == "" && s.PrivKey == ""
@@ -67,21 +76,41 @@ type credentialPatch struct {
 	Secret   *CollectSecret `json:"secret,omitempty"`
 }
 
-func (r *Registry) putCollectSecret(ctx context.Context, tenant, id, kind string, s CollectSecret) error {
+// putCollectSecret кладёт секрет в хранилище; для generate — создаёт пару ed25519 и возвращает открытый ключ
+// (строку authorized_keys), иначе nil.
+func (r *Registry) putCollectSecret(ctx context.Context, tenant, id, kind, label string, s CollectSecret) (*string, error) {
 	if r.Secrets == nil {
-		return domain.Conflict // хранилище секретов не настроено: учётку не сохраняем
+		return nil, domain.Conflict // хранилище секретов не настроено: учётку не сохраняем
 	}
 	if !s.valid(kind) {
-		return domain.Invalid
+		return nil, domain.Invalid
+	}
+	var public *string
+	if s.Generate {
+		pub, priv, e := ed25519.GenerateKey(rand.Reader)
+		if e != nil {
+			return nil, e
+		}
+		block, e := ssh.MarshalPrivateKey(priv, "surveyscan "+label)
+		if e != nil {
+			return nil, e
+		}
+		sshPub, e := ssh.NewPublicKey(pub)
+		if e != nil {
+			return nil, e
+		}
+		line := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(sshPub))) + " surveyscan-collect"
+		public = &line
+		s = CollectSecret{PrivateKey: string(pem.EncodeToMemory(block))}
 	}
 	raw, _ := json.Marshal(s)
 	if e := r.Secrets.Put(ctx, tenant, sources.CredentialSecretKey(id), raw); e != nil {
 		if errors.Is(e, ErrSecretsUnavailable) {
-			return domain.Conflict
+			return nil, domain.Conflict
 		}
-		return e
+		return nil, e
 	}
-	return nil
+	return public, nil
 }
 
 func (r *Registry) collectHandlers() map[string]route51 {
@@ -103,10 +132,11 @@ func (r *Registry) collectHandlers() map[string]route51 {
 			r.discoveryDo(w, req, http.StatusCreated, "sources:admin", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
 				cid := identifier.New()
 				// секрет пишется первым: при сбое вставки остаётся недостижимый секрет без описания — безопасно
-				if e := r.putCollectSecret(ctx, id.TenantID, cid, body.Kind, body.Secret); e != nil {
+				public, e := r.putCollectSecret(ctx, id.TenantID, cid, body.Kind, body.Name, body.Secret)
+				if e != nil {
 					return nil, e
 				}
-				c, e := src51.CreateCredential(ctx, tx, id.TenantID, cid, body.Name, body.Kind, body.Username)
+				c, e := src51.CreateCredential(ctx, tx, id.TenantID, cid, body.Name, body.Kind, body.Username, public)
 				if e == nil {
 					e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "discovery.credential_created", "collect_credential", c.ID)
 				}
@@ -126,12 +156,13 @@ func (r *Registry) collectHandlers() map[string]route51 {
 				if cur.Revision != body.Revision {
 					return nil, domain.Revision
 				}
+				var public *string
 				if body.Secret != nil {
-					if e = r.putCollectSecret(ctx, id.TenantID, cur.ID, cur.Kind, *body.Secret); e != nil {
+					if public, e = r.putCollectSecret(ctx, id.TenantID, cur.ID, cur.Kind, cur.Name, *body.Secret); e != nil {
 						return nil, e
 					}
 				}
-				c, e := src51.PatchCredential(ctx, tx, id.TenantID, cur.ID, body.Revision, body.Name, body.Username, body.Active, body.Secret != nil)
+				c, e := src51.PatchCredential(ctx, tx, id.TenantID, cur.ID, body.Revision, body.Name, body.Username, body.Active, body.Secret != nil, public)
 				if e == nil {
 					action := "discovery.credential_changed"
 					if body.Secret != nil {
