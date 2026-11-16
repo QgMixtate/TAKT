@@ -122,7 +122,7 @@ SELECT $1,$2,'person',$3,$3||'@example.test',user_id FROM access.users WHERE ten
 	}
 	cur = call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/assign", fmt.Sprintf(`{"revision":%q,"team_id":%q,"reason":"эскалация на 2-ю линию"}`, cur.Revision, team), 200)
 	cur = call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"in_progress"}`, cur.Revision), 200)
-	call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"closed"}`, cur.Revision), 409)    // нельзя закрыть нерешённый
+	call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"closed"}`, cur.Revision), 409)   // нельзя закрыть нерешённый
 	call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"resolved"}`, cur.Revision), 422) // без решения
 	call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/comments", `{"text":"Проверить драйвер","internal":true}`, 201)
 	cur = call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"resolved","text":"Переустановлен драйвер"}`, cur.Revision), 200)
