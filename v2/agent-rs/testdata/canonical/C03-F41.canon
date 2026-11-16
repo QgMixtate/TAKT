@@ -1,0 +1,1 @@
+{"collector_id":"00000000-0000-4000-8000-00000000001f","heartbeat_seconds":60,"inventory_seconds":900,"jitter_percent":10,"profile_revision":"1","sections":["identity","os","network"],"source_id":"00000000-0000-4000-8000-000000000002","spool_limit_bytes":268435456}

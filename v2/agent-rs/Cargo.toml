@@ -1,0 +1,25 @@
+[package]
+name = "surveyscan-agent"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "SurveyScan host agent and portable (Rust, C52): same C03/C15 wire as the Go agent; one static binary for Linux and Windows"
+
+[lib]
+name = "ssagent"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+serde_jcs = "0.1"
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8", "pem"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1
+panic = "abort"

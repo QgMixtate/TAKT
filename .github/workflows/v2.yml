@@ -58,6 +58,14 @@ jobs:
         run: python scripts/unit_check.py
       - name: Start local PostgreSQL, OpenBao, backend and proxy
         run: python scripts/dev.py up
+      - name: Rust agent (C52.02) — tests, Linux musl and Windows builds; canonical form shared with Go
+        working-directory: v2/agent-rs
+        run: |
+          rustup target add x86_64-unknown-linux-musl x86_64-pc-windows-gnu
+          sudo apt-get install -y --no-install-recommends musl-tools gcc-mingw-w64-x86-64
+          cargo test --locked
+          cargo build --release --locked --target x86_64-unknown-linux-musl
+          cargo build --release --locked --target x86_64-pc-windows-gnu
       - name: Build search service (Rust, Tantivy; ADR C28) for the C29 integration test
         working-directory: v2/search
         run: cargo build --release --locked
