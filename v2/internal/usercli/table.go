@@ -11,7 +11,7 @@ import (
 
 func safeCell(v any) string {
 	if v == nil {
-		return "unknown"
+		return "—" // стенд №14: «unknown» читалось как «неизвестно», а значит «нет»
 	}
 	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {

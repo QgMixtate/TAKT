@@ -266,7 +266,9 @@ func TestW2ReservationsAndReverse(t *testing.T) {
 	call("POST", "/api/v1/warehouse/reservations", fmt.Sprintf(`{"item_id":%q,"location_id":%q,"quantity":4,"holder_id":%q,"basis":"Отдел","expires_at":%q}`, mouse.ID, loc.ID, person, soon), 201, &rq)
 	call("POST", "/api/v1/warehouse/reservations", fmt.Sprintf(`{"item_id":%q,"location_id":%q,"quantity":7,"holder_id":%q,"basis":"Сверх","expires_at":%q}`, mouse.ID, loc.ID, other, soon), 409, nil)
 	// чужая выдача зарезервированного — отказ; свободного количества — только 6
-	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"Чужой","from_location":%q,"to_holder":%q,"lines":[{"unit_id":%q}]}`, loc.ID, other, u1), 409, nil)
+	if code, raw, _ := b.request(t, "POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"Чужой","from_location":%q,"to_holder":%q,"lines":[{"unit_id":%q}]}`, loc.ID, other, u1), csrf, "https://ui.example", nil); code != 409 || !strings.Contains(string(raw), "UNIT_RESERVED") {
+		t.Fatalf("foreign reservation must be UNIT_RESERVED: %d %s", code, raw)
+	}
 	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"Чужой","from_location":%q,"to_holder":%q,"lines":[{"item_id":%q,"quantity":7}]}`, loc.ID, other, mouse.ID), 409, nil)
 	// своя выдача по резерву
 	call("POST", "/api/v1/warehouse/movements", fmt.Sprintf(`{"kind":"issue","basis":"По резерву","from_location":%q,"to_holder":%q,"lines":[{"unit_id":%q}]}`, loc.ID, person, u1), 201, nil)

@@ -259,6 +259,17 @@
        "type": "null"
       }
      ]
+    },
+    "asset_uid": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -270,7 +281,8 @@
     "last_seen",
     "state",
     "misses",
-    "missing_since"
+    "missing_since",
+    "asset_uid"
    ],
    "additionalProperties": false
   },

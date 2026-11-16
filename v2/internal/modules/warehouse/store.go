@@ -436,6 +436,14 @@ AND (state='in_stock' OR (state='reserved' AND EXISTS(SELECT 1 FROM warehouse.re
 		var item string
 		e := row.Scan(&item)
 		if errors.Is(e, pgx.ErrNoRows) {
+			if op.Kind == "issue" {
+				// стенд №14: экземпляр зарезервирован за другим — свой код и за кем/до когда
+				var holder string
+				var until time.Time
+				if tx.QueryRow(ctx, "SELECT holder_id::text,expires_at FROM warehouse.reservations WHERE tenant_id=$1 AND unit_id=$2 AND state='active'", tenant, l.UnitID).Scan(&holder, &until) == nil {
+					return "", "", 0, &ReservedError{Holder: holder, Until: until}
+				}
+			}
 			return "", "", 0, domain.Conflict
 		}
 		if e != nil {
@@ -885,3 +893,12 @@ func (Store) SetCompatibility(ctx context.Context, tx pgx.Tx, tenant, item strin
 	}
 	return nil
 }
+
+// ReservedError — экземпляр зарезервирован за другим получателем (выдача — только ему или после отмены резерва).
+type ReservedError struct {
+	Holder string
+	Until  time.Time
+}
+
+func (e *ReservedError) Error() string { return "warehouse: unit is reserved for another holder" }
+func (e *ReservedError) Unwrap() error { return domain.Conflict }

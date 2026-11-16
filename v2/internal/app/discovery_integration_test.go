@@ -326,6 +326,12 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if res.AssetID == nil {
 		t.Fatalf("asset for presence: %+v", res)
 	}
+	if h := hostState("10.51.0.20"); h.Asset == nil || *h.Asset != *res.AssetID {
+		t.Fatalf("discovery host must link to the registry asset with its address: %+v", h)
+	}
+	if h := hostState("10.51.0.30"); h.Asset != nil {
+		t.Fatalf("host without inventory must show no asset: %+v", h)
+	}
 	if p := presence(*res.AssetID); p.State != "present" || len(p.Items) != 1 || p.Items[0].IP != "10.51.0.20" || p.Items[0].NetworkName == "" || p.MissAfter != 3 {
 		t.Fatalf("asset presence: %+v", p)
 	}
@@ -335,8 +341,17 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if p := presence(*res.AssetID); p.State != "missing" || p.Items[0].MissingSince == nil {
 		t.Fatalf("asset presence after 3 misses: %+v", p)
 	}
+	// стенд №14: обследование, не взятое collector, снимается из очереди; взятое — уже нельзя
+	var queued sources.DiscoveryOutcome
+	_ = json.Unmarshal(call("op51", "POST", "/api/v1/discovery/networks/"+n.ID+"/runs", "{}", 202), &queued)
+	call("view51", "POST", "/api/v1/discovery/networks/"+n.ID+"/runs/"+queued.Run+"/cancel", "{}", 403)
+	call("op51", "POST", "/api/v1/discovery/networks/"+n.ID+"/runs/"+queued.Run+"/cancel", "{}", 200)
+	call("op51", "POST", "/api/v1/discovery/networks/"+n.ID+"/runs/"+queued.Run+"/cancel", "{}", 409)
+	if h := hostState("10.51.0.10"); h.Misses != 0 {
+		t.Fatal("cancelled run must not count misses", h)
+	}
 	var audits int
-	if err := f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action LIKE 'discovery.%'", tenant).Scan(&audits); err != nil || audits != 10 {
+	if err := f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action LIKE 'discovery.%'", tenant).Scan(&audits); err != nil || audits != 12 {
 		t.Fatal("audit of network creation and runs", audits, err)
 	}
 	// C51.03 шаг B: цель сбора из найденного узла — учётка, отпечаток ключа хоста, регистрация агента цели через grant

@@ -89,6 +89,26 @@ func (r *Registry) discoveryHandlers() map[string]route51 {
 				return n, e
 			})
 		})},
+		// стенд №14: обследование, которое не взял collector (площадка недоступна), можно снять из очереди
+		"POST /api/v1/discovery/networks/{network_id}/runs/{run_id}/cancel": {"jobs:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			var body struct{}
+			if !readOperationBody(w, req, &body) {
+				return
+			}
+			r.discoveryDo(w, req, http.StatusOK, "jobs:write", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+				network, run := req.PathValue("network_id"), req.PathValue("run_id")
+				if !identifier.Valid(network) || !identifier.Valid(run) {
+					return nil, domain.NotFound
+				}
+				if e := src51.CancelDiscovery(ctx, tx, id.TenantID, network, run); e != nil {
+					return nil, e
+				}
+				if e := r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "discovery.run_cancelled", "discovery_run", run); e != nil {
+					return nil, e
+				}
+				return map[string]string{"run_id": run, "state": "failed"}, nil
+			})
+		})},
 		"POST /api/v1/discovery/networks/{network_id}/runs": {"jobs:write", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			var body struct{}
 			if !readOperationBody(w, req, &body) {

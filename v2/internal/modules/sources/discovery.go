@@ -87,6 +87,8 @@ type DiscoveryHost struct {
 	// C21: подряд засчитанные пропуски (полные обследования без узла); missing — при DiscoveryMissAfter.
 	Misses       int        `json:"misses"`
 	MissingSince *time.Time `json:"missing_since"`
+	// Asset — актив реестра с этим адресом (по сетевым фактам инвентаризации); nil — узла в реестре нет (стенд №14)
+	Asset *string `json:"asset_uid"`
 }
 
 // DiscoveryMissAfter — сколько подряд полных обследований без узла нужно, чтобы считать его пропавшим (C21.01:
@@ -295,7 +297,12 @@ FROM sources.discovery_runs WHERE tenant_id=$1 AND network_id=$2 ORDER BY reques
 }
 
 func (Store) DiscoveryHosts(ctx context.Context, tx pgx.Tx, tenant, network string) ([]DiscoveryHost, error) {
-	rows, e := tx.Query(ctx, `SELECT host(ip),mac,ports,icmp,first_seen,last_seen,state,misses,missing_since FROM sources.discovery_hosts WHERE tenant_id=$1 AND network_id=$2 ORDER BY ip`, tenant, network)
+	rows, e := tx.Query(ctx, `SELECT host(h.ip),h.mac,h.ports,h.icmp,h.first_seen,h.last_seen,h.state,h.misses,h.missing_since,
+ COALESCE((SELECT f.asset_uid::text FROM inventory.record_facts12 f JOIN assets.assets a ON a.tenant_id=f.tenant_id AND a.asset_uid=f.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
+  WHERE f.tenant_id=h.tenant_id AND f.section_name='network' AND f.field_name='addresses' AND jsonb_typeof(f.value)='array' AND f.value @> jsonb_build_array(jsonb_build_object('ip',host(h.ip))) LIMIT 1),
+ (SELECT f.asset_uid::text FROM inventory.current_facts f JOIN assets.assets a ON a.tenant_id=f.tenant_id AND a.asset_uid=f.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
+  WHERE f.tenant_id=h.tenant_id AND f.section_name='network' AND f.fact_key LIKE '%.addresses' AND f.value LIKE '[%' AND f.value::jsonb @> jsonb_build_array(jsonb_build_object('ip',host(h.ip))) LIMIT 1))
+FROM sources.discovery_hosts h WHERE h.tenant_id=$1 AND h.network_id=$2 ORDER BY h.ip`, tenant, network)
 	if e != nil {
 		return nil, e
 	}
@@ -303,7 +310,7 @@ func (Store) DiscoveryHosts(ctx context.Context, tx pgx.Tx, tenant, network stri
 	out := []DiscoveryHost{}
 	for rows.Next() {
 		var h DiscoveryHost
-		if e = rows.Scan(&h.IP, &h.MAC, &h.Ports, &h.ICMP, &h.FirstSeen, &h.LastSeen, &h.State, &h.Misses, &h.MissingSince); e != nil {
+		if e = rows.Scan(&h.IP, &h.MAC, &h.Ports, &h.ICMP, &h.FirstSeen, &h.LastSeen, &h.State, &h.Misses, &h.MissingSince, &h.Asset); e != nil {
 			return nil, e
 		}
 		out = append(out, h)
@@ -327,6 +334,26 @@ func (Store) DiscoveryHostEvents(ctx context.Context, tx pgx.Tx, tenant, network
 		out = append(out, v)
 	}
 	return out, rows.Err()
+}
+
+// CancelDiscovery снимает из очереди обследование, которое collector ещё не взял (state queued → failed с ошибкой
+// cancelled). Пропусков узлам это не засчитывает. Взятое (running) или завершённое — Conflict.
+func (Store) CancelDiscovery(ctx context.Context, tx pgx.Tx, tenant, network, run string) error {
+	tag, e := tx.Exec(ctx, "UPDATE sources.discovery_runs SET state='failed',finished_at=now(),errors=ARRAY['cancelled'] WHERE tenant_id=$1 AND network_id=$2 AND run_id=$3 AND state='queued'", tenant, network, run)
+	if e != nil {
+		return e
+	}
+	if tag.RowsAffected() == 0 {
+		var ok bool
+		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM sources.discovery_runs WHERE tenant_id=$1 AND network_id=$2 AND run_id=$3)", tenant, network, run).Scan(&ok); e != nil {
+			return e
+		}
+		if !ok {
+			return domain.NotFound
+		}
+		return domain.Conflict
+	}
+	return nil
 }
 
 // StartDiscovery ставит обследование в очередь; одно незавершённое на подсеть (иначе Conflict).

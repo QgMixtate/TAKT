@@ -15,12 +15,12 @@ const schedName=(m:number|null)=>!m?'вручную':m%1440===0?(m===1440?'ра�
 
 type Tab='networks'|'credentials'|'targets';
 
-export function DiscoveryView({csrf,isAdmin,canRun,onExpired}:{csrf:string;isAdmin:boolean;canRun:boolean;onExpired:()=>void}){
+export function DiscoveryView({csrf,isAdmin,canRun,onExpired,onOpenAsset}:{csrf:string;isAdmin:boolean;canRun:boolean;onExpired:()=>void;onOpenAsset?:(uid:string)=>void}){
  const [tab,setTab]=useState<Tab>('networks'),[version,setVersion]=useState(0);
  const tabs:[Tab,string][]=[['networks','Подсети'],...(isAdmin?[['credentials','Учётки сбора'] as [Tab,string]]:[]),['targets','Цели сбора']];
  return <div className="discovery">
   <div className="seg-tabs" role="tablist" aria-label="Разделы обследований">{tabs.map(([k,n])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?'active':''} onClick={()=>setTab(k)}>{n}</button>)}</div>
-  {tab==='networks'?<NetworksTab csrf={csrf} isAdmin={isAdmin} canRun={canRun} onExpired={onExpired} onTargetCreated={()=>{setVersion(v=>v+1);setTab('targets')}}/>:null}
+  {tab==='networks'?<NetworksTab csrf={csrf} isAdmin={isAdmin} canRun={canRun} onExpired={onExpired} onOpenAsset={onOpenAsset} onTargetCreated={()=>{setVersion(v=>v+1);setTab('targets')}}/>:null}
   {tab==='credentials'&&isAdmin?<CredentialsTab csrf={csrf} onExpired={onExpired}/>:null}
   {tab==='targets'?<TargetsTab csrf={csrf} isAdmin={isAdmin} canRun={canRun} version={version} onExpired={onExpired}/>:null}
  </div>;
@@ -40,7 +40,7 @@ function Field({label,hint,children}:{label:string;hint?:ReactNode;children:Reac
 
 const eventKind:Record<DiscoveryHostEvent['kind'],[string,string]>={appeared:['появился','state-ok'],returned:['вернулся','state-ok'],missing:['пропал','state-unavailable']};
 
-function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated}:{csrf:string;isAdmin:boolean;canRun:boolean;onExpired:()=>void;onTargetCreated:()=>void}){
+function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated,onOpenAsset}:{csrf:string;isAdmin:boolean;canRun:boolean;onExpired:()=>void;onTargetCreated:()=>void;onOpenAsset?:(uid:string)=>void}){
  const [page,setPage]=useState<DiscoveryNetworkPage|null>(null),[open,setOpen]=useState(''),[hosts,setHosts]=useState<DiscoveryHost[]>([]),[runs,setRuns]=useState<DiscoveryRun[]>([]),[events,setEvents]=useState<DiscoveryHostEvent[]>([]);
  const [error,setError]=useState<unknown>(null),[busy,setBusy]=useState(false),[creating,setCreating]=useState(false),[collect,setCollect]=useState<DiscoveryHost|null>(null);
  const load=()=>{api.discoveryNetworks().then(p=>{setPage(p);if(!open&&p.items[0])setOpen(p.items[0].network_id)}).catch(e=>{setError(e);expired(e,onExpired)})};
@@ -59,7 +59,7 @@ function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated}:{csrf:strin
    <div className="table-scroll"><table><thead><tr><th>Подсеть</th><th>Пробы</th><th>Расписание</th><th>Последнее обследование</th><th>Узлы</th><th/></tr></thead><tbody>{page.items.map(n=>{const r=n.last_run;return <tr key={n.network_id} className={(n.network_id===open?'selected ':'')+(n.active?'':'muted')}>
     <td><button className="asset-link" onClick={()=>setOpen(n.network_id)}><span><strong>{n.name}</strong><small className="mono">{n.cidr}</small></span></button></td>
     <td>{n.probes.map(p=>probeName[p]).join(' · ')}</td><td>{schedName(n.schedule_minutes)}</td>
-    <td>{r?<><span className={'badge '+runState[r.state][1]}><i/>{runState[r.state][0]}</span><small>{time(r.finished_at??r.requested_at)}{r.found!==null?' · найдено '+r.found+', новых '+r.new_hosts+', пропало '+r.missing:''}</small>{r.errors.length?<small className="error-text">{r.errors.map(errName).join('; ')}</small>:null}</>:<span className="muted">ещё не было</span>}</td>
+    <td>{r?<><span className={'badge '+runState[r.state][1]}><i/>{runState[r.state][0]}</span><small>{time(r.finished_at??r.requested_at)}{r.found!==null?' · найдено '+r.found+', новых '+r.new_hosts+', пропало '+r.missing:''}</small>{r.errors.length?<small className="error-text">{r.errors.map(errName).join('; ')}</small>:null}{r.state==='queued'&&Date.now()-new Date(r.requested_at).getTime()>10*60000?<small className="error-text">collector не забирает обследование больше 10 мин — площадка недоступна?{canRun?<> <button className="text-link" disabled={busy} onClick={()=>void act(()=>api.cancelDiscovery(n.network_id,r.run_id,csrf))}>Снять из очереди</button></>:null}</small>:null}</>:<span className="muted">ещё не было</span>}</td>
     <td>{n.present_hosts}{n.missing_hosts?<small>пропало {n.missing_hosts}</small>:null}</td>
     <td className="actions">{canRun&&n.active?<button className="button small" disabled={busy||r?.state==='queued'||r?.state==='running'} onClick={()=>void act(()=>api.startDiscovery(n.network_id,csrf))}>Обследовать</button>:null}
      {isAdmin?<button className="text-link" disabled={busy} onClick={()=>void act(()=>api.patchDiscoveryNetwork(n.network_id,csrf,{revision:n.revision,active:!n.active}))}>{n.active?'Отключить':'Включить'}</button>:null}</td>
@@ -67,9 +67,9 @@ function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated}:{csrf:strin
    <p className="panel-note">Правила: подсеть IPv4 не шире /{l.max_prefix} ({2**(32-l.max_prefix)} адресов), не более {l.rate_per_second} проб в секунду, расписание не чаще раза в {l.min_schedule_minutes} мин. TCP-порты: {l.tcp_ports.join(', ')}. Вне заведённых подсетей ничего не сканируется. Узел считается пропавшим только после {l.miss_after} полных обследований подряд без него; обследование с ошибками пропуском не считается.</p>
   </div>
   {net?<div className="table-panel"><div className="table-toolbar"><h2>Узлы {net.name} <span>{hosts.length}</span></h2><small className="mono muted">{net.cidr}</small></div>
-   {hosts.length===0?<div className="empty"><span>◌</span><h3>Узлов пока нет</h3><p>Запустите обследование подсети.</p></div>:<div className="table-scroll"><table><thead><tr><th>Адрес</th><th>MAC</th><th>Открытые порты</th><th>Пинг</th><th>Впервые</th><th>Последний раз</th><th>Состояние</th>{isAdmin?<th/>:null}</tr></thead><tbody>
+   {hosts.length===0?<div className="empty"><span>◌</span><h3>Узлов пока нет</h3><p>Запустите обследование подсети.</p></div>:<div className="table-scroll"><table><thead><tr><th>Адрес</th><th>MAC</th><th>Открытые порты</th><th>Пинг</th><th>Впервые</th><th>Последний раз</th><th>Состояние</th><th>В реестре</th>{isAdmin?<th/>:null}</tr></thead><tbody>
     {hosts.map(h=><tr key={h.ip}><td className="mono">{h.ip}</td><td className="mono">{h.mac??'—'}</td><td>{h.ports.length?h.ports.join(', '):'—'}</td><td>{h.icmp?'да':'—'}</td><td className="time">{time(h.first_seen)}</td><td className="time">{time(h.last_seen)}</td>
-     <td><span className={'badge '+(h.state==='present'?(h.misses?'state-partial':'state-ok'):'state-unavailable')}><i/>{h.state==='present'?(h.misses?'не найден '+h.misses+' из '+l.miss_after:'на месте'):'пропал'}</span>{h.state==='missing'&&h.missing_since?<small>с {time(h.missing_since)}</small>:null}</td>
+     <td><span className={'badge '+(h.state==='present'?(h.misses?'state-partial':'state-ok'):'state-unavailable')}><i/>{h.state==='present'?(h.misses?'не найден '+h.misses+' из '+l.miss_after:'на месте'):'пропал'}</span>{h.state==='missing'&&h.missing_since?<small>с {time(h.missing_since)}</small>:null}</td><td>{h.asset_uid?(onOpenAsset?<button className="text-link" onClick={()=>onOpenAsset(h.asset_uid!)}>карточка ↗</button>:'да'):<span className="muted" title="Данных с узла нет: присутствие видно только здесь">нет</span>}</td>
      {isAdmin?<td className="actions"><button className="button small" onClick={()=>setCollect(h)}>Собирать…</button></td>:null}</tr>)}
    </tbody></table></div>}
    {events.length?<div className="history"><h3>Изменения присутствия</h3><ul>{events.slice(0,30).map(v=><li key={v.ip+v.run_id+v.kind}><span className={'badge '+eventKind[v.kind][1]}><i/>{eventKind[v.kind][0]}</span> <span className="mono">{v.ip}</span> · {time(v.at)}</li>)}</ul></div>:null}

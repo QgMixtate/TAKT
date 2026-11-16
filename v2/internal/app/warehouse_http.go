@@ -50,7 +50,11 @@ func (r *Registry) warehouseDo(w http.ResponseWriter, req *http.Request, status 
 		e = tx.Commit(ctx)
 	}
 	var incompatible *warehouse.IncompatibleError
+	var reserved *warehouse.ReservedError
 	switch {
+	case errors.As(e, &reserved):
+		access.APIError(w, 409, "UNIT_RESERVED")
+		return
 	case errors.As(e, &incompatible):
 		access.APIError(w, 409, "INCOMPATIBLE_COMPONENT") // установить можно только с пометкой «под ответственность»
 		return

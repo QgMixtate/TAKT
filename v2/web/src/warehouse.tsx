@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {api,ApiError,errorMessage,type Subject,type WLocation,type WItem,type WUnit,type WStock,type WMovement,type WOperation,type WReservation,type WInventory,type WInventoryDetail} from './api';
+import {api,ApiError,UserError,errorMessage,type Subject,type WLocation,type WItem,type WUnit,type WStock,type WMovement,type WOperation,type WReservation,type WInventory,type WInventoryDetail} from './api';
 
 // Волна 2: склад и жизненный цикл оборудования (decisions/C41-w2-scope-and-model.md). Операции — одной записью журнала
 // с номером акта; акт печатается из браузера («Печать» → «Сохранить как PDF»).
@@ -78,7 +78,10 @@ function OperationForm({ref_:r,csrf,isAdmin,onFail,onDone}:{ref_:Ref;csrf:string
   const op:WOperation={kind,basis:basis.trim(),note:note.trim()||undefined,lines:lines.filter(l=>l.unit_id||l.item_id).map(l=>l.unit_id?{unit_id:l.unit_id}:kind==='receive'&&l.serial?{item_id:l.item_id,serial:l.serial.trim(),inventory_no:l.inventory_no.trim()||undefined}:{item_id:l.item_id,quantity:Number(l.quantity)})};
   if(fromIsLoc)op.from_location=fromLoc;if(fromIsHolder)op.from_holder=fromH;
   if(n.to==='loc'||n.to==='repair')op.to_location=toLoc;if(n.to==='holder')op.to_holder=toH;if(n.asset)op.asset_uid=asset.trim();if(kind==='install'&&override)op.compat_override=true;
-  setBusy(true);try{const m=await api.wMove(csrf,op);setLines([{...blank}]);setBasis('');setNote('');onDone(m)}catch(e){onFail(e)}finally{setBusy(false)}
+  setBusy(true);try{const m=await api.wMove(csrf,op);setLines([{...blank}]);setBasis('');setNote('');onDone(m)}catch(e){
+   // стенд №14: «зарезервирован за … до …» вместо общего отказа
+   if(e instanceof ApiError&&e.code==='UNIT_RESERVED'){const res=(await api.wReservations().catch(()=>({items:[] as WReservation[]}))).items.find(x=>op.lines.some(l=>l.unit_id&&l.unit_id===x.unit_id));if(res){onFail(new UserError('Экземпляр «'+res.label+'» зарезервирован за '+subjName(r,res.holder_id)+' до '+fmt(res.expires_at)+': выдать можно только ему или после отмены резерва.'));return}}
+   onFail(e)}finally{setBusy(false)}
  }
  const valid=(!incompatible||override)&&basis.trim()&&lines.some(l=>l.unit_id||l.item_id)&&(!fromIsLoc||fromLoc)&&(!fromIsHolder||fromH)&&(!n.to||(n.to==='holder'?toH:toLoc))&&(!n.asset||/^[0-9a-f-]{36}$/.test(asset.trim()));
  return <div className="table-panel"><div className="table-toolbar"><h2>Складская операция</h2></div><div className="form-grid wh-form">
@@ -207,7 +210,7 @@ function InventoryTab({ref_:r,csrf,canWrite,isAdmin,onAct,onFail}:{ref_:Ref;csrf
   // серийные: «позиция: номер» по строкам; позиция по умолчанию — выбранная; известные номера сопоставляются с позицией из сверки
   const known=new Map(cur.lines.filter(l=>l.serial).map(l=>[l.serial!.toLowerCase(),l.item_id]));
   const list=serials.split(/\n|,|;/).map(x=>x.trim()).filter(Boolean).map(sn=>({item_id:known.get(sn.toLowerCase())??serialItem,serial:sn}));
-  if(list.some(x=>!x.item_id)){onFail(new Error('Выберите позицию для серийных номеров, которых нет в учёте места'));return}
+  if(list.some(x=>!x.item_id)){onFail(new UserError('Выберите позицию для серийных номеров, которых нет в учёте места'));return}
   const quantities=Object.entries(qty).filter(([,v])=>v!=='').map(([item_id,v])=>({item_id,quantity:Number(v)}));
   void run(()=>api.wCount(csrf,cur.inventory_id,{serials:list,quantities}),setCur)}
  return <div className="stack">
