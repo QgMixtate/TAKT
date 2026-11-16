@@ -5,6 +5,10 @@ edition = "2021"
 publish = false
 description = "SurveyScan host agent and portable (Rust, C52): same C03/C15 wire as the Go agent; one static binary for Linux and Windows"
 
+[[bin]]
+name = "surveyscan-agent"
+path = "src/main.rs"
+
 [lib]
 name = "ssagent"
 path = "src/lib.rs"
@@ -19,6 +23,12 @@ base64 = "0.22"
 rand_core = { version = "0.6", features = ["getrandom"] }
 hmac = "0.12"
 pem = "3"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = "1"
+rustls-webpki = { version = "0.103", default-features = false, features = ["ring", "std"] }
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+x509-parser = "0.16"
+time = { version = "0.3", features = ["parsing"] }
 
 [profile.release]
 lto = "thin"

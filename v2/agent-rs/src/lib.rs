@@ -7,3 +7,6 @@ pub mod sign;
 pub mod der;
 pub mod machineid;
 pub mod state;
+pub mod claims;
+pub mod tls;
+pub mod enroll;
