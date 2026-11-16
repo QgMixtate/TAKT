@@ -257,17 +257,26 @@ func (s Store) Approve(ctx context.Context, tx pgx.Tx, tenant, actor, me, id, re
 	if e != nil {
 		return d, e
 	}
-	var approver *string // NULL — согласующего убрали из услуги после подачи заявки: решает администратор
-	e = tx.QueryRow(ctx, `SELECT c.approver_id::text FROM itsm.tickets t JOIN itsm.catalog_items c ON c.tenant_id=t.tenant_id AND c.item_id=t.catalog_item_id
-WHERE t.tenant_id=$1 AND t.ticket_id=$2 AND ($3::boolean OR c.approver_id::text=$4 OR EXISTS(SELECT 1 FROM responsibility.team_members m
- WHERE m.tenant_id=c.tenant_id AND m.team_id=c.approver_id AND m.person_id::text=$4 AND m.valid_to IS NULL))`, tenant, id, admin, me).Scan(&approver)
-	if errors.Is(e, pgx.ErrNoRows) {
-		return Detail{}, ErrNotApprover
+	var approver *string // NULL — согласующего убрали из услуги после подачи заявки или изменение (решает администратор)
+	if d.Kind == "change" {
+		if !admin {
+			return Detail{}, ErrNotApprover // изменения согласует администратор (CAB)
+		}
+		if d.State != "submitted" {
+			return d, domain.Conflict
+		}
+	} else {
+		e = tx.QueryRow(ctx, `SELECT c.approver_id::text FROM itsm.tickets t JOIN itsm.catalog_items c ON c.tenant_id=t.tenant_id AND c.item_id=t.catalog_item_id
+	WHERE t.tenant_id=$1 AND t.ticket_id=$2 AND ($3::boolean OR c.approver_id::text=$4 OR EXISTS(SELECT 1 FROM responsibility.team_members m
+	 WHERE m.tenant_id=c.tenant_id AND m.team_id=c.approver_id AND m.person_id::text=$4 AND m.valid_to IS NULL))`, tenant, id, admin, me).Scan(&approver)
+		if errors.Is(e, pgx.ErrNoRows) {
+			return Detail{}, ErrNotApprover
+		}
+		if e != nil {
+			return d, e
+		}
 	}
-	if e != nil {
-		return d, e
-	}
-	if d.Kind != "request" || d.State != "pending_approval" {
+	if d.Kind == "request" && d.State != "pending_approval" {
 		return d, domain.Conflict
 	}
 	if d.Revision != revision {
@@ -278,11 +287,14 @@ WHERE t.tenant_id=$1 AND t.ticket_id=$2 AND ($3::boolean OR c.approver_id::text=
 		return d, domain.Invalid
 	}
 	decision, to := "approved", "in_fulfillment"
+	if d.Kind == "change" {
+		to = "approved"
+	}
 	if !approve {
 		decision, to = "rejected", "rejected"
 	}
 	tag, e := tx.Exec(ctx, `UPDATE itsm.tickets SET state=$4,updated_at=now(),revision=revision+1,closed_at=CASE WHEN $4='rejected' THEN now() ELSE closed_at END
-WHERE tenant_id=$1 AND ticket_id=$2 AND revision::text=$3 AND state='pending_approval'`, tenant, id, revision, to)
+WHERE tenant_id=$1 AND ticket_id=$2 AND revision::text=$3 AND state IN ('pending_approval','submitted')`, tenant, id, revision, to)
 	if e != nil {
 		return d, e
 	}

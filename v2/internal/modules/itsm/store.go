@@ -33,6 +33,16 @@ var transitions = map[string]map[string][]string{
 		"known_error":   {"resolved", "cancelled"},
 		"resolved":      {"investigating", "closed"},
 	},
+	// изменение (C49): submitted → approved | rejected — только решением администратора (Approve)
+	"change": {
+		"draft":       {"submitted", "cancelled"},
+		"submitted":   {"cancelled"},
+		"approved":    {"scheduled", "cancelled"},
+		"scheduled":   {"in_progress", "cancelled"},
+		"in_progress": {"completed", "rolled_back"},
+		"completed":   {"closed"},
+		"rolled_back": {"closed"},
+	},
 	// заявка (C48): pending_approval → in_fulfillment | rejected — только решением согласующего (Approve)
 	"request": {
 		"pending_approval": {"cancelled"},
@@ -41,7 +51,7 @@ var transitions = map[string]map[string][]string{
 	},
 }
 
-var initial = map[string]string{"incident": "new", "problem": "new"}
+var initial = map[string]string{"incident": "new", "problem": "new", "change": "draft"}
 var prefix = map[string]string{"incident": "INC", "request": "REQ", "change": "CHG", "problem": "PRB"}
 
 // Priority — приоритет из влияния и срочности (1 — высокое): 2→P1, 3→P2, 4→P3, 5–6→P4.
@@ -106,6 +116,8 @@ type Detail struct {
 	Workarounds []string `json:"workarounds"`
 	// Request — услуга, значения формы, согласование (только у заявок)
 	Request *Request `json:"request"`
+	// Change — окно, риск, планы, согласование и пересечения окон (только у изменений)
+	Change *Change `json:"change"`
 }
 
 type Input struct {
@@ -264,6 +276,9 @@ AND p.state NOT IN ('closed','cancelled') AND (EXISTS(SELECT 1 FROM itsm.ticket_
 	if d.Workarounds == nil {
 		d.Workarounds = []string{}
 	}
+	if e == nil && d.Kind == "change" {
+		d.Change, e = changeInfo(ctx, tx, tenant, id)
+	}
 	if e != nil || d.Kind != "request" {
 		return d, e
 	}
@@ -276,14 +291,7 @@ JOIN itsm.catalog_items c ON c.tenant_id=t.tenant_id AND c.item_id=t.catalog_ite
 	if e = json.Unmarshal(values, &r.Values); e != nil {
 		return d, e
 	}
-	a := &Approval{}
-	e = tx.QueryRow(ctx, "SELECT approver_id::text,decision,comment,decided_by,decided_at FROM itsm.approvals WHERE tenant_id=$1 AND ticket_id=$2", tenant, id).Scan(&a.Approver, &a.Decision, &a.Comment, &a.DecidedBy, &a.DecidedAt)
-	switch {
-	case errors.Is(e, pgx.ErrNoRows):
-		e = nil
-	case e == nil:
-		r.Approval = a
-	}
+	r.Approval, e = approvalOf(ctx, tx, tenant, id)
 	d.Request = r
 	return d, e
 }
@@ -294,7 +302,7 @@ type Filter struct{ Kind, State, Assignee, Team, Requester, Query string }
 func (Store) List(ctx context.Context, tx pgx.Tx, tenant string, f Filter, limit int) ([]Ticket, error) {
 	rows, e := tx.Query(ctx, `SELECT t.ticket_id::text,t.kind,t.number,t.title,t.description,t.impact,t.urgency,t.priority,t.state,t.requester_id::text,t.assignee_id::text,t.team_id::text,
 t.resolution,t.workaround,t.reopen_count,t.created_by,t.created_at,t.updated_at,t.resolved_at,t.closed_at,t.revision::text FROM itsm.tickets t WHERE t.tenant_id=$1
-AND ($2='' OR t.kind=$2) AND ($3='' OR ($3='open' AND t.state NOT IN ('closed','cancelled','resolved','fulfilled','rejected')) OR t.state=$3)
+AND ($2='' OR t.kind=$2) AND ($3='' OR ($3='open' AND t.state NOT IN ('closed','cancelled','resolved','fulfilled','rejected','completed','rolled_back')) OR t.state=$3)
 AND ($4='' OR t.assignee_id::text=$4) AND ($5='' OR t.team_id::text=$5) AND ($6='' OR t.requester_id::text=$6)
 AND ($7='' OR lower(t.number)=lower($7) OR lower(t.title) LIKE '%'||lower($7)||'%')
 ORDER BY t.priority, t.created_at LIMIT $8`, tenant, f.Kind, f.State, f.Assignee, f.Team, f.Requester, f.Query, limit)
@@ -310,6 +318,15 @@ ORDER BY t.priority, t.created_at LIMIT $8`, tenant, f.Kind, f.State, f.Assignee
 // Transition — смена состояния по таблице процесса с проверкой ревизии (конкурентное изменение — Revision).
 // resolved требует решения (resolution), known_error — обходного решения (workaround).
 func (s Store) Transition(ctx context.Context, tx pgx.Tx, tenant, actor, id, revision, to, text string) (Detail, error) {
+	return s.transition(ctx, tx, tenant, actor, id, revision, to, text, false)
+}
+
+// TransitionConfirmed — переход с подтверждением пересечения окон изменения (scheduled при конфликтах, W3-06).
+func (s Store) TransitionConfirmed(ctx context.Context, tx pgx.Tx, tenant, actor, id, revision, to, text string) (Detail, error) {
+	return s.transition(ctx, tx, tenant, actor, id, revision, to, text, true)
+}
+
+func (s Store) transition(ctx context.Context, tx pgx.Tx, tenant, actor, id, revision, to, text string, confirm bool) (Detail, error) {
 	d, e := s.Detail(ctx, tx, tenant, id, true)
 	if e != nil {
 		return d, e
@@ -325,12 +342,27 @@ func (s Store) Transition(ctx context.Context, tx pgx.Tx, tenant, actor, id, rev
 		return d, domain.Conflict
 	}
 	note, ok := clean(text, 0, 4000)
-	if !ok || (to == "resolved" || to == "known_error" || to == "fulfilled") && note == "" {
+	if !ok || (to == "resolved" || to == "known_error" || to == "fulfilled" || to == "completed" || to == "rolled_back") && note == "" {
 		return d, domain.Invalid
+	}
+	detail := map[string]any{}
+	if d.Kind == "change" {
+		if (to == "submitted" || to == "scheduled") && d.Change.Window == nil {
+			return d, ErrNoWindow
+		}
+		if to == "scheduled" && len(d.Change.Conflicts) > 0 {
+			if !confirm {
+				return d, &WindowConflictError{Conflicts: d.Change.Conflicts}
+			}
+			if _, e = tx.Exec(ctx, "UPDATE itsm.change_windows SET conflicts_confirmed=true WHERE tenant_id=$1 AND ticket_id=$2", tenant, id); e != nil {
+				return d, e
+			}
+			detail["conflicts_confirmed"] = len(d.Change.Conflicts)
+		}
 	}
 	reopen := (d.State == "resolved" || d.State == "fulfilled") && to != "closed"
 	tag, e := tx.Exec(ctx, `UPDATE itsm.tickets SET state=$4,updated_at=now(),revision=revision+1,
-resolution=CASE WHEN $4 IN ('resolved','fulfilled') THEN $5 ELSE resolution END,
+resolution=CASE WHEN $4 IN ('resolved','fulfilled','completed','rolled_back') THEN $5 ELSE resolution END,
 workaround=CASE WHEN $4='known_error' THEN $5 ELSE workaround END,
 resolved_at=CASE WHEN $4 IN ('resolved','fulfilled') THEN now() WHEN $6 THEN NULL ELSE resolved_at END,
 closed_at=CASE WHEN $4 IN ('closed','cancelled') THEN now() ELSE closed_at END,
@@ -342,7 +374,8 @@ WHERE tenant_id=$1 AND ticket_id=$2 AND revision::text=$3`, tenant, id, revision
 	if tag.RowsAffected() == 0 {
 		return d, domain.Revision
 	}
-	if e = event(ctx, tx, tenant, id, actor, "state", true, map[string]any{"from": d.State, "to": to, "reopen": reopen}, nullable(note)); e != nil {
+	detail["from"], detail["to"], detail["reopen"] = d.State, to, reopen
+	if e = event(ctx, tx, tenant, id, actor, "state", true, detail, nullable(note)); e != nil {
 		return d, e
 	}
 	return s.Detail(ctx, tx, tenant, id, true)

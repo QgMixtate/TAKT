@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 
@@ -37,6 +38,7 @@ func (r *Registry) itsmDo(w http.ResponseWriter, req *http.Request, status int, 
 	}
 	var incompatible *warehouse.IncompatibleError
 	var reserved *warehouse.ReservedError
+	var windowConflict *itsm.WindowConflictError
 	switch {
 	case errors.As(e, &reserved):
 		access.APIError(w, 409, "UNIT_RESERVED")
@@ -44,6 +46,10 @@ func (r *Registry) itsmDo(w http.ResponseWriter, req *http.Request, status int, 
 		access.APIError(w, 409, "INCOMPATIBLE_COMPONENT")
 	case errors.Is(e, warehouse.ErrInventoryOpen):
 		access.APIError(w, 409, "LOCATION_UNDER_INVENTORY")
+	case errors.As(e, &windowConflict):
+		access.APIError(w, 409, "WINDOW_CONFLICT") // окно пересекается с другими изменениями: подтвердите явно
+	case errors.Is(e, itsm.ErrNoWindow):
+		access.APIError(w, 422, "NO_CHANGE_WINDOW")
 	case errors.Is(e, itsm.ErrNotApprover):
 		access.APIError(w, 403, "NOT_APPROVER") // решает только согласующий (человек, член команды) или администратор
 	case errors.Is(e, itsm.ErrNoSubject):
@@ -112,9 +118,15 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 		Revision string `json:"revision"`
 		To       string `json:"to"`
 		Text     string `json:"text"`
+		// ConfirmConflicts — запланировать изменение, несмотря на пересечение окон (W3-06)
+		ConfirmConflicts bool `json:"confirm_conflicts"`
 	}
 	post("POST /api/v1/itsm/tickets/{ticket_id}/transition", 200, func() any { return &transition{} }, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, req *http.Request, body any) (itsm.Detail, string, error) {
 		b := body.(*transition)
+		if b.ConfirmConflicts {
+			d, e := st.TransitionConfirmed(ctx, tx, id.TenantID, actor(id), req.PathValue("ticket_id"), b.Revision, b.To, b.Text)
+			return d, "itsm.ticket_" + b.To, e
+		}
 		d, e := st.Transition(ctx, tx, id.TenantID, actor(id), req.PathValue("ticket_id"), b.Revision, b.To, b.Text)
 		return d, "itsm.ticket_" + b.To, e
 	})
@@ -168,6 +180,31 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 		d, e := st.Detail(ctx, tx, id.TenantID, ticket, true)
 		return d, "itsm.ticket_linked", e
 	})
+	// Изменения (C49): окно и календарь окон.
+	type window struct {
+		Revision string `json:"revision"`
+		itsm.Window
+	}
+	post("POST /api/v1/itsm/tickets/{ticket_id}/window", 200, func() any { return &window{} }, func(ctx context.Context, tx pgx.Tx, id accessport.Identity, req *http.Request, body any) (itsm.Detail, string, error) {
+		b := body.(*window)
+		d, e := st.SetWindow(ctx, tx, id.TenantID, actor(id), req.PathValue("ticket_id"), b.Revision, b.Window)
+		return d, "itsm.change_window_set", e
+	})
+	h["GET /api/v1/itsm/changes/calendar"] = route51{"itsm:read", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		q, ok := queryOnly(w, req, "from", "to")
+		if !ok {
+			return
+		}
+		r.itsmDo(w, req, 200, "itsm:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			from, e1 := time.Parse(time.RFC3339, q.Get("from"))
+			to, e2 := time.Parse(time.RFC3339, q.Get("to"))
+			if e1 != nil || e2 != nil {
+				return nil, domain.Invalid
+			}
+			items, e := st.Calendar(ctx, tx, id.TenantID, from, to)
+			return map[string]any{"items": items}, e
+		})
+	})}
 	// Каталог услуг (C48): чтение — itsm:read, изменение — администратор.
 	h["GET /api/v1/itsm/catalog"] = route51{"itsm:read", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if _, ok := queryOnly(w, req); !ok {
@@ -224,8 +261,8 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 			_, e := r.Auth.Authorize(ctx, tx, id.CredentialID, id.TenantID, "itsm:admin")
 			admin := e == nil
 			me, e := st.MySubject(ctx, tx, id.TenantID, id.UserID)
-			if e != nil && !(admin && errors.Is(e, itsm.ErrNoSubject)) {
-				return nil, e
+			if e != nil && !errors.Is(e, itsm.ErrNoSubject) {
+				return nil, e // без записи в оргструктуре решает только администратор (иначе NOT_APPROVER)
 			}
 			return decide(ctx, tx, id, me, admin, req.PathValue("ticket_id"), &body)
 		})

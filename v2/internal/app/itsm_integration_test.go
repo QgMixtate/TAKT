@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/santhosh-tekuri/jsonschema/v6"
 
@@ -172,5 +173,152 @@ SELECT $1,$2,'person',$3,$3||'@example.test',user_id FROM access.users WHERE ten
 	_ = f.pool.QueryRow(f.ctx, "SELECT count(*) FROM audit.audit_events WHERE tenant_id=$1 AND action LIKE 'itsm.%'", tenant).Scan(&audits)
 	if audits < 9 {
 		t.Fatal("ticket actions must be audited", audits)
+	}
+}
+
+// Волна 3 (C49; AC W3-06): изменение — окно, согласование администратором, планирование, выполнение и откат;
+// пересечение окон на одном активе без подтверждения отклоняется, с подтверждением — отмечается; календарь окон.
+func TestW3Changes(t *testing.T) {
+	f := registrySetup(t)
+	for _, u := range [][2]string{{"op1", "operator"}, {"adm", "admin"}} {
+		if err := f.users.Provision(f.ctx, false, tenant, "", u[0], password, u[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	asset := *f.ingest(t, f.observation("1")).AssetID
+	auth, err := access.NewHTTP(f.users, "https://ui.example", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.NewHTTP(auth, health.Handler(func(context.Context) error { return nil }), f.registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(handler)
+	defer server.Close()
+	type session struct {
+		b    browser
+		csrf string
+	}
+	login := func(user string) session { b := newBrowser(t, server); return session{b, b.login(t, user).CSRFToken} }
+	op, adm := login("op1"), login("adm")
+	call := func(s session, method, path, body string, want int) itsm.Detail {
+		t.Helper()
+		code, raw, _ := s.b.request(t, method, path, body, s.csrf, "https://ui.example", nil)
+		if code != want {
+			t.Fatalf("%s %s: %d (want %d) %s", method, path, code, want, raw)
+		}
+		var d itsm.Detail
+		if code < 300 && strings.Contains(path, "/tickets") {
+			validW3(t, "TicketDetail", raw)
+			_ = json.Unmarshal(raw, &d)
+		}
+		return d
+	}
+	base := time.Now().UTC().Add(48 * time.Hour).Truncate(time.Hour)
+	at := func(h int) string { return base.Add(time.Duration(h) * time.Hour).Format(time.RFC3339) }
+	newChange := func(title string, from, to int) itsm.Detail {
+		t.Helper()
+		d := call(op, "POST", "/api/v1/itsm/tickets", fmt.Sprintf(`{"kind":"change","title":%q,"impact":2,"urgency":2,"asset_uid":%q}`, title, asset), 201)
+		if !strings.HasPrefix(d.Number, "CHG-") || d.State != "draft" || d.Change == nil || d.Change.Window != nil {
+			t.Fatalf("change: %+v", d)
+		}
+		return call(op, "POST", "/api/v1/itsm/tickets/"+d.ID+"/window", fmt.Sprintf(`{"revision":%q,"starts_at":%q,"ends_at":%q,"risk":"medium","plan":"Обновить прошивку","rollback_plan":"Вернуть прошлую прошивку"}`, d.Revision, at(from), at(to)), 200)
+	}
+	step := func(s session, d itsm.Detail, to, text string, want int) itsm.Detail {
+		t.Helper()
+		out := call(s, "POST", "/api/v1/itsm/tickets/"+d.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":%q,"text":%q}`, d.Revision, to, text), want)
+		if want != 200 {
+			return call(s, "GET", "/api/v1/itsm/tickets/"+d.ID, "", 200)
+		}
+		return out
+	}
+	approve := func(s session, d itsm.Detail, yes bool, comment string, want int) itsm.Detail {
+		t.Helper()
+		out := call(s, "POST", "/api/v1/itsm/tickets/"+d.ID+"/approve", fmt.Sprintf(`{"revision":%q,"approve":%t,"comment":%q}`, d.Revision, yes, comment), want)
+		if want != 200 {
+			return call(s, "GET", "/api/v1/itsm/tickets/"+d.ID, "", 200)
+		}
+		return out
+	}
+
+	// без окна — нельзя подать; неверное окно — 422
+	draft := call(op, "POST", "/api/v1/itsm/tickets", `{"kind":"change","title":"Без окна","impact":3,"urgency":3}`, 201)
+	step(op, draft, "submitted", "", 422)
+	call(op, "POST", "/api/v1/itsm/tickets/"+draft.ID+"/window", fmt.Sprintf(`{"revision":%q,"starts_at":%q,"ends_at":%q,"risk":"medium","plan":"x","rollback_plan":"y"}`, draft.Revision, at(2), at(1)), 422)
+	call(op, "POST", "/api/v1/itsm/tickets/"+draft.ID+"/window", fmt.Sprintf(`{"revision":%q,"starts_at":%q,"ends_at":%q,"risk":"extreme","plan":"x","rollback_plan":"y"}`, draft.Revision, at(1), at(2)), 422)
+
+	// первое изменение: окно 10–12 → подача → согласование (только администратор) → план → выполнение → закрытие
+	c1 := newChange("Прошивка коммутатора", 10, 12)
+	c1 = step(op, c1, "submitted", "", 200)
+	c1 = approve(op, c1, true, "", 403) // оператор не согласует изменения
+	c1 = approve(adm, c1, true, "CAB: согласовано", 200)
+	if c1.State != "approved" || c1.Change.Approval == nil || c1.Change.Approval.Decision != "approved" {
+		t.Fatalf("approved: %+v", c1.Change)
+	}
+	c1 = step(op, c1, "scheduled", "", 200)
+
+	// второе изменение на том же активе: окно 11–13 пересекается — без подтверждения отказ, с подтверждением — план
+	c2 := newChange("Замена блока питания", 11, 13)
+	c2 = step(op, c2, "submitted", "", 200)
+	c2 = approve(adm, c2, true, "", 200)
+	if len(c2.Change.Conflicts) != 1 || c2.Change.Conflicts[0].TicketID != c1.ID {
+		t.Fatalf("conflict must be visible before scheduling: %+v", c2.Change.Conflicts)
+	}
+	code, raw, _ := op.b.request(t, "POST", "/api/v1/itsm/tickets/"+c2.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"scheduled"}`, c2.Revision), op.csrf, "https://ui.example", nil)
+	if code != 409 || !strings.Contains(string(raw), "WINDOW_CONFLICT") {
+		t.Fatalf("overlapping windows need confirmation: %d %s", code, raw)
+	}
+	c2 = call(op, "POST", "/api/v1/itsm/tickets/"+c2.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"scheduled","confirm_conflicts":true}`, c2.Revision), 200)
+	if c2.State != "scheduled" || !c2.Change.Window.ConflictsConfirmed {
+		t.Fatalf("confirmed conflict: %+v", c2.Change)
+	}
+	// третье — не пересекается (14–15): без конфликтов; отклонение — только с причиной
+	c3 := newChange("Перезагрузка", 14, 15)
+	if len(c3.Change.Conflicts) != 0 {
+		t.Fatalf("no overlap expected: %+v", c3.Change.Conflicts)
+	}
+	c3 = step(op, c3, "submitted", "", 200)
+	c3 = approve(adm, c3, false, "", 422)
+	c3 = approve(adm, c3, false, "Нет окна у подрядчика", 200)
+	if c3.State != "rejected" || c3.ClosedAt == nil {
+		t.Fatalf("rejected: %+v", c3.Ticket)
+	}
+
+	// выполнение: успех с проверкой и откат с причиной — текст обязателен
+	c1 = step(op, c1, "in_progress", "", 200)
+	c1 = step(op, c1, "completed", "", 422)
+	c1 = step(op, c1, "completed", "Прошивка 15.2 работает, порты подняты", 200)
+	c1 = step(op, c1, "closed", "", 200)
+	c2 = step(op, c2, "in_progress", "", 200)
+	c2 = step(op, c2, "rolled_back", "Блок не подошёл, возвращён старый", 200)
+	if c2.Resolution == nil || !strings.Contains(*c2.Resolution, "возвращён") {
+		t.Fatalf("rollback reason: %+v", c2.Ticket)
+	}
+	// связанный инцидент
+	inc := call(op, "POST", "/api/v1/itsm/tickets", `{"kind":"incident","title":"После замены пропала связь","impact":2,"urgency":1}`, 201)
+	call(op, "POST", "/api/v1/itsm/tickets/"+c2.ID+"/links", fmt.Sprintf(`{"target_kind":"ticket","target_id":%q}`, inc.ID), 201)
+
+	// календарь окон за период: все три (отклонённое не показывается)
+	code, raw, _ = op.b.request(t, "GET", "/api/v1/itsm/changes/calendar?from="+at(0)+"&to="+at(24), "", op.csrf, "https://ui.example", nil)
+	if code != 200 {
+		t.Fatalf("calendar: %d %s", code, raw)
+	}
+	validW3(t, "CalendarList", raw)
+	if !strings.Contains(string(raw), c1.Number) || !strings.Contains(string(raw), c2.Number) || strings.Contains(string(raw), c3.Number) {
+		t.Fatalf("calendar content: %s", raw)
+	}
+	code, _, _ = op.b.request(t, "GET", "/api/v1/itsm/changes/calendar?from="+at(0)+"&to="+at(24*100), "", op.csrf, "https://ui.example", nil)
+	if code != 422 {
+		t.Fatal("calendar period is limited", code)
+	}
+	// журнал: окно, согласование, переходы
+	c2 = call(op, "GET", "/api/v1/itsm/tickets/"+c2.ID, "", 200)
+	kinds := map[string]int{}
+	for _, e := range c2.Events {
+		kinds[e.Kind]++
+	}
+	if kinds["window"] != 1 || kinds["approval"] != 1 || kinds["state"] < 4 {
+		t.Fatalf("change journal: %+v", kinds)
 	}
 }

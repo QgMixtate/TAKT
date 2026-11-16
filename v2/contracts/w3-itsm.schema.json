@@ -233,7 +233,8 @@
       "linked",
       "priority",
       "approval",
-      "fulfilled"
+      "fulfilled",
+      "window"
      ]
     },
     "public": {
@@ -487,6 +488,16 @@
        "type": "null"
       }
      ]
+    },
+    "change": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/Change"
+      },
+      {
+       "type": "null"
+      }
+     ]
     }
    },
    "required": [
@@ -515,7 +526,8 @@
     "links",
     "events",
     "workarounds",
-    "request"
+    "request",
+    "change"
    ],
    "additionalProperties": false
   },
@@ -813,6 +825,227 @@
     "approver_id",
     "warehouse_item_id",
     "approval"
+   ],
+   "additionalProperties": false
+  },
+  "Window": {
+   "type": "object",
+   "properties": {
+    "starts_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "ends_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "risk": {
+     "enum": [
+      "low",
+      "medium",
+      "high"
+     ]
+    },
+    "plan": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 8000
+    },
+    "rollback_plan": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 8000
+    },
+    "conflicts_confirmed": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "starts_at",
+    "ends_at",
+    "risk",
+    "plan",
+    "rollback_plan",
+    "conflicts_confirmed"
+   ],
+   "additionalProperties": false
+  },
+  "WindowConflict": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "number": {
+     "type": "string",
+     "pattern": "^(INC|REQ|CHG|PRB)-[0-9]{4}-[0-9]{6}$"
+    },
+    "title": {
+     "type": "string"
+    },
+    "state": {
+     "enum": [
+      "new",
+      "assigned",
+      "in_progress",
+      "waiting_customer",
+      "resolved",
+      "closed",
+      "cancelled",
+      "investigating",
+      "known_error",
+      "submitted",
+      "pending_approval",
+      "approved",
+      "rejected",
+      "in_fulfillment",
+      "fulfilled",
+      "draft",
+      "scheduled",
+      "completed",
+      "rolled_back"
+     ]
+    },
+    "starts_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "ends_at": {
+     "type": "string",
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "ticket_id",
+    "number",
+    "title",
+    "state",
+    "starts_at",
+    "ends_at"
+   ],
+   "additionalProperties": false
+  },
+  "Change": {
+   "type": "object",
+   "properties": {
+    "window": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/Window"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "approval": {
+     "oneOf": [
+      {
+       "$ref": "#/$defs/Approval"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "conflicts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/WindowConflict"
+     }
+    }
+   },
+   "required": [
+    "window",
+    "approval",
+    "conflicts"
+   ],
+   "additionalProperties": false
+  },
+  "CalendarEntry": {
+   "type": "object",
+   "properties": {
+    "ticket_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "number": {
+     "type": "string",
+     "pattern": "^(INC|REQ|CHG|PRB)-[0-9]{4}-[0-9]{6}$"
+    },
+    "title": {
+     "type": "string"
+    },
+    "state": {
+     "enum": [
+      "new",
+      "assigned",
+      "in_progress",
+      "waiting_customer",
+      "resolved",
+      "closed",
+      "cancelled",
+      "investigating",
+      "known_error",
+      "submitted",
+      "pending_approval",
+      "approved",
+      "rejected",
+      "in_fulfillment",
+      "fulfilled",
+      "draft",
+      "scheduled",
+      "completed",
+      "rolled_back"
+     ]
+    },
+    "risk": {
+     "enum": [
+      "low",
+      "medium",
+      "high"
+     ]
+    },
+    "starts_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "ends_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "targets": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Link"
+     }
+    }
+   },
+   "required": [
+    "ticket_id",
+    "number",
+    "title",
+    "state",
+    "risk",
+    "starts_at",
+    "ends_at",
+    "targets"
+   ],
+   "additionalProperties": false
+  },
+  "CalendarList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/CalendarEntry"
+     }
+    }
+   },
+   "required": [
+    "items"
    ],
    "additionalProperties": false
   }
