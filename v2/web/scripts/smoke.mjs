@@ -4,7 +4,7 @@ const config=JSON.parse(readFileSync(process.argv[2]));const browser=await chrom
 try{
  const context=await browser.newContext({viewport:{width:1440,height:1000}});const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(!r.url().startsWith(config.origin))external.push(new URL(r.url()).origin)});
  await page.goto(config.origin);await expect(page.getByRole('heading',{name:'Вход в систему'})).toBeVisible();await expect(page.getByRole('button',{name:'Войти в рабочее пространство'})).toBeVisible();checks.push('production static bundle renders with strict CSP and no Node/CDN');
- await page.getByLabel('Имя пользователя').fill(config.username);await page.getByLabel('Пароль',{exact:true}).fill('incorrect-password');await page.getByRole('button',{name:'Войти в рабочее пространство'}).click();await expect(page.getByRole('alert')).toBeVisible();checks.push('invalid credentials rejected by real backend');
+ await page.getByLabel('Имя пользователя').fill(config.username);await page.getByLabel('Пароль',{exact:true}).fill('incorrect-password');await page.getByRole('button',{name:'Войти в рабочее пространство'}).click();await expect(page.getByRole('alert')).toContainText('Не удалось войти');checks.push('invalid credentials rejected by real backend with a login message, not «session expired»');
  const sessionReply=page.waitForResponse(r=>r.url().endsWith('/api/v1/auth/sessions')&&r.status()===201);
  await page.getByLabel('Пароль',{exact:true}).fill(config.password);await page.getByRole('button',{name:'Войти в рабочее пространство'}).click();const authSession=await (await sessionReply).json();await expect(page.getByRole('heading',{name:'Реестр активов.'})).toBeVisible();await expect(page.locator('.asset-link').first()).toBeVisible();checks.push('real authenticated tenant asset list from PostgreSQL');
  await expect(page.getByRole('button',{name:'Далее →'})).toBeDisabled();await page.getByRole('textbox',{name:'Поиск на текущей странице'}).fill('no-such-host');await expect(page.getByRole('heading',{name:'Совпадений нет'})).toBeVisible();await page.getByRole('textbox',{name:'Поиск на текущей странице'}).fill('');checks.push('explicit page filter and cursor boundaries');
@@ -81,6 +81,11 @@ try{
  await page.getByRole('button',{name:'Начать инвентаризацию'}).click();await page.getByLabel('Найденные серийные номера').fill('SMOKE-SN-1');await page.getByRole('button',{name:'Сохранить факт и сверить'}).click();
  await expect(page.locator('.warehouse table')).toContainText('сходится');page.once('dialog',d=>void d.accept());await page.getByRole('button',{name:'Закрыть и провести'}).click();
  await expect(page.locator('.warehouse')).toContainText('недостачи нет');checks.push('W2 inventory in the Web: location counted, serial matched, inventory closed without discrepancies');
+ // печать акта (стенд №16): отдельный печатный вид — одна страница A4 с номером акта и подписями
+ await page.getByRole('tab',{name:'Журнал и акты'}).click();await page.getByRole('button',{name:'Акт',exact:true}).first().click();const actDialog=page.getByRole('dialog',{name:/Акт /});await expect(actDialog).toBeVisible();
+ await page.evaluate(()=>document.documentElement.classList.add('print-act'));const pdf=await page.pdf({format:'A4'});await page.evaluate(()=>document.documentElement.classList.remove('print-act'));
+ const pages=(pdf.toString('latin1').match(/\/Type\s*\/Page[^s]/g)||[]).length;if(pages!==1)throw new Error('act print must be one A4 page, got '+pages);
+ await actDialog.getByRole('button',{name:'Закрыть'}).click();checks.push('W2 act prints as a single A4 page from a dedicated print view');
  // W3 обращения: регистрация инцидента → в работу → решён (с решением) — журнал в карточке
  await page.getByRole('button',{name:/Обращения/}).click();await page.getByRole('button',{name:'+ Обращение'}).click();
  const nt=page.getByRole('dialog',{name:'Новое обращение'});await nt.getByLabel('Тема').fill('Smoke: не печатает принтер');await nt.getByRole('button',{name:/Зарегистрировать/}).click();

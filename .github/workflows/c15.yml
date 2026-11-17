@@ -1,9 +1,9 @@
 name: surveyscan-c15-contract-preparation
 on:
   push:
-    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', '.github/workflows/c15.yml']
+    paths: ['v2/cmd/surveyscan-portable/**', 'docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', '.github/workflows/c15.yml']
   pull_request:
-    paths: ['docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', '.github/workflows/c15.yml']
+    paths: ['v2/cmd/surveyscan-portable/**', 'docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', '.github/workflows/c15.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -71,8 +71,14 @@ jobs:
           $pub = ($init | Select-String '^public_key=(.+)$').Matches[0].Groups[1].Value
           if (-not $pub) { throw 'init printed no public key' }
           $pkg = Join-Path $root 'audit.zip'
-          & .\surveyscan-portable.exe collect --state $state --out $pkg
+          & .\surveyscan-portable.exe inventory-worker os | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "portable inventory-worker subcommand missing ($LASTEXITCODE)" }
+          $collected = & .\surveyscan-portable.exe collect --state $state --out $pkg
           if ($LASTEXITCODE -ne 0) { throw "portable collect on Windows failed ($LASTEXITCODE)" }
+          $collected | Write-Output
+          # стенд №16: пакет создавался, но все разделы были WORKER_FAILED (rows=0) — теперь сбор хоста обязан дать строки
+          $rows = ($collected | Select-String 'rows=(\d+)').Matches | ForEach-Object { [int]$_.Groups[1].Value } | Measure-Object -Sum
+          if ($rows.Sum -lt 1) { throw 'portable collected no rows from this Windows host' }
           & .\surveyscan-portable.exe verify --package $pkg --public-key $pub
           if ($LASTEXITCODE -ne 0) { throw "portable package verify failed ($LASTEXITCODE)" }
           $item = Get-Item $pkg

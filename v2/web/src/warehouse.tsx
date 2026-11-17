@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {api,ApiError,UserError,errorMessage,type Subject,type WLocation,type WItem,type WUnit,type WStock,type WMovement,type WOperation,type WReservation,type WInventory,type WInventoryDetail} from './api';
 
 // Волна 2: склад и жизненный цикл оборудования (decisions/C41-w2-scope-and-model.md). Операции — одной записью журнала
@@ -128,17 +129,26 @@ function Journal({ref_:r,csrf,canWrite,onOpen,onReversed,onFail}:{ref_:Ref;csrf:
  </div>;
 }
 
-function ActView({act:m,ref_:r,onClose}:{act:WMovement;ref_:Ref;onClose:()=>void}){
+// Печать акта (стенд №16: модальное окно печаталось на 2 полупустые страницы): при печати акт выводится отдельным
+// узлом прямо в <body> (#act-print-root), всё остальное скрыто правилом печати — обычный поток страницы A4.
+function printAct(){document.documentElement.classList.add('print-act');const done=()=>{document.documentElement.classList.remove('print-act');window.removeEventListener('afterprint',done)};window.addEventListener('afterprint',done);window.print();setTimeout(done,60000)}
+
+function ActBody({m,r}:{m:WMovement;r:Ref}){
  const from=m.from_location?locName(r,m.from_location):m.from_holder?subjName(r,m.from_holder):m.kind==='remove'&&m.asset_uid?'актив '+m.asset_uid:'—';
  const to=m.to_location?locName(r,m.to_location):m.to_holder?subjName(r,m.to_holder):m.kind==='install'&&m.asset_uid?'актив '+m.asset_uid:'—';
- return <div className="drawer-shade act-shade" onClick={onClose}><div className="act-sheet" role="dialog" aria-label={'Акт '+m.act_no} onClick={e=>e.stopPropagation()}>
-  <div className="act-actions"><button className="button small" onClick={()=>window.print()}>Печать / PDF</button><button className="text-button" onClick={onClose}>Закрыть</button></div>
-  <div className="act-print">
+ return <div className="act-print">
    <h2>{actTitle[m.kind]??kindName[m.kind]} № {m.act_no}</h2><p>от {new Date(m.occurred_at).toLocaleDateString('ru-RU')}</p>
    <dl><dt>Операция</dt><dd>{kindName[m.kind]}</dd><dt>Откуда</dt><dd>{from}</dd><dt>Куда</dt><dd>{to}</dd><dt>Основание</dt><dd>{m.basis}</dd>{m.note?<><dt>Примечание</dt><dd>{m.note}</dd></>:null}</dl>
    <table><thead><tr><th>№</th><th>Наименование</th><th>Серийный №</th><th>Инв. №</th><th>Кол-во</th></tr></thead><tbody>{(m.lines??[]).map(l=><tr key={l.line_no}><td>{l.line_no}</td><td>{l.item_name}</td><td>{l.serial??'—'}</td><td>{l.inventory_no??'—'}</td><td>{l.quantity} {l.unit}</td></tr>)}</tbody></table>
    <div className="act-signs"><div>Сдал: ______________________ {m.from_holder?'/'+subjName(r,m.from_holder)+'/':'(склад: '+from+')'}</div><div>Принял: ______________________ {m.to_holder?'/'+subjName(r,m.to_holder)+'/':'(склад: '+to+')'}</div><div>Оформил: {m.actor_name??'—'}</div></div>
-  </div></div></div>;
+  </div>;
+}
+
+function ActView({act:m,ref_:r,onClose}:{act:WMovement;ref_:Ref;onClose:()=>void}){
+ return <><div className="drawer-shade act-shade" onClick={onClose}><div className="act-sheet" role="dialog" aria-label={'Акт '+m.act_no} onClick={e=>e.stopPropagation()}>
+  <div className="act-actions"><button className="button small" onClick={printAct}>Печать / PDF</button><button className="text-button" onClick={onClose}>Закрыть</button></div>
+  <ActBody m={m} r={r}/></div></div>
+  {createPortal(<div id="act-print-root"><ActBody m={m} r={r}/></div>,document.body)}</>;
 }
 
 function Catalog({ref_:r,csrf,isAdmin,onFail,onChanged}:{ref_:Ref;csrf:string;isAdmin:boolean;onFail:(e:unknown)=>void;onChanged:()=>void}){

@@ -39,6 +39,15 @@ func fail(format string, a ...any) {
 }
 
 func main() {
+	// Windows: сбор разделов идёт в дочерних процессах этого же exe (`inventory-worker <раздел>`, как у агента) —
+	// без этой подкоманды все разделы ПК аудитора были WORKER_FAILED (стенд, задание №16).
+	if handled, err := runNativeWorker(os.Args[1:]); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, "usage: surveyscan-portable init|center-key|collect|verify [flags]")
 		os.Exit(2)

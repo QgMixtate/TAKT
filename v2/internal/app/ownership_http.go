@@ -26,6 +26,9 @@ type SubjectPatch struct {
 	responsibility.SubjectInput
 	Revision   string `json:"revision"`
 	Deactivate bool   `json:"deactivate,omitempty"`
+	// Reactivate — вернуть отключённую локальную запись (стенд №15: иначе после ошибочного отключения навсегда
+	// пропадает «Взять себе»). Прежние назначения не восстанавливаются.
+	Reactivate bool `json:"reactivate,omitempty"`
 }
 
 type SubjectResult struct {
@@ -163,7 +166,17 @@ func (r *Registry) PatchSubject(ctx context.Context, id accessport.Identity, sub
 	}
 	defer tx.Rollback(ctx)
 	out := SubjectResult{}
-	if p.Deactivate {
+	if p.Reactivate {
+		if p.Deactivate || p.Name != nil || p.Contact != nil || p.Username != nil {
+			return out, domain.Invalid
+		}
+		if e = r.Owners.Reactivate(ctx, tx, id.TenantID, subject, p.Revision); e != nil {
+			return out, e
+		}
+		if e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "responsibility.subject_reactivated", "subject", subject); e != nil {
+			return out, e
+		}
+	} else if p.Deactivate {
 		if p.Name != nil || p.Contact != nil || p.Username != nil {
 			return out, domain.Invalid
 		}

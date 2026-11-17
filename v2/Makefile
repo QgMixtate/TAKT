@@ -15,6 +15,7 @@ build:
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscan-agent ./cmd/surveyscan-agent
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscanctl ./cmd/surveyscanctl
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscan-portable ./cmd/surveyscan-portable
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscan-portable.exe ./cmd/surveyscan-portable # Windows-аудит ПК (C23)
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscan-router ./cmd/surveyscan-router
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -o .dist/testsshd ./scripts/testsshd # только для смоков C51.03
 	cp contracts/*.json .dist/contracts/

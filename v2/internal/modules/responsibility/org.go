@@ -305,6 +305,29 @@ func (s Store) Deactivate(ctx context.Context, tx pgx.Tx, tenant, id, revision, 
 	return s.deactivate(ctx, tx, tenant, id, actor)
 }
 
+// Reactivate — вернуть отключённую локальную запись (человек или команда). Записи каталога AD включает только
+// каталог (синхронизация). Назначения, снятые при отключении, не восстанавливаются.
+func (s Store) Reactivate(ctx context.Context, tx pgx.Tx, tenant, id, revision string) error {
+	subject, e := s.SubjectByID(ctx, tx, tenant, id)
+	if e != nil {
+		return e
+	}
+	if subject.Active || subject.Origin != "local" {
+		return domain.Conflict
+	}
+	tag, e := tx.Exec(ctx, "UPDATE responsibility.subjects SET active=true,revision=revision+1 WHERE tenant_id=$1 AND subject_id=$2 AND revision::text=$3 AND NOT active", tenant, id, revision)
+	if e != nil {
+		if uniqueViolation(e) {
+			return domain.Conflict // вход уже связан с другой активной записью
+		}
+		return e
+	}
+	if tag.RowsAffected() != 1 {
+		return domain.Revision
+	}
+	return nil
+}
+
 // localTeam — состав команды каталога ведёт каталог.
 func localTeam(ctx context.Context, tx pgx.Tx, tenant, team string) error {
 	var origin string

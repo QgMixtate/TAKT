@@ -122,6 +122,11 @@ SELECT $1,$2,'person',$3,$3||'@example.test',user_id FROM access.users WHERE ten
 		t.Fatalf("assigned once: %+v", cur)
 	}
 	cur = call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/assign", fmt.Sprintf(`{"revision":%q,"team_id":%q,"reason":"эскалация на 2-ю линию"}`, cur.Revision, team), 200)
+	// стенд №15: «Взять себе» после передачи команде не снимает команду
+	cur = call(op2, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/assign", fmt.Sprintf(`{"revision":%q,"me":true}`, cur.Revision), 200)
+	if cur.Team == nil || *cur.Team != team || cur.Assignee == nil || *cur.Assignee != subjects["op2"] {
+		t.Fatalf("take must keep the team: %+v", cur.Ticket)
+	}
 	cur = call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"in_progress"}`, cur.Revision), 200)
 	call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"closed"}`, cur.Revision), 409)   // нельзя закрыть нерешённый
 	call(op1, "POST", "/api/v1/itsm/tickets/"+inc.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"resolved"}`, cur.Revision), 422) // без решения
@@ -158,7 +163,7 @@ SELECT $1,$2,'person',$3,$3||'@example.test',user_id FROM access.users WHERE ten
 			internal++
 		}
 	}
-	if kinds["created"] != 1 || kinds["assigned"] != 2 || kinds["state"] != 3 || internal != 1 {
+	if kinds["created"] != 1 || kinds["assigned"] != 3 || kinds["state"] != 3 || internal != 1 {
 		t.Fatalf("ticket journal: %+v internal=%d", kinds, internal)
 	}
 	if _, err = f.pool.Exec(f.ctx, "UPDATE itsm.ticket_events SET text='x' WHERE tenant_id=$1", tenant); err == nil {

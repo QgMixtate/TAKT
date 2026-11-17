@@ -420,6 +420,12 @@ func (r *Registry) itsmHandlers() map[string]route51 {
 		if _, e := st.Comment(ctx, tx, id.TenantID, actor(id), req.PathValue("ticket_id"), body.(*portalComment).Text, true); e != nil {
 			return nil, e
 		}
+		// стенд №15: ответ заявителя в «ждём заявителя» возвращает обращение в работу (и SLA — с паузы)
+		if d, e := st.Detail(ctx, tx, id.TenantID, req.PathValue("ticket_id"), false); e == nil && d.State == "waiting_customer" {
+			if _, e = st.Transition(ctx, tx, id.TenantID, actor(id), d.ID, d.Revision, "in_progress", "Ответ заявителя"); e != nil {
+				return nil, e
+			}
+		}
 		return own(ctx, tx, id.TenantID, me, req.PathValue("ticket_id"))
 	})
 	type confirm struct {

@@ -218,6 +218,15 @@ func TestC27Ownership(t *testing.T) {
 	if res.Subject.Active || res.Reassign != 1 {
 		t.Fatalf("deactivation: %s", raw)
 	}
+	defer func() {
+		// возврат отключённой записи (стенд №15): снова активна, назначения не восстанавливаются; повтор — 409
+		var again app.SubjectResult
+		_ = json.Unmarshal(call(admin, "PATCH", "/api/v1/subjects/"+p2.ID, `{"revision":"`+res.Subject.Revision+`","reactivate":true}`, 200), &again)
+		if !again.Subject.Active {
+			t.Fatal("subject must be active again")
+		}
+		call(admin, "PATCH", "/api/v1/subjects/"+p2.ID, `{"revision":"`+again.Subject.Revision+`","reactivate":true}`, 409)
+	}()
 	state = read(a)
 	if len(state.Active) != 1 || state.Active[0].Reason != "SUBJECT_DEACTIVATED" || !worklist(op1, "unassigned")[a] || worklist(op1, "attention")[a] {
 		t.Fatalf("accountable must move to the site fallback team: %+v", state.Active)

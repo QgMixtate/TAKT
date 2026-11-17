@@ -125,6 +125,14 @@ func TestW3PortalDirectoryLogin(t *testing.T) {
 	call(op, opCSRF, "POST", "/api/v1/itsm/tickets/"+mine.ID+"/comments", `{"text":"Переподключитесь, пожалуйста"}`, 201)
 	var opView itsm.Detail
 	_ = json.Unmarshal(call(op, opCSRF, "GET", "/api/v1/itsm/tickets/"+mine.ID, "", 200), &opView)
+	// «ждём заявителя» → ответ сотрудника на портале возвращает обращение в работу (стенд №15)
+	_ = json.Unmarshal(call(op, opCSRF, "POST", "/api/v1/itsm/tickets/"+mine.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"in_progress"}`, opView.Revision), 200), &opView)
+	_ = json.Unmarshal(call(op, opCSRF, "POST", "/api/v1/itsm/tickets/"+mine.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"waiting_customer"}`, opView.Revision), 200), &opView)
+	call(emp, csrf, "POST", "/api/v1/portal/tickets/"+mine.ID+"/comments", `{"text":"Переподключился, не помогло"}`, 201)
+	_ = json.Unmarshal(call(op, opCSRF, "GET", "/api/v1/itsm/tickets/"+mine.ID, "", 200), &opView)
+	if opView.State != "in_progress" {
+		t.Fatalf("requester reply must return the ticket to work: %s", opView.State)
+	}
 	_ = json.Unmarshal(call(op, opCSRF, "POST", "/api/v1/itsm/tickets/"+mine.ID+"/transition", fmt.Sprintf(`{"revision":%q,"to":"resolved","text":"Обновлён сертификат"}`, opView.Revision), 200), &opView)
 	// W3-09: заявитель не видит внутренний комментарий, видит публичный
 	raw := call(emp, csrf, "GET", "/api/v1/portal/tickets/"+mine.ID, "", 200)
