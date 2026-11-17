@@ -46,6 +46,30 @@ func derive(password string, salt []byte) []byte {
 	return argon2.IDKey([]byte(password), salt, 3, 64*1024, 1, 32)
 }
 func Digest(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
+
+// CSRFFor — токен CSRF сессии, выведенный из её секрета (cookie HttpOnly): сайт-злоумышленник cookie не читает и токен
+// не вычислит; страница после перезагрузки получает токен запросом Restore с той же cookie. В БД — только хеш.
+func CSRFFor(raw string) string {
+	h := sha256.Sum256([]byte("SURVEYSCAN-CSRF-V1\n" + raw))
+	return base64.RawURLEncoding.EncodeToString(h[:])
+}
+
+// Restore — сведения о текущей сессии браузера по её cookie (после перезагрузки страницы). Сессии, выданные до
+// выведения CSRF из секрета, не восстанавливаются (ErrAuth — один повторный вход).
+func (s *Service) Restore(ctx context.Context, raw string) (Session, error) {
+	if len(raw) != 43 {
+		return Session{}, ErrAuth
+	}
+	id, stored, e := identity(ctx, s.pool, "c.secret_hash=$1 AND c.kind=$2", Digest(raw), "session")
+	if e != nil || subtle.ConstantTimeCompare([]byte(stored), []byte(Digest(CSRFFor(raw)))) != 1 {
+		return Session{}, ErrAuth
+	}
+	var expires time.Time
+	if e = s.pool.QueryRow(ctx, "SELECT expires_at FROM access.credentials WHERE credential_id=$1", id.CredentialID).Scan(&expires); e != nil {
+		return Session{}, ErrAuth
+	}
+	return Session{id.UserID, id.TenantID, []string{id.Role}, expires.UTC(), CSRFFor(raw)}, nil
+}
 func secret() string {
 	b := make([]byte, 32)
 	if _, e := rand.Read(b); e != nil {
@@ -297,7 +321,8 @@ func (s *Service) newSession(ctx context.Context, userID, tenantID, role, revisi
 			return Session{}, "", e
 		}
 	}
-	raw, csrf, id := secret(), secret(), identifier.New()
+	raw, id := secret(), identifier.New()
+	csrf := CSRFFor(raw) // выводится из секрета сессии: после перезагрузки страницы восстанавливается (Restore)
 	var expires time.Time
 	*stage = "session_insert"
 	e = tx.QueryRow(ctx, "INSERT INTO access.credentials(credential_id,tenant_id,user_id,user_revision,kind,secret_hash,csrf_hash,name,expires_at) VALUES($1,$2,$3,$4,'session',$5,$6,'browser',clock_timestamp()+interval '8 hours') RETURNING expires_at", id, tenantID, userID, revision, Digest(raw), Digest(csrf)).Scan(&expires)

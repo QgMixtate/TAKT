@@ -148,6 +148,7 @@ export const api={
  wCompatibility:(item:string,asset:string)=>call<{compatible:boolean|null;asset_model:string}>('/api/v1/warehouse/compatibility?item='+encodeURIComponent(item)+'&asset='+encodeURIComponent(asset),'WCompatibility'),
  wCreateLocation:(csrf:string,b:{site_id:string;kind:WLocation['kind'];name:string;parent_id?:string})=>call<WLocation>('/api/v1/warehouse/locations','WLocation',{method:'POST',body:JSON.stringify(b),headers:{'X-CSRF-Token':csrf}}),
  wCreateItem:(csrf:string,b:{name:string;kind:WItem['kind'];unit:string;category?:string})=>call<WItem>('/api/v1/warehouse/items','WItem',{method:'POST',body:JSON.stringify(b),headers:{'X-CSRF-Token':csrf}}),
+ restoreSession:()=>call<{user_id:string;tenant_id:string;roles:string[];expires_at:string;csrf_token:string}>('/api/v1/auth/session-restore','RestoredSession'),
  portalLogin:(login:string,password:string)=>call<{user_id:string;tenant_id:string;roles:['requester'];expires_at:string;csrf_token:string}>('/api/v1/auth/directory-sessions','PortalSession',{method:'POST',body:JSON.stringify({login,password})}),
  sla:()=>call<SlaSettings>('/api/v1/itsm/sla','SLASettings'),
  saveSla:(csrf:string,b:SlaSettings)=>call<SlaSettings>('/api/v1/itsm/sla','SLASettings',{method:'PUT',body:JSON.stringify(b),headers:{'X-CSRF-Token':csrf}}),

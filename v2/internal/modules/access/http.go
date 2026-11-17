@@ -199,6 +199,24 @@ func (h *HTTP) Register(mux *http.ServeMux) {
 		http.SetCookie(w, &http.Cookie{Name: "surveyscan_session", Value: raw, Path: "/", HttpOnly: true, Secure: h.secure, SameSite: http.SameSiteStrictMode, Expires: session.ExpiresAt, MaxAge: 28800})
 		respond(w, 201, session)
 	})
+	// Восстановление сессии после перезагрузки страницы (вне C03): по cookie — роли, срок и токен CSRF.
+	mux.Handle("GET /api/v1/auth/session-restore", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookies := r.CookiesNamed("surveyscan_session")
+		if len(cookies) != 1 || len(r.Header.Values("Authorization")) != 0 {
+			fail(w, ErrAuth)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+		session, e := h.service.Restore(ctx, cookies[0].Value)
+		if e != nil {
+			fail(w, e)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(session)
+	}))
 	mux.Handle("DELETE /api/v1/auth/session", h.Wrap("auth:self", true, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, _ := Identity(r.Context())
 		if e := h.service.Logout(r.Context(), id); e != nil {

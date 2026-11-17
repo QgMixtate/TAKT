@@ -511,3 +511,40 @@ func TestSessionLimitEvictsOldest(t *testing.T) {
 		t.Fatal("active/evicted", active, evicted)
 	}
 }
+
+// Перезагрузка страницы (стенд, 17.11): по cookie сессия восстанавливается с тем же токеном CSRF — изменения
+// проходят без повторного входа; без cookie, с чужой cookie и после выхода — 401.
+func TestBrowserSessionRestoreAfterReload(t *testing.T) {
+	f := registrySetup(t)
+	if err := f.users.Provision(f.ctx, false, tenant, "", "op", password, "operator"); err != nil {
+		t.Fatal(err)
+	}
+	auth, err := access.NewHTTP(f.users, "https://ui.example", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := app.NewHTTP(auth, health.Handler(func(context.Context) error { return nil }), f.registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(handler)
+	defer server.Close()
+	b := newBrowser(t, server)
+	s := b.login(t, "op")
+	code, raw, _ := b.request(t, "GET", "/api/v1/auth/session-restore", "", "", "", nil)
+	validW3(t, "RestoredSession", raw)
+	var restored access.Session
+	_ = json.Unmarshal(raw, &restored)
+	if code != 200 || restored.CSRFToken != s.CSRFToken || restored.UserID != s.UserID || len(restored.Roles) != 1 || restored.Roles[0] != "operator" {
+		t.Fatalf("restore: %d %s", code, raw)
+	}
+	if code, _, _ = newBrowser(t, server).request(t, "GET", "/api/v1/auth/session-restore", "", "", "", nil); code != 401 {
+		t.Fatal("no cookie — no session", code)
+	}
+	if code, _, _ = b.request(t, "DELETE", "/api/v1/auth/session", "", restored.CSRFToken, "https://ui.example", nil); code != 204 {
+		t.Fatal("restored CSRF token must authorize mutations (logout)", code)
+	}
+	if code, _, _ = b.request(t, "GET", "/api/v1/auth/session-restore", "", "", "", nil); code != 401 {
+		t.Fatal("revoked session must not restore", code)
+	}
+}
