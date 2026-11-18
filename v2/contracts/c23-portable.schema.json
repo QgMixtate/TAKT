@@ -132,6 +132,51 @@
     },
     "encrypted": {
      "type": "boolean"
+    },
+    "discovery": {
+     "type": "object",
+     "description": "C23.04: узлы обследования пакета (отсутствует — пакет без discovery.json)",
+     "additionalProperties": false,
+     "required": [
+      "hosts",
+      "collected",
+      "no_access",
+      "no_profile",
+      "unreachable",
+      "skipped"
+     ],
+     "properties": {
+      "hosts": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 65536
+      },
+      "collected": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 65536
+      },
+      "no_access": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 65536
+      },
+      "no_profile": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 65536
+      },
+      "unreachable": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 65536
+      },
+      "skipped": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 65536
+      }
+     }
     }
    },
    "required": [
@@ -161,6 +206,102 @@
     "public_key"
    ],
    "additionalProperties": false
+  },
+  "PortableDiscoveryHost": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "ip",
+    "kind",
+    "ports",
+    "outcome",
+    "reason",
+    "profile",
+    "observation_id",
+    "asset_uid",
+    "seen_at"
+   ],
+   "properties": {
+    "ip": {
+     "type": "string",
+     "format": "ipv4"
+    },
+    "kind": {
+     "enum": [
+      "linux_ssh",
+      "windows_winrm",
+      "network_snmp",
+      "unknown"
+     ]
+    },
+    "ports": {
+     "type": "array",
+     "maxItems": 64,
+     "items": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+     }
+    },
+    "outcome": {
+     "enum": [
+      "collected",
+      "no_profile",
+      "no_access",
+      "unreachable",
+      "skipped"
+     ]
+    },
+    "reason": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+    },
+    "profile": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "maxLength": 64
+    },
+    "observation_id": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    },
+    "asset_uid": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    },
+    "seen_at": {
+     "type": "string",
+     "format": "date-time"
+    }
+   }
+  },
+  "PortableDiscoveryList": {
+   "description": "GET /api/v1/sources/{source_id}/portable-discovery[?outcome=…] — найденные узлы portable-аудита (C23.04)",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "hosts"
+   ],
+   "properties": {
+    "hosts": {
+     "type": "array",
+     "maxItems": 5000,
+     "items": {
+      "$ref": "#/$defs/PortableDiscoveryHost"
+     }
+    }
+   }
   }
  }
 }

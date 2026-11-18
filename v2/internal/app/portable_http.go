@@ -185,3 +185,21 @@ func (r *Registry) portableEncryptionHandler() http.Handler {
 		registryJSON(w, enc)
 	})
 }
+
+// portableDiscoveryHandler — GET /api/v1/sources/{source_id}/portable-discovery[?outcome=…]: найденные узлы
+// portable-аудита (C23.04); чтение — sources:read.
+func (r *Registry) portableDiscoveryHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		source := req.PathValue("source_id")
+		outcome := req.URL.Query().Get("outcome")
+		allowed := map[string]bool{"": true, "collected": true, "no_profile": true, "no_access": true, "unreachable": true, "skipped": true}
+		if !identifier.Valid(source) || !allowed[outcome] || len(req.URL.Query()) > 1 {
+			access.APIError(w, 400, "INVALID_QUERY")
+			return
+		}
+		r.discoveryDo(w, req, http.StatusOK, "sources:read", func(ctx context.Context, tx pgx.Tx, id accessport.Identity) (any, error) {
+			hosts, e := src51.PortableDiscovery(ctx, tx, id.TenantID, source, outcome)
+			return map[string]any{"hosts": hosts}, e
+		})
+	})
+}

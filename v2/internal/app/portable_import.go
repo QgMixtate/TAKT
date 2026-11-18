@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"time"
@@ -33,6 +35,17 @@ type PortableReport struct {
 	Complete  bool `json:"complete"`
 	Remaining int  `json:"remaining"`
 	Encrypted bool `json:"encrypted"` // пакет был зашифрован ключом центра
+	// Discovery — сводка по узлам обследования пакета (C23.04); nil — пакет без discovery.json.
+	Discovery *PortableDiscoverySummary `json:"discovery,omitempty"`
+}
+
+type PortableDiscoverySummary struct {
+	Hosts       int `json:"hosts"`
+	Collected   int `json:"collected"`
+	NoAccess    int `json:"no_access"`
+	NoProfile   int `json:"no_profile"`
+	Unreachable int `json:"unreachable"`
+	Skipped     int `json:"skipped"`
 }
 
 // ImportPortable проверяет пакет ключом зарегистрированного portable-источника (подпись манифеста, digest, подпись
@@ -106,5 +119,49 @@ func (r *Registry) ImportPortableUntil(ctx context.Context, machine *sources.Mac
 		}
 		report.Records = append(report.Records, rec)
 	}
+	if res.Discovery != nil && report.Complete {
+		if e := r.savePortableDiscovery(ctx, tenant, source, pkg, res); e != nil {
+			return report, e
+		}
+		sum := &PortableDiscoverySummary{Hosts: len(res.Discovery.Hosts)}
+		for _, h := range res.Discovery.Hosts {
+			switch h.Outcome {
+			case "collected":
+				sum.Collected++
+			case "no_access":
+				sum.NoAccess++
+			case "no_profile":
+				sum.NoProfile++
+			case "unreachable":
+				sum.Unreachable++
+			case "skipped":
+				sum.Skipped++
+			}
+		}
+		report.Discovery = sum
+	}
 	return report, nil
+}
+
+// savePortableDiscovery — узлы обследования пакета (C23.04) после записей: collected-узлы ссылаются на уже
+// применённые наблюдения. Повтор пакета ничего не меняет (действует более поздний манифест).
+func (r *Registry) savePortableDiscovery(ctx context.Context, tenant, source string, pkg []byte, res portable.Result) error {
+	hosts := make([]sources.PortableDiscoveryHost, 0, len(res.Discovery.Hosts))
+	for _, h := range res.Discovery.Hosts {
+		ports := make([]int32, 0, len(h.Ports))
+		for _, p := range h.Ports {
+			ports = append(ports, int32(p))
+		}
+		hosts = append(hosts, sources.PortableDiscoveryHost{IP: h.IP, Kind: h.Kind, Ports: ports, Outcome: h.Outcome, Reason: h.Reason, Profile: h.Profile, ObservationID: h.ObservationID})
+	}
+	sum := sha256.Sum256(pkg)
+	tx, e := r.Pool.Begin(ctx)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(ctx)
+	if _, e = src51.SavePortableDiscovery(ctx, tx, tenant, source, hex.EncodeToString(sum[:]), res.Manifest.CreatedAt, hosts); e != nil {
+		return e
+	}
+	return tx.Commit(ctx)
 }

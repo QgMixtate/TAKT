@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {api,ApiError,errorMessage,type PortableEncryption,type PortableReport,type PortableScope,type Source} from './api';
+import {api,ApiError,errorMessage,type PortableDiscoveryHost,type PortableEncryption,type PortableReport,type PortableScope,type Source} from './api';
 
 // C23: portable-аудит из Web — команда init с подставленными площадкой и сегментом, регистрация открытого ключа
 // вставкой вывода init (ключ подписи остаётся на ПК), загрузка пакета и итог импорта.
@@ -36,7 +36,21 @@ export function PortablePanel({csrf,tenant,sources,onChanged,onExpired}:{csrf:st
     <li><strong>Загрузка пакета.</strong> Источник: <select aria-label="Portable-источник" value={source} onChange={e=>setSource(e.target.value)}><option value="">выберите…</option>{portables.map(s=><option key={s.source_id} value={s.source_id}>{s.source_id.slice(0,8)}… · {s.state}</option>)}</select>
      <input aria-label="Файл пакета" type="file" accept=".zip,application/zip" onChange={e=>setFile(e.target.files?.[0]??null)}/>
      <button className="button small" disabled={!file||!source||busy} onClick={()=>void upload()}>{busy?'Загружаем…':'Загрузить и импортировать'}</button>
-     {report?<p className="panel-note" role="status">Записей: {report.records.length} — {counts.map(([k,n])=>(dispositionName[k]??k)+': '+n).join(', ')}{report.encrypted?' · пакет был зашифрован':''}{report.complete?'.':' · обработка не завершена (осталось '+report.remaining+'): отправьте тот же файл ещё раз — продолжится с места остановки.'}</p>:null}</li>
+     {report?<p className="panel-note" role="status">Записей: {report.records.length} — {counts.map(([k,n])=>(dispositionName[k]??k)+': '+n).join(', ')}{report.encrypted?' · пакет был зашифрован':''}{report.discovery?' · узлов найдено: '+report.discovery.hosts+', собрано: '+report.discovery.collected+', без доступа: '+report.discovery.no_access+', без профиля учётки: '+report.discovery.no_profile+', недоступно: '+report.discovery.unreachable:''}{report.complete?'.':' · обработка не завершена (осталось '+report.remaining+'): отправьте тот же файл ещё раз — продолжится с места остановки.'}</p>:null}{source?<PortableDiscovery key={source} source={source} onExpired={onExpired}/>:null}</li>
    </ol></div>:null}
  </section>;
+}
+
+const outcomeName:Record<string,string>={collected:'собран',no_access:'доступа нет',no_profile:'нет профиля учётки',unreachable:'недоступен',skipped:'пропущен аудитором'};
+const kindName:Record<string,string>={linux_ssh:'Linux (SSH)',windows_winrm:'Windows (WinRM)',network_snmp:'сетевое устройство',unknown:'не определён'};
+
+/** C23.04: найденные узлы portable-аудита — исход по каждому, ссылка на актив для собранных. Активы-пустышки не создаются. */
+export function PortableDiscovery({source,onOpenAsset,onExpired}:{source:string;onOpenAsset?:(uid:string)=>void;onExpired:()=>void}){
+ const [outcome,setOutcome]=useState(''),[hosts,setHosts]=useState<PortableDiscoveryHost[]|null>(null),[error,setError]=useState('');
+ const load=async(o:string)=>{setOutcome(o);setError('');try{setHosts((await api.portableDiscovery(source,o)).hosts)}catch(e){if(e instanceof ApiError&&e.status===401){onExpired();return}setError(errorMessage(e))}};
+ return <div className="portable-discovery"><h3>Найденные узлы</h3><p className="panel-note">Узлы, найденные обследованием подсети при portable-аудите. «Доступа нет» и «нет профиля» — добавьте профиль учётки или правило привязки и повторите аудит.</p>
+  <div className="filters"><select aria-label="Исход" value={outcome} onChange={e=>void load(e.target.value)}><option value="">все исходы</option>{Object.entries(outcomeName).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select><button className="button small" type="button" onClick={()=>void load(outcome)}>Показать</button></div>
+  {error?<p className="error" role="alert">{error}</p>:null}
+  {hosts?hosts.length?<div className="table-scroll"><table><thead><tr><th>Адрес</th><th>Тип</th><th>Порты</th><th>Исход</th><th>Причина / профиль</th><th>Актив</th></tr></thead><tbody>{hosts.map(h=><tr key={h.ip}><td className="mono">{h.ip}</td><td>{kindName[h.kind]??h.kind}</td><td>{h.ports.join(', ')||'—'}</td><td>{outcomeName[h.outcome]??h.outcome}</td><td>{[h.reason,h.profile].filter(Boolean).join(' · ')||'—'}</td><td>{h.asset_uid?(onOpenAsset?<button className="text-button" type="button" onClick={()=>onOpenAsset(h.asset_uid!)}>Открыть</button>:<span className="mono">{h.asset_uid}</span>):'—'}</td></tr>)}</tbody></table></div>:<p className="muted">Узлов нет (пакеты без обследования подсети их не содержат).</p>:null}
+ </div>;
 }

@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"regexp"
 	"sort"
 	"strings"
@@ -59,6 +60,36 @@ type Manifest struct {
 	KeyID     string    `json:"key_id"`
 	CreatedAt time.Time `json:"created_at"`
 	Items     []Item    `json:"observations"`
+	// Discovery — discovery.json (C23.04): узлы обследования и «доступа нет»; покрыт подписью манифеста.
+	Discovery *FileRef `json:"discovery,omitempty"`
+}
+
+// FileRef — дайджест и размер вспомогательного файла пакета.
+type FileRef struct {
+	SHA256 string `json:"sha256"`
+	Size   int64  `json:"size"`
+}
+
+// DiscoveryHost — узел обследования (C23.04). Тексты ошибок и секреты сюда не попадают.
+type DiscoveryHost struct {
+	IP            string  `json:"ip"`
+	Ports         []int   `json:"ports"`
+	Kind          string  `json:"kind"`
+	Outcome       string  `json:"outcome"`
+	Reason        *string `json:"reason,omitempty"`
+	Profile       *string `json:"profile,omitempty"`
+	ObservationID *string `json:"observation_id,omitempty"`
+}
+
+// Discovery — содержимое discovery.json.
+type Discovery struct {
+	Version    struct{ Major, Minor int } `json:"schema_version"`
+	Ranges     []string                   `json:"ranges"`
+	Excluded   []string                   `json:"excluded"`
+	StartedAt  time.Time                  `json:"started_at"`
+	FinishedAt time.Time                  `json:"finished_at"`
+	Complete   bool                       `json:"complete"`
+	Hosts      []DiscoveryHost            `json:"hosts"`
 }
 
 var idPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -119,8 +150,17 @@ func signedID(raw []byte) string {
 
 // Write собирает подписанный пакет. observations — подписанные наблюдения (SignObservation тем же ключом).
 func Write(w io.Writer, priv ed25519.PrivateKey, tenant, source string, created time.Time, observations [][]byte) error {
+	return WriteWithDiscovery(w, priv, tenant, source, created, observations, nil)
+}
+
+// WriteWithDiscovery — то же с discovery.json (C23.04), покрытым подписью манифеста; nil — без файла.
+func WriteWithDiscovery(w io.Writer, priv ed25519.PrivateKey, tenant, source string, created time.Time, observations [][]byte, discovery []byte) error {
 	pub := priv.Public().(ed25519.PublicKey)
 	m := Manifest{Format: FormatVersion, Tenant: tenant, SourceID: source, KeyID: KeyID(pub), CreatedAt: created.UTC()}
+	if discovery != nil {
+		sum := sha256.Sum256(discovery)
+		m.Discovery = &FileRef{SHA256: hex.EncodeToString(sum[:]), Size: int64(len(discovery))}
+	}
 	files := map[string][]byte{}
 	for _, raw := range observations {
 		id := signedID(raw)
@@ -162,6 +202,11 @@ func Write(w io.Writer, priv ed25519.PrivateKey, tenant, source string, created 
 	if err = put("manifest.sig", []byte(base64.StdEncoding.EncodeToString(sig))); err != nil {
 		return err
 	}
+	if discovery != nil {
+		if err = put("discovery.json", discovery); err != nil {
+			return err
+		}
+	}
 	for _, it := range m.Items {
 		if err = put("obs/"+it.ID+".json", files["obs/"+it.ID+".json"]); err != nil {
 			return err
@@ -188,6 +233,7 @@ type Result struct {
 	Accepted    [][]byte // подписанные наблюдения (SignedObservation), прошедшие все проверки (по порядку manifest)
 	Duplicates  []string // тот же ID и тот же digest — пропущены
 	Quarantined []Rejected
+	Discovery   *Discovery // C23.04: проверенные узлы обследования (nil — пакет без discovery.json)
 }
 
 func readLimited(f *zip.File, max int64) ([]byte, error) {
@@ -223,7 +269,7 @@ func Import(data []byte, trust map[string]ed25519.PublicKey, known Known, lim Li
 	for _, f := range zr.File {
 		name := f.Name
 		// только плоская схема: manifest.json, manifest.sig, obs/<uuid>.json; никаких .., абсолютных путей, обратных слэшей
-		ok := name == "manifest.json" || name == "manifest.sig" ||
+		ok := name == "manifest.json" || name == "manifest.sig" || name == "discovery.json" ||
 			(strings.HasPrefix(name, "obs/") && strings.HasSuffix(name, ".json") && idPattern.MatchString(strings.TrimSuffix(strings.TrimPrefix(name, "obs/"), ".json")))
 		if !ok || f.FileInfo().IsDir() || f.Mode()&0o170000 != 0 && !f.Mode().IsRegular() {
 			return res, ErrFormat
@@ -274,7 +320,27 @@ func Import(data []byte, trust map[string]ed25519.PublicKey, known Known, lim Li
 		return res, ErrFormat
 	}
 	res.Manifest = m
-	if len(m.Items) != len(entries)-2 {
+	extra := 2
+	if df := entries["discovery.json"]; df != nil || m.Discovery != nil {
+		if df == nil || m.Discovery == nil {
+			return res, ErrFormat // discovery.json только вместе с записью в подписанном манифесте
+		}
+		raw, err := readLimited(df, 16<<20)
+		if err != nil {
+			return res, err
+		}
+		sum := sha256.Sum256(raw)
+		if hex.EncodeToString(sum[:]) != m.Discovery.SHA256 || int64(len(raw)) != m.Discovery.Size {
+			return res, ErrSignature
+		}
+		d, err := parseDiscovery(raw, m.Items)
+		if err != nil {
+			return res, err
+		}
+		res.Discovery = d
+		extra = 3
+	}
+	if len(m.Items) != len(entries)-extra {
 		return res, ErrFormat // лишние файлы вне manifest
 	}
 	seen := map[string]bool{}
@@ -332,4 +398,66 @@ func Import(data []byte, trust map[string]ed25519.PublicKey, known Known, lim Li
 		res.Accepted = append(res.Accepted, raw)
 	}
 	return res, nil
+}
+
+var (
+	discoveryKinds    = map[string]bool{"linux_ssh": true, "windows_winrm": true, "network_snmp": true, "unknown": true}
+	discoveryOutcomes = map[string]bool{"collected": true, "no_profile": true, "no_access": true, "unreachable": true, "skipped": true}
+	reasonPattern     = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,63}$`)
+	profilePattern    = regexp.MustCompile(`^[\p{L}\p{N} ._-]{1,64}$`)
+)
+
+// parseDiscovery — строгая проверка discovery.json (C23.04): IP только из ranges, без повторов, известные виды и
+// исходы, фиксированные коды причин, collected — только со ссылкой на наблюдение этого пакета.
+func parseDiscovery(raw []byte, items []Item) (*Discovery, error) {
+	var d Discovery
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if dec.Decode(&d) != nil || d.Version.Major != 1 || len(d.Ranges) == 0 || len(d.Ranges) > 256 || len(d.Excluded) > 256 || len(d.Hosts) > 65536 || d.FinishedAt.Before(d.StartedAt) {
+		return nil, ErrFormat
+	}
+	var ranges, excluded []netip.Prefix
+	for _, list := range []struct {
+		in  []string
+		out *[]netip.Prefix
+	}{{d.Ranges, &ranges}, {d.Excluded, &excluded}} {
+		for _, r := range list.in {
+			p, err := netip.ParsePrefix(r)
+			if err != nil || !p.Addr().Is4() {
+				return nil, ErrFormat
+			}
+			*list.out = append(*list.out, p.Masked())
+		}
+	}
+	inItems := map[string]bool{}
+	for _, it := range items {
+		inItems[it.ID] = true
+	}
+	seen := map[netip.Addr]bool{}
+	for _, h := range d.Hosts {
+		ip, err := netip.ParseAddr(h.IP)
+		inRange := false
+		for _, p := range ranges {
+			inRange = inRange || (err == nil && p.Contains(ip))
+		}
+		for _, p := range excluded {
+			inRange = inRange && !(err == nil && p.Contains(ip))
+		}
+		if err != nil || !ip.Is4() || !inRange || seen[ip] || !discoveryKinds[h.Kind] || !discoveryOutcomes[h.Outcome] || len(h.Ports) > 64 {
+			return nil, ErrFormat
+		}
+		seen[ip] = true
+		for _, port := range h.Ports {
+			if port < 1 || port > 65535 {
+				return nil, ErrFormat
+			}
+		}
+		if (h.Reason != nil && !reasonPattern.MatchString(*h.Reason)) || (h.Profile != nil && !profilePattern.MatchString(*h.Profile)) {
+			return nil, ErrFormat
+		}
+		if (h.Outcome == "collected") != (h.ObservationID != nil) || (h.ObservationID != nil && !inItems[*h.ObservationID]) {
+			return nil, ErrFormat
+		}
+	}
+	return &d, nil
 }

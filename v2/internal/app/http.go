@@ -121,6 +121,7 @@ func NewHTTP(auth *access.HTTP, health http.Handler, registry ...*Registry) (htt
 		mux.Handle("GET /api/v1/registration/ca", registry[0].registrationCA())     // C52.01: без входа
 		mux.Handle("POST /api/v1/registration", registry[0].registrationRegister()) // C52.01: без входа, код
 		mux.Handle("POST /api/v1/sources/{source_id}/portable-import", auth.Wrap("sources:admin", false, registry[0].portableImportHandler()))
+		mux.Handle("GET /api/v1/sources/{source_id}/portable-discovery", auth.Wrap("sources:read", false, registry[0].portableDiscoveryHandler()))
 		mux.Handle("GET /api/v1/sources/portable-scopes", auth.Wrap("sources:admin", false, registry[0].portableScopesHandler()))
 		mux.Handle("POST /api/v1/sources/portable", auth.Wrap("sources:admin", false, registry[0].portableRegisterHandler()))
 		mux.Handle("POST /api/v1/sources/portable-encryption", auth.Wrap("sources:admin", false, registry[0].portableEncryptionHandler()))

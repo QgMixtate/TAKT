@@ -67,7 +67,8 @@ export type DirectorySettingsView={tenant_id:string;source:'none'|'web'|'config'
 export type DirectoryTestResult={ok:boolean;people_found:number;teams_found:number;error:string|null};
 export type RegistrationCode={code_id:string;source_kind:'agent'|'collector';site_id:string;collector_id:string|null;inventory_platform:'windows/amd64'|'linux/amd64'|null;max_uses:number;used:number;expires_at:string;revoked_at:string|null;comment:string;created_by:string;created_at:string;state:'active'|'exhausted'|'expired'|'revoked';code?:string;center_fingerprint?:string};
 export type PortableScope={site_id:string;site_name:string;scope_id:string;namespace:string};
-export type PortableReport={source_id:string;records:{observation_id:string;disposition:string;asset_id?:string;reason_code?:string}[];complete:boolean;remaining:number;encrypted:boolean};
+export type PortableReport={source_id:string;records:{observation_id:string;disposition:string;asset_id?:string;reason_code?:string}[];complete:boolean;remaining:number;encrypted:boolean;discovery?:{hosts:number;collected:number;no_access:number;no_profile:number;unreachable:number;skipped:number}};
+export type PortableDiscoveryHost={ip:string;kind:string;ports:number[];outcome:string;reason:string|null;profile:string|null;observation_id:string|null;asset_uid:string|null;seen_at:string};
 export type PortableEncryption={key_id:string;public_key:string};
 export class ApiError extends Error {
  constructor(public status:number,public code:string,public requestId?:string){super(code)}
@@ -178,6 +179,7 @@ export const api={
  portableScopes:()=>call<{tenant_id:string;items:PortableScope[];encryption:PortableEncryption|null;encryption_available:boolean}>('/api/v1/sources/portable-scopes','PortableScopeList'),
  enablePortableEncryption:(csrf:string)=>call<PortableEncryption>('/api/v1/sources/portable-encryption','PortableEncryption',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
  registerPortable:(csrf:string,body:{site_id:string;scope_id:string;source_id:string;generation_id:string;public_key:string})=>call<{source_id:string;key_id:string}>('/api/v1/sources/portable','PortableRegistered',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ portableDiscovery:(source:string,outcome='')=>call<{hosts:PortableDiscoveryHost[]}>('/api/v1/sources/'+encodeURIComponent(source)+'/portable-discovery'+(outcome?'?outcome='+encodeURIComponent(outcome):''),'PortableDiscoveryList'),
  importPortable:(csrf:string,source:string,file:File)=>call<PortableReport>('/api/v1/sources/'+encodeURIComponent(source)+'/portable-import','PortableReport',{method:'POST',body:file,signal:AbortSignal.timeout(300000),headers:{'Content-Type':'application/zip','X-CSRF-Token':csrf}}),
  retireAsset:(uid:string,csrf:string,reason:string)=>call<AssetCMDB>('/api/v1/assets/'+encodeURIComponent(uid)+'/retire','AssetCMDB',{method:'POST',body:JSON.stringify({reason}),headers:{'X-CSRF-Token':csrf}}),
  restoreAsset:(uid:string,csrf:string)=>call<AssetCMDB>('/api/v1/assets/'+encodeURIComponent(uid)+'/restore','AssetCMDB',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
