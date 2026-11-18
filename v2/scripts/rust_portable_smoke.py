@@ -8,6 +8,29 @@ ROOT=Path(__file__).resolve().parents[1]
 RUST=ROOT/'agent-rs/target/release/surveyscan-portable'
 SUDO=[] if os.geteuid()==0 else ['sudo','-n']
 def run(cmd,**kw):return subprocess.run(cmd,capture_output=True,text=True,timeout=180,**kw)
+def wizard_check(state,pw):
+    """Локальный веб-мастер: только свой Host и токен; проверка узла из мастера; пароль не попадает в ответы."""
+    import http.client,re
+    w=subprocess.Popen([str(RUST),'wizard','--state',str(state),'--no-browser'],stdout=subprocess.PIPE,text=True)
+    try:
+        m=re.search(r'http://127\.0\.0\.1:(\d+)/#([0-9a-f]+)',w.stdout.readline());port,tok=int(m[1]),m[2]
+        def req(method,path,body=None,token=tok,host=None):
+            c=http.client.HTTPConnection('127.0.0.1',port,timeout=30);h={'Host':host or f'127.0.0.1:{port}','Content-Type':'application/json'}
+            if token:h['X-Token']=token
+            c.request(method,path,body=None if body is None else json.dumps(body),headers=h);r=c.getresponse();return r.status,r.read().decode()
+        assert req('GET','/')[0]==200 and req('GET','/api/state',token=None)[0]==403 and req('GET','/api/state',token='0'*48)[0]==403
+        assert req('GET','/api/state',host='evil.example')[0]==403
+        st=json.loads(req('GET','/api/state')[1]);assert st['initialized'] and st['bound']==['linux-ro'],st
+        code,_=req('POST','/api/test',{'ip':'127.0.0.1','secrets':{'linux-ro':pw}});assert code==200
+        for _ in range(120):
+            j=json.loads(req('GET','/api/job')[1])
+            if not j['running']:break
+            time.sleep(1)
+        out='\n'.join(j['lines']);assert j['ok'] and 'DRY RUN: 1 target(s) ok' in out,out[-1500:]
+        assert pw not in out+json.dumps(st)
+        return 'local wizard: 127.0.0.1 only, foreign Host and missing token refused (403), single-node test from the wizard, password not echoed'
+    finally:
+        w.terminate();w.wait(timeout=10)
 def main():
     sshd=shutil.which('sshd') or '/usr/sbin/sshd'
     assert Path(sshd).exists(),'sshd required (openssh-server)'
@@ -42,6 +65,7 @@ def main():
         if not go.exists():go=d/'goportable';assert run(['go','build','-o',str(go),'./cmd/surveyscan-portable'],cwd=ROOT).returncode==0
         v=run([str(go),'verify','--package',str(pkg),'--public-key',pub]);assert 'VERIFIED' in v.stdout and 'accepted=1' in v.stdout,(v.stdout,v.stderr)
         checks.append('Go centre verifies the package: manifest signature, discovery.json with outcome collected, 1.2 observation')
+        checks.append(wizard_check(state,pw))
         subprocess.run(SUDO+['kill',(d/'sshd.pid').read_text().strip()]);sshd_p.wait(timeout=10)
         start_sshd(d/'hostkey2')
         ch=run([str(RUST),'collect','--state',str(state),'--dry-run','--no-host','--secrets-stdin'],input=f'linux-ro={pw}\n')

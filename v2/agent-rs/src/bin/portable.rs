@@ -1,5 +1,6 @@
 //! surveyscan-portable (Rust, C52.03): init, center-key, collect (этот хост), verify. Совместим с Go-portable по
-//! каталогу состояния и формату пакета C23; обследование подсети, профили учёток и мастер — следующие шаги C52.06.
+//! каталогу состояния и формату пакета C23; discover (обследование подсети), профили учёток, сбор SSH/WinRM и
+//! локальный веб-мастер (wizard, 127.0.0.1) — C52.06.
 
 use ssagent::portable as p;
 use std::io::Read;
@@ -99,6 +100,10 @@ fn main() -> ExitCode {
             println!("DISCOVERED: {} узлов (Linux/SSH {}, Windows {}, сетевых {}, не определено {}){}", hosts.len(), count("linux_ssh"), count("windows_winrm"), count("network_snmp"), count("unknown"), if complete { "" } else { "; обследование прервано по сроку" });
             Ok(())
         }),
+        Some("wizard") => state().and_then(|dir| {
+            let port = arg(&args, "--port").map(|v| v.parse::<u16>().map_err(|_| "--port 1..65535".to_string())).unwrap_or(Ok(0))?;
+            ssagent::wizard::serve(ssagent::wizard::Options { dir, port, open_browser: !args.iter().any(|a| a == "--no-browser") })
+        }),
         Some("center-key") => state().and_then(|dir| {
             let k = arg(&args, "--center-key").ok_or("--center-key КЛЮЧ")?;
             println!("encryption_key_id={}: следующие пакеты шифруются ключом центра", p::set_center_key(&dir, &k)?);
@@ -129,10 +134,18 @@ fn main() -> ExitCode {
             if let Some(last) = &last {
                 let profiles = ssagent::profiles::Profiles::load(&dir)?;
                 let hosts = last["hosts"].as_array().cloned().unwrap_or_default();
+                let only: Option<std::collections::HashSet<String>> = arg(&args, "--only").map(|v| v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect());
                 let mut plan = vec![];
                 let mut winrm_plan: Vec<(String, ssagent::profiles::Profile)> = vec![];
                 for h in &hosts {
                     let (ip, kind) = (h["ip"].as_str().unwrap_or_default().to_string(), h["kind"].as_str().unwrap_or_default());
+                    if only.as_ref().is_some_and(|o| !o.contains(&ip)) && profiles.bind(&ip, kind, None).is_some() {
+                        outcomes.insert(ip, serde_json::json!({"outcome": "skipped"})); // снят аудитором (мастер, --only)
+                        continue;
+                    }
+                    if only.as_ref().is_some_and(|o| !o.contains(&ip)) {
+                        continue; // без профиля: в пакете — no_profile
+                    }
                     match profiles.bind(&ip, kind, None) {
                         Some(pr) if pr.kind == "ssh" => plan.push((ip, pr.clone())),
                         Some(pr) if pr.kind == "winrm" => winrm_plan.push((ip, pr.clone())),
@@ -252,7 +265,7 @@ fn main() -> ExitCode {
                 }
             })
         }
-        _ => Err("используйте init, center-key, collect, verify или version".into()),
+        _ => Err("используйте wizard, init, center-key, discover, collect, verify или version".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,
