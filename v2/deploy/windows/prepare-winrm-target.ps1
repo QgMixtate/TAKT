@@ -42,7 +42,7 @@ if ($present) { Write-Host '[ok] WMI root\cimv2 rights present' }
 else {
   $ace = [System.Security.AccessControl.CommonAce]::new([System.Security.AccessControl.AceFlags]::ContainerInherit, [System.Security.AccessControl.AceQualifier]::AccessAllowed, 0x21, [System.Security.Principal.SecurityIdentifier]::new($sid), $false, $null)
   # canonical order: explicit ACEs before inherited ones
-  $at = @($raw.DiscretionaryAcl | Where-Object { -not ($_.AceFlags -band [System.Security.AccessControl.AceFlags]::Inherited) }).Count
+  $at = @($raw.DiscretionaryAcl | Where-Object { -not $_.IsInherited }).Count
   $raw.DiscretionaryAcl.InsertAce($at, $ace)
   $out = New-Object byte[] $raw.BinaryLength
   $raw.GetBinaryForm($out, 0)
