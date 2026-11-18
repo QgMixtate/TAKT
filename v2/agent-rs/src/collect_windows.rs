@@ -1,6 +1,6 @@
 //! Сбор Windows по профилю 1.2 (C52.02) — порт internal/agent/windowsinventory (Go): только чтение через Win32 API и
 //! реестр, без PowerShell. Этот шаг: identity, os, network, hardware, software, services. Разделы на WMI/NetAPI
-//! (updates, protection, users_groups, routes_ports, resources, neighbors) — следующим шагом; до того — unsupported.
+//! (updates, protection) — следующим шагом; до того — unsupported. users_groups (NetAPI), routes_ports, resources, neighbors — нативно.
 
 #![allow(clippy::missing_safety_doc)]
 use serde_json::{json, Map, Value};
@@ -385,6 +385,15 @@ pub fn section(name: &str) -> Value {
         "hardware" => hardware(),
         "software" => software(),
         "services" => services(),
+        "users_groups" => {
+            if version().product_type == 2 {
+                return failed(name, "unsupported", "LOCAL_SAM_UNSUPPORTED_ON_DC");
+            }
+            accounts()
+        }
+        "routes_ports" => routes(),
+        "resources" => resources(),
+        "neighbors" => neighbors(),
         _ => return failed(name, "unsupported", "SECTION_UNSUPPORTED"),
     };
     if rows.is_empty() {
@@ -405,4 +414,232 @@ pub fn collect() -> Snapshot {
         candidates.push(json!({"kind": "machine_uuid", "namespace": "windows-machine-guid", "value": g}));
     }
     Snapshot { candidates: Value::Array(candidates), sections }
+}
+
+use windows_sys::Win32::NetworkManagement::IpHelper::{FreeMibTable, GetIpForwardTable2, GetIpNetTable2, MIB_IPFORWARD_TABLE2, MIB_IPNET_TABLE2};
+use windows_sys::Win32::NetworkManagement::NetManagement::{NetApiBufferFree, NetLocalGroupEnum, NetLocalGroupGetMembers, NetUserEnum};
+use windows_sys::Win32::Networking::WinSock::SOCKADDR_INET;
+use windows_sys::Win32::Security::{IsValidSid, LookupAccountNameW};
+use windows_sys::Win32::Storage::FileSystem::{GetDiskFreeSpaceExW, GetDriveTypeW, GetLogicalDriveStringsW, GetVolumeInformationW};
+
+fn sockaddr_ip(a: &SOCKADDR_INET) -> Option<std::net::IpAddr> {
+    // SAFETY: семейство определяет активное поле объединения
+    unsafe {
+        match a.si_family {
+            AF_INET => Some(std::net::IpAddr::from(a.Ipv4.sin_addr.S_un.S_addr.to_ne_bytes())),
+            AF_INET6 => Some(std::net::IpAddr::from(a.Ipv6.sin6_addr.u.Byte)),
+            _ => None,
+        }
+    }
+}
+
+fn is_4in6(ip: &std::net::IpAddr) -> bool {
+    matches!(ip, std::net::IpAddr::V6(v) if v.to_ipv4_mapped().is_some())
+}
+
+fn resources() -> Vec<Value> {
+    let mut roots = [0u16; 1024];
+    // SAFETY: буфер и длина согласованы
+    let n = unsafe { GetLogicalDriveStringsW(roots.len() as u32, roots.as_mut_ptr()) } as usize;
+    if n == 0 || n >= roots.len() {
+        return vec![];
+    }
+    let mut rows = vec![];
+    for root in roots[..n].split(|c| *c == 0).filter(|r| !r.is_empty()) {
+        let name = String::from_utf16_lossy(root);
+        let path = wide(&name);
+        if unsafe { GetDriveTypeW(path.as_ptr()) } != 3 {
+            continue; // только DRIVE_FIXED: без сетевых, съёмных и монтирований
+        }
+        let (mut caller, mut total, mut free) = (0u64, 0u64, 0u64);
+        if unsafe { GetDiskFreeSpaceExW(path.as_ptr(), &mut caller, &mut total, &mut free) } == 0 {
+            continue;
+        }
+        let mut row = Map::new();
+        row.insert("kind".into(), "volume".into());
+        row.insert("name".into(), name.into());
+        row.insert("total_bytes".into(), total.into());
+        row.insert("free_bytes".into(), free.into());
+        let mut fs = [0u16; 64];
+        if unsafe { GetVolumeInformationW(path.as_ptr(), null_mut(), 0, null_mut(), null_mut(), null_mut(), fs.as_mut_ptr(), fs.len() as u32) } != 0 {
+            let v = safe_text(from_wide(fs.as_ptr(), 63), 64);
+            if !v.is_empty() {
+                row.insert("filesystem".into(), v.into());
+            }
+        }
+        rows.push(Value::Object(row));
+    }
+    rows
+}
+
+fn routes() -> Vec<Value> {
+    let mut table: *mut MIB_IPFORWARD_TABLE2 = null_mut();
+    // SAFETY: таблица выделяется системой и освобождается FreeMibTable
+    if unsafe { GetIpForwardTable2(AF_UNSPEC, &mut table) } != 0 || table.is_null() {
+        return vec![];
+    }
+    let count = unsafe { (*table).NumEntries }.min(10000) as usize;
+    let entries = unsafe { std::slice::from_raw_parts((*table).Table.as_ptr(), count) };
+    let mut rows = vec![];
+    for e in entries {
+        let Some(ip) = sockaddr_ip(&e.DestinationPrefix.Prefix) else { continue };
+        let bits = e.DestinationPrefix.PrefixLength as u32;
+        let max = if ip.is_ipv4() { 32 } else { 128 };
+        if bits > max || is_4in6(&ip) {
+            continue;
+        }
+        let family = if ip.is_ipv4() { "ipv4" } else { "ipv6" };
+        let mut row = Map::new();
+        row.insert("kind".into(), "route".into());
+        row.insert("family".into(), family.into());
+        row.insert("destination".into(), format!("{ip}/{bits}").into());
+        row.insert("interface_index".into(), e.InterfaceIndex.into());
+        row.insert("metric".into(), e.Metric.into());
+        if let Some(gw) = sockaddr_ip(&e.NextHop).filter(|g| g.is_ipv4() == ip.is_ipv4()) {
+            row.insert("gateway".into(), gw.to_string().into());
+        }
+        rows.push(Value::Object(row));
+    }
+    unsafe { FreeMibTable(table as *const _) };
+    rows
+}
+
+fn neighbors() -> Vec<Value> {
+    let mut table: *mut MIB_IPNET_TABLE2 = null_mut();
+    // SAFETY: только чтение кэша ARP/NDP; таблица освобождается FreeMibTable
+    if unsafe { GetIpNetTable2(AF_UNSPEC, &mut table) } != 0 || table.is_null() {
+        return vec![];
+    }
+    let count = unsafe { (*table).NumEntries }.min(10000) as usize;
+    let entries = unsafe { std::slice::from_raw_parts((*table).Table.as_ptr(), count) };
+    let mut rows = vec![];
+    for e in entries {
+        let Some(ip) = sockaddr_ip(&e.Address) else { continue };
+        if is_4in6(&ip) {
+            continue;
+        }
+        let mut row = Map::new();
+        row.insert("family".into(), (if ip.is_ipv4() { "ipv4" } else { "ipv6" }).into());
+        row.insert("address".into(), ip.to_string().into());
+        row.insert("interface_index".into(), e.InterfaceIndex.into());
+        let state = match e.State {
+            0 => "unreachable", 1 => "incomplete", 2 => "probe", 3 => "delay", 4 => "stale", 5 => "reachable", 6 => "permanent", _ => "",
+        };
+        if !state.is_empty() {
+            row.insert("state".into(), state.into());
+        }
+        if e.PhysicalAddressLength == 6 {
+            row.insert("mac".into(), e.PhysicalAddress[..6].iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(":").into());
+        }
+        rows.push(Value::Object(row));
+    }
+    unsafe { FreeMibTable(table as *const _) };
+    rows
+}
+
+/// SID и тип учётной записи по имени (LookupAccountNameW) — как windows.LookupSID в Go.
+fn lookup_sid(account: &str) -> Option<(String, i32)> {
+    let name = wide(account);
+    let mut sid = vec![0u8; 256];
+    let (mut sid_len, mut dom_len, mut kind) = (sid.len() as u32, 256u32, 0i32);
+    let mut dom = vec![0u16; 256];
+    // SAFETY: буферы и длины согласованы
+    let ok = unsafe { LookupAccountNameW(null(), name.as_ptr(), sid.as_mut_ptr() as _, &mut sid_len, dom.as_mut_ptr(), &mut dom_len, &mut kind) } != 0;
+    if !ok || unsafe { IsValidSid(sid.as_ptr() as _) } == 0 {
+        return None;
+    }
+    sid_text(sid.as_ptr() as _).map(|s| (s, kind))
+}
+
+fn sid_text(sid: *mut core::ffi::c_void) -> Option<String> {
+    let mut text: *mut u16 = null_mut();
+    if sid.is_null() || unsafe { IsValidSid(sid) } == 0 || unsafe { ConvertSidToStringSidW(sid, &mut text) } == 0 {
+        return None;
+    }
+    let s = from_wide(text, 256);
+    unsafe { LocalFree(text as _) };
+    Some(s).filter(|s| !s.is_empty())
+}
+
+const PAGE: u32 = 64 * 1024;
+
+/// Каждый элемент страницы NetAPI уровня 0 — один указатель (имя или SID).
+fn net_page<F: FnMut(*mut u8, &mut u32, &mut u32) -> u32>(mut call: F, mut each: impl FnMut(*const core::ffi::c_void) -> bool) {
+    for _ in 0..32 {
+        let mut buf: *mut u8 = null_mut();
+        let (mut count, mut total) = (0u32, 0u32);
+        let code = call(&mut buf as *mut *mut u8 as *mut u8, &mut count, &mut total);
+        if code != 0 && code != ERROR_MORE_DATA {
+            if !buf.is_null() {
+                unsafe { NetApiBufferFree(buf as _) };
+            }
+            break;
+        }
+        let mut stop = false;
+        if !buf.is_null() && count <= PAGE / 8 {
+            let items = unsafe { std::slice::from_raw_parts(buf as *const *const core::ffi::c_void, count as usize) };
+            for p in items {
+                if !p.is_null() && !each(*p) {
+                    stop = true;
+                    break;
+                }
+            }
+        }
+        if !buf.is_null() {
+            unsafe { NetApiBufferFree(buf as _) };
+        }
+        if stop || code == 0 || count == 0 {
+            break;
+        }
+    }
+}
+
+fn accounts() -> Vec<Value> {
+    let Some(host) = computer_name(ComputerNameNetBIOS) else { return vec![] };
+    let mut rows: Vec<Value> = vec![];
+    let mut resume = 0u32;
+    net_page(
+        |buf, count, total| unsafe { NetUserEnum(null(), 0, 2, buf as *mut *mut u8, PAGE, count, total, &mut resume) },
+        |p| {
+            let user = safe_text(from_wide(p as *const u16, 256), 256);
+            if !user.is_empty() {
+                if let Some((sid, 1)) = lookup_sid(&format!("{host}\\{user}")) {
+                    rows.push(json!({"kind": "user", "sid": sid, "name": user}));
+                }
+            }
+            rows.len() < 10000
+        },
+    );
+    let mut groups: Vec<(Vec<u16>, String, String)> = vec![];
+    let mut resume = 0usize;
+    net_page(
+        |buf, count, total| unsafe { NetLocalGroupEnum(null(), 0, buf as *mut *mut u8, PAGE, count, total, &mut resume) },
+        |p| {
+            let group = safe_text(from_wide(p as *const u16, 256), 256);
+            if !group.is_empty() {
+                let found = lookup_sid(&format!("{host}\\{group}")).or_else(|| lookup_sid(&format!("BUILTIN\\{group}")));
+                if let Some((sid, 4)) = found {
+                    groups.push((wide(&group), group, sid));
+                }
+            }
+            groups.len() < 512
+        },
+    );
+    for (wname, group, gid) in groups {
+        if rows.len() >= 10000 {
+            break;
+        }
+        rows.push(json!({"kind": "group", "sid": gid, "name": group}));
+        let mut resume = 0usize;
+        net_page(
+            |buf, count, total| unsafe { NetLocalGroupGetMembers(null(), wname.as_ptr(), 0, buf as *mut *mut u8, PAGE, count, total, &mut resume) },
+            |p| {
+                if let Some(sid) = sid_text(p as *mut _) {
+                    rows.push(json!({"kind": "membership", "sid": sid, "group_sid": gid}));
+                }
+                rows.len() < 10000
+            },
+        );
+    }
+    rows
 }

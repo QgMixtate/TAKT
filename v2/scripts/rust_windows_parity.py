@@ -12,12 +12,16 @@ def section(cmd):
 
 def key(name,row):
     if name=='services':return row['name']
+    if name=='resources':return (row['name'],row.get('total_bytes'),row.get('filesystem'))
+    if name=='neighbors':return (row['address'],row['interface_index'],row.get('mac'))
     if name=='software':return (row['name'],row.get('registry_key'),row.get('registry_view'),row.get('scope'))
     return json.dumps(row,sort_keys=True)
 
 checks=[]
-for name in ['identity','os','network','hardware','software','services']:
+for name in ['identity','os','network','hardware','software','services','users_groups','routes_ports','resources','neighbors']:
     g=section([go,'inventory-worker',name]);r=section([rust,'inventory-section',name])
+    if name=='neighbors':  # кэш ARP/NDP меняется между вызовами — сравниваются только постоянные записи
+        g['records']=[x for x in g['records'] if x.get('state')=='permanent'];r['records']=[x for x in r['records'] if x.get('state')=='permanent']
     assert g['status']==r['status'] and g['reason_code']==r['reason_code'],(name,g['status'],r['status'],g['reason_code'],r['reason_code'])
     gk=sorted(map(str,(key(name,x) for x in g['records'])));rk=sorted(map(str,(key(name,x) for x in r['records'])))
     if gk!=rk:
