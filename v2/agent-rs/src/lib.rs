@@ -27,3 +27,5 @@ pub mod wmi_windows;
 pub mod winsvc;
 pub mod portable;
 pub mod discover;
+pub mod profiles;
+pub mod sshcollect;

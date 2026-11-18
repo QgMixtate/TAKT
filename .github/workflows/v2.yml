@@ -68,6 +68,10 @@ jobs:
           cargo build --release --locked --target x86_64-pc-windows-gnu
           cargo build --release --locked
           cd .. && SURVEYSCAN_RUST_PORTABLE="$PWD/agent-rs/target/release/surveyscan-portable" go test -count=1 -run RustPortable ./internal/portable
+      - name: Rust portable (C52.06) — subnet discover, credential profile, SSH collection of a local sshd, Go verify
+        run: |
+          sudo apt-get install -y --no-install-recommends openssh-server
+          python3 scripts/rust_portable_smoke.py
       - name: Build search service (Rust, Tantivy; ADR C28) for the C29 integration test
         working-directory: v2/search
         run: cargo build --release --locked

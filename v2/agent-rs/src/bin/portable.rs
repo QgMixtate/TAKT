@@ -2,6 +2,7 @@
 //! каталогу состояния и формату пакета C23; обследование подсети, профили учёток и мастер — следующие шаги C52.06.
 
 use ssagent::portable as p;
+use std::io::Read;
 use std::{env, path::PathBuf, process::ExitCode};
 
 fn arg(args: &[String], name: &str) -> Option<String> {
@@ -25,6 +26,27 @@ fn host() -> Result<(serde_json::Value, Vec<serde_json::Value>), String> {
 
 fn hostname(sections: &[serde_json::Value]) -> String {
     sections.iter().find(|s| s["name"] == "identity").and_then(|s| s["records"][0]["hostname"].as_str()).unwrap_or("host").to_string()
+}
+
+fn report(kind: &str, name: &str, sections: &[serde_json::Value]) {
+    let rows: usize = sections.iter().map(|s| s["records"].as_array().map(|a| a.len()).unwrap_or(0)).sum();
+    println!("{:<6} {:<24} rows={}", kind, name, rows);
+    for s in sections {
+        println!("         {:<13} {}/{}", s["name"].as_str().unwrap_or(""), s["status"].as_str().unwrap_or(""), s["reason_code"].as_str().unwrap_or(""));
+    }
+}
+
+/// Пароли профилей из stdin строками «профиль=секрет» (для мастера и автоматизации; на диск не пишутся).
+fn secrets_from_stdin() -> Result<ssagent::profiles::Secrets, String> {
+    let mut s = ssagent::profiles::Secrets::default();
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut std::io::stdin().take(65536), &mut text).map_err(|e| e.to_string())?;
+    for line in text.lines() {
+        if let Some((k, v)) = line.split_once('=') {
+            s.set(k.trim(), v.to_string());
+        }
+    }
+    Ok(s)
 }
 
 fn main() -> ExitCode {
@@ -90,35 +112,99 @@ fn main() -> ExitCode {
             }
             let (id, key) = p::load(&dir)?;
             println!("source_id={} key_id={}", id.source_id, id.key_id);
-            let (candidates, sections) = host()?;
-            let name = hostname(&sections);
-            let rows: usize = sections.iter().map(|s| s["records"].as_array().map(|a| a.len()).unwrap_or(0)).sum();
-            println!("{:<6} {:<24} rows={}", "host", name, rows);
-            for s in &sections {
-                println!("         {:<13} {}/{}", s["name"].as_str().unwrap_or(""), s["status"].as_str().unwrap_or(""), s["reason_code"].as_str().unwrap_or(""));
+            let mut observations = vec![];
+            let mut failed_targets = 0;
+            if !args.iter().any(|a| a == "--no-host") {
+                let (candidates, sections) = host()?;
+                let name = hostname(&sections);
+                report("host", &name, &sections);
+                observations.push(p::observation(&dir, &id, "host", &name, &candidates, sections)?);
             }
-            if dry {
-                println!("DRY RUN: 1 target(s) ok, 0 failed; package not written");
-                return Ok(());
-            }
-            let o = p::observation(&dir, &id, "host", &name, &candidates, sections)?;
-            let signed = p::sign_observation(&key, &o)?;
-            // узлы последнего обследования (C23.04): до профилей учёток все, кроме этого ПК, — «нет профиля»
-            let discovery = match std::fs::read(dir.join(p::DISCOVERY_FILE)) {
-                Ok(raw) => {
-                    let last: serde_json::Value = serde_json::from_slice(&raw).map_err(|_| "discovery-last.json повреждён")?;
-                    Some(p::discovery_doc(&last, &Default::default())?)
-                }
+            // узлы последнего обследования: один профиль по правилам (без перебора), сбор SSH; исход — в discovery.json
+            let last: Option<serde_json::Value> = match std::fs::read(dir.join(p::DISCOVERY_FILE)) {
+                Ok(raw) => Some(serde_json::from_slice(&raw).map_err(|_| "discovery-last.json повреждён")?),
                 Err(_) => None,
             };
-            let mut data = p::write_package_with(&key, &id, &[signed], discovery.as_deref())?;
+            let mut outcomes: std::collections::HashMap<String, serde_json::Value> = Default::default();
+            if let Some(last) = &last {
+                let profiles = ssagent::profiles::Profiles::load(&dir)?;
+                let hosts = last["hosts"].as_array().cloned().unwrap_or_default();
+                let mut plan = vec![];
+                for h in &hosts {
+                    let (ip, kind) = (h["ip"].as_str().unwrap_or_default().to_string(), h["kind"].as_str().unwrap_or_default());
+                    match profiles.bind(&ip, kind, None) {
+                        Some(pr) if pr.kind == "ssh" => plan.push((ip, pr.clone())),
+                        Some(pr) => {
+                            // WinRM в Rust-portable — следующий шаг C52.06: узел с профилем помечается, а не пропадает
+                            outcomes.insert(ip, serde_json::json!({"outcome": "skipped", "reason": "COLLECTOR_NOT_AVAILABLE", "profile": pr.name}));
+                        }
+                        None => {}
+                    }
+                }
+                let needed: Vec<&ssagent::profiles::Profile> = plan.iter().map(|(_, pr)| pr).collect();
+                let secrets = if args.iter().any(|a| a == "--secrets-stdin") { secrets_from_stdin()? } else { ssagent::profiles::Secrets::prompt(&needed)? };
+                let known = ssagent::sshcollect::KnownHosts::load(&dir);
+                let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
+                let local = tokio::task::LocalSet::new();
+                let results = local.block_on(&rt, async {
+                    let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
+                    let mut set = tokio::task::JoinSet::new();
+                    for (ip, pr) in plan.clone() {
+                        let t = ssagent::sshcollect::Target { ip: ip.clone(), port: pr.port.unwrap_or(22), user: pr.user.clone(), secret: secrets.get(&pr.name).unwrap_or("").to_string(), key_file: pr.key_file.clone() };
+                        let (known, sem) = (known.clone(), sem.clone());
+                        set.spawn_local(async move {
+                            let _permit = sem.acquire().await;
+                            eprintln!("ssh {ip}: сбор (профиль «{}»)", pr.name);
+                            (ip, pr.name, ssagent::sshcollect::collect(&t, &known).await)
+                        });
+                    }
+                    let mut out = vec![];
+                    while let Some(r) = set.join_next().await {
+                        if let Ok(x) = r {
+                            out.push(x);
+                        }
+                    }
+                    out
+                });
+                known.save(&dir)?;
+                let mut results = results;
+                results.sort_by(|a, b| a.0.cmp(&b.0));
+                for (ip, profile, r) in results {
+                    match r {
+                        Ok((candidates, sections)) => {
+                            report("ssh", &ip, &sections);
+                            let o = p::observation(&dir, &id, "ssh", &ip, &candidates, sections)?;
+                            outcomes.insert(ip, serde_json::json!({"outcome": "collected", "profile": profile, "observation_id": o["observation_id"]}));
+                            observations.push(o);
+                        }
+                        Err(f) => {
+                            failed_targets += 1;
+                            println!("{:<6} {:<24} FAILED: {}", "ssh", ip, f.code());
+                            outcomes.insert(ip, serde_json::json!({"outcome": f.outcome(), "reason": f.code(), "profile": profile}));
+                        }
+                    }
+                }
+            }
+            if dry {
+                println!("DRY RUN: {} target(s) ok, {} failed; package not written", observations.len(), failed_targets);
+                return Ok(());
+            }
+            if observations.is_empty() {
+                return Err("нечего экспортировать: ни один узел не собран".into());
+            }
+            let discovery = match &last {
+                Some(l) => Some(p::discovery_doc(l, &outcomes)?),
+                None => None,
+            };
+            let signed = observations.iter().map(|o| p::sign_observation(&key, o)).collect::<Result<Vec<_>, _>>()?;
+            let mut data = p::write_package_with(&key, &id, &signed, discovery.as_deref())?;
             let center = p::center_key(&dir)?;
             if let Some(c) = center {
                 data = p::seal(&c, &data)?;
             }
             let out = out.unwrap();
             p::publish(&out, &data)?;
-            println!("EXPORTED: 1 observation(s) -> {}, {} (0 target(s) failed)", out.display(), if center.is_some() { "encrypted for the centre key" } else { "not encrypted" });
+            println!("EXPORTED: {} observation(s) -> {}, {} ({} target(s) failed)", signed.len(), out.display(), if center.is_some() { "encrypted for the centre key" } else { "not encrypted" }, failed_targets);
             Ok(())
         }),
         Some("verify") => {
