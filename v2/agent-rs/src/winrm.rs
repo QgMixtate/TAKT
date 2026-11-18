@@ -21,6 +21,8 @@ pub enum Failure {
     Unencrypted,
     Protocol(&'static str),
     Script,
+    /// вход текущей учёткой есть только в сборке для Windows
+    CurrentUserUnsupported,
 }
 
 impl Failure {
@@ -33,11 +35,13 @@ impl Failure {
             Failure::Unencrypted => "UNENCRYPTED_REPLY",
             Failure::Protocol(_) => "WINRM_PROTOCOL_ERROR",
             Failure::Script => "SCRIPT_FAILED",
+            Failure::CurrentUserUnsupported => "COLLECTOR_NOT_AVAILABLE",
         }
     }
     pub fn outcome(&self) -> &'static str {
         match self {
             Failure::Unreachable | Failure::Timeout => "unreachable",
+            Failure::CurrentUserUnsupported => "skipped",
             _ => "no_access",
         }
     }
@@ -176,19 +180,24 @@ impl sspi::network_client::NetworkClient for KdcClient {
     }
 }
 
-pub struct Session {
-    http: Http,
-    ctx: Negotiate,
+/// Механизм входа: sspi-rs (логин и пароль; Linux и Windows) или встроенный SSPI Windows (текущая учётка).
+enum Ctx {
+    Sspi { ctx: Box<Negotiate>, creds: <Negotiate as SspiImpl>::CredentialsHandle, target: String },
+    #[cfg(windows)]
+    Native(crate::winsspi::Native),
 }
 
-fn auth_token(resp: &Response) -> Option<Vec<u8>> {
-    resp.headers.iter().filter(|(k, _)| k.eq_ignore_ascii_case("WWW-Authenticate")).find_map(|(_, v)| v.strip_prefix("Negotiate ").and_then(|t| STANDARD.decode(t.trim()).ok()))
-}
+const FLAGS: ClientRequestFlags = ClientRequestFlags::MUTUAL_AUTH.union(ClientRequestFlags::CONFIDENTIALITY).union(ClientRequestFlags::INTEGRITY).union(ClientRequestFlags::SEQUENCE_DETECT).union(ClientRequestFlags::REPLAY_DETECT);
 
-impl Session {
-    /// Вход Negotiate на соединении (Kerberos при известном KDC, иначе NTLM); отказ — без повторов.
-    pub fn connect(t: &Target) -> Result<Session, Failure> {
-        let mut http = Http::connect(&t.ip, t.port, &t.host)?;
+impl Ctx {
+    fn new(t: &Target) -> Result<Ctx, Failure> {
+        let target = format!("HTTP/{}", t.host);
+        if t.user.is_empty() {
+            #[cfg(windows)]
+            return Ok(Ctx::Native(crate::winsspi::Native::new(&target)?));
+            #[cfg(not(windows))]
+            return Err(Failure::CurrentUserUnsupported);
+        }
         let computer = std::env::var("COMPUTERNAME").ok().or_else(|| std::fs::read_to_string("/proc/sys/kernel/hostname").ok()).unwrap_or_else(|| "surveyscan".into()).trim().to_string();
         let protocol: Box<dyn sspi::negotiate::ProtocolConfig> = match &t.kdc {
             Some(k) => Box::new(sspi::KerberosConfig::new_with_kdc_url(k, computer.clone())),
@@ -197,20 +206,74 @@ impl Session {
         let packages = if t.kdc.is_some() { "kerberos,!ntlm" } else { "!kerberos,ntlm" };
         let mut ctx = Negotiate::new_client(NegotiateConfig::new(protocol, Some(packages.into()), computer)).map_err(|_| Failure::Protocol("negotiate"))?;
         let identity = AuthIdentity { username: Username::parse(&t.user).map_err(|_| Failure::AuthFailed)?, password: t.password.clone().into() };
-        let mut creds = ctx.acquire_credentials_handle().with_credential_use(CredentialUse::Outbound).with_auth_data(&identity.into()).execute(&mut ctx).map_err(|_| Failure::AuthFailed)?.credentials_handle;
-        let target = format!("HTTP/{}", t.host);
+        let creds = ctx.acquire_credentials_handle().with_credential_use(CredentialUse::Outbound).with_auth_data(&identity.into()).execute(&mut ctx).map_err(|_| Failure::AuthFailed)?.credentials_handle;
+        Ok(Ctx::Sspi { ctx: Box::new(ctx), creds, target })
+    }
+
+    /// Шаг входа: (маркер для сервера, нужен ли ещё шаг).
+    fn step(&mut self, input: Option<&[u8]>) -> Result<(Vec<u8>, bool), Failure> {
+        match self {
+            Ctx::Sspi { ctx, creds, target } => {
+                let mut inb = vec![SecurityBuffer::new(input.map(|b| b.to_vec()).unwrap_or_default(), BufferType::Token)];
+                let mut outb = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
+                let mut b = ctx.initialize_security_context().with_credentials_handle(creds).with_context_requirements(FLAGS).with_target_data_representation(DataRepresentation::Native).with_target_name(target).with_output(&mut outb);
+                if input.is_some() {
+                    b = b.with_input(&mut inb);
+                }
+                let r = ctx.initialize_security_context_impl(&mut b).map_err(|_| Failure::Protocol("isc"))?.resolve_with_client(&KdcClient).map_err(|e| if matches!(e.error_type, sspi::ErrorKind::NoAuthenticatingAuthority) { Failure::Unreachable } else { Failure::AuthFailed })?;
+                Ok((outb[0].buffer.clone(), r.status == SecurityStatus::ContinueNeeded))
+            }
+            #[cfg(windows)]
+            Ctx::Native(n) => n.step(input),
+        }
+    }
+
+    fn wrap(&mut self, msg: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Failure> {
+        match self {
+            Ctx::Sspi { ctx, .. } => {
+                let sizes = ctx.query_context_sizes().map_err(|_| Failure::Protocol("sizes"))?;
+                let mut token = vec![0u8; sizes.security_trailer as usize];
+                let mut data = msg.to_vec();
+                let mut bufs = [SecurityBufferRef::token_buf(&mut token), SecurityBufferRef::data_buf(&mut data)];
+                ctx.encrypt_message(EncryptionFlags::empty(), &mut bufs).map_err(|_| Failure::Protocol("encrypt"))?;
+                Ok((bufs[0].data().to_vec(), bufs[1].data().to_vec()))
+            }
+            #[cfg(windows)]
+            Ctx::Native(n) => n.wrap(msg),
+        }
+    }
+
+    fn unwrap(&mut self, mut token: Vec<u8>, mut data: Vec<u8>) -> Result<Vec<u8>, Failure> {
+        match self {
+            Ctx::Sspi { ctx, .. } => {
+                let mut bufs = [SecurityBufferRef::token_buf(&mut token), SecurityBufferRef::data_buf(&mut data)];
+                ctx.decrypt_message(&mut bufs).map_err(|_| Failure::Protocol("decrypt"))?;
+                Ok(bufs[1].data().to_vec())
+            }
+            #[cfg(windows)]
+            Ctx::Native(n) => n.unwrap(token, data),
+        }
+    }
+}
+
+pub struct Session {
+    http: Http,
+    ctx: Ctx,
+}
+
+fn auth_token(resp: &Response) -> Option<Vec<u8>> {
+    resp.headers.iter().filter(|(k, _)| k.eq_ignore_ascii_case("WWW-Authenticate")).find_map(|(_, v)| v.strip_prefix("Negotiate ").and_then(|t| STANDARD.decode(t.trim()).ok()))
+}
+
+impl Session {
+    /// Вход Negotiate на соединении (пустой user — текущая учётка Windows; иначе Kerberos при известном KDC или NTLM); отказ — без повторов.
+    pub fn connect(t: &Target) -> Result<Session, Failure> {
+        let mut ctx = Ctx::new(t)?;
+        let mut http = Http::connect(&t.ip, t.port, &t.host)?;
         let mut input: Option<Vec<u8>> = None;
         for _ in 0..6 {
-            let mut inb = vec![SecurityBuffer::new(input.clone().unwrap_or_default(), BufferType::Token)];
-            let mut outb = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-            let flags = ClientRequestFlags::MUTUAL_AUTH | ClientRequestFlags::CONFIDENTIALITY | ClientRequestFlags::INTEGRITY | ClientRequestFlags::SEQUENCE_DETECT | ClientRequestFlags::REPLAY_DETECT;
-            let mut b = ctx.initialize_security_context().with_credentials_handle(&mut creds).with_context_requirements(flags).with_target_data_representation(DataRepresentation::Native).with_target_name(&target).with_output(&mut outb);
-            if input.is_some() {
-                b = b.with_input(&mut inb);
-            }
-            let r = ctx.initialize_security_context_impl(&mut b).map_err(|_| Failure::Protocol("isc"))?.resolve_with_client(&KdcClient).map_err(|e| if matches!(e.error_type, sspi::ErrorKind::NoAuthenticatingAuthority) { Failure::Unreachable } else { Failure::AuthFailed })?;
-            let token = outb[0].buffer.clone();
-            if token.is_empty() && r.status == SecurityStatus::Ok {
+            let (token, more) = ctx.step(input.as_deref())?;
+            if token.is_empty() && !more {
                 return Ok(Session { http, ctx });
             }
             let resp = http.post(Some(&format!("Negotiate {}", STANDARD.encode(&token))), None, &[])?;
@@ -218,15 +281,12 @@ impl Session {
                 200 => {
                     // взаимная проверка (Kerberos): последний маркер сервера
                     if let Some(tok) = auth_token(&resp) {
-                        let mut inb = vec![SecurityBuffer::new(tok, BufferType::Token)];
-                        let mut outb = vec![SecurityBuffer::new(Vec::new(), BufferType::Token)];
-                        let mut b = ctx.initialize_security_context().with_credentials_handle(&mut creds).with_context_requirements(flags).with_target_data_representation(DataRepresentation::Native).with_target_name(&target).with_input(&mut inb).with_output(&mut outb);
-                        ctx.initialize_security_context_impl(&mut b).map_err(|_| Failure::Protocol("isc"))?.resolve_with_client(&KdcClient).map_err(|_| Failure::AuthFailed)?;
+                        ctx.step(Some(&tok)).map_err(|_| Failure::AuthFailed)?;
                     }
                     return Ok(Session { http, ctx });
                 }
                 401 => match auth_token(&resp) {
-                    Some(tok) if r.status == SecurityStatus::ContinueNeeded => input = Some(tok),
+                    Some(tok) if more => input = Some(tok),
                     _ => return Err(Failure::AuthFailed),
                 },
                 _ => return Err(Failure::Protocol("auth status")),
@@ -236,17 +296,7 @@ impl Session {
     }
 
     fn seal(&mut self, msg: &[u8]) -> Result<Vec<u8>, Failure> {
-        let sizes = self.ctx.query_context_sizes().map_err(|_| Failure::Protocol("sizes"))?;
-        let mut token = vec![0u8; sizes.security_trailer as usize];
-        let mut data = msg.to_vec();
-        {
-            let mut bufs = [SecurityBufferRef::token_buf(&mut token), SecurityBufferRef::data_buf(&mut data)];
-            self.ctx.encrypt_message(EncryptionFlags::empty(), &mut bufs).map_err(|_| Failure::Protocol("encrypt"))?;
-            let t = bufs[0].data().to_vec();
-            let d = bufs[1].data().to_vec();
-            token = t;
-            data = d;
-        }
+        let (token, data) = self.ctx.wrap(msg)?;
         let mut b = format!("{BOUNDARY}\r\n\tContent-Type: {PROTOCOL}\r\n\tOriginalContent: type=application/soap+xml;charset=UTF-8;Length={}\r\n{BOUNDARY}\r\n\tContent-Type: application/octet-stream\r\n", msg.len()).into_bytes();
         b.extend_from_slice(&(token.len() as u32).to_le_bytes());
         b.extend_from_slice(&token);
@@ -285,13 +335,7 @@ impl Session {
             if n == 0 || 4 + n > payload.len() {
                 return Err(Failure::Protocol("payload"));
             }
-            let mut token = payload[4..4 + n].to_vec();
-            let mut data = payload[4 + n..].to_vec();
-            let plain = {
-                let mut bufs = [SecurityBufferRef::token_buf(&mut token), SecurityBufferRef::data_buf(&mut data)];
-                self.ctx.decrypt_message(&mut bufs).map_err(|_| Failure::Protocol("decrypt"))?;
-                bufs[1].data().to_vec()
-            };
+            let plain = self.ctx.unwrap(payload[4..4 + n].to_vec(), payload[4 + n..].to_vec())?;
             if plain.len() != want {
                 return Err(Failure::Protocol("length mismatch"));
             }
@@ -365,7 +409,7 @@ pub fn run_script(s: &mut Session, to: &str, script: &str, limit: usize, deadlin
         "<rsp:Shell><rsp:InputStreams>stdin</rsp:InputStreams><rsp:OutputStreams>stdout stderr</rsp:OutputStreams></rsp:Shell>"))?;
     let shell = between(&created, "<rsp:ShellId", "</rsp:ShellId>").or_else(|| between(&created, "<w:Selector Name=\"ShellId\"", "</w:Selector>")).ok_or(Failure::Protocol("shell id"))?.trim().to_string();
     let result = (|| {
-        let loader = "$s = [Console]::In.ReadToEnd(); Invoke-Expression $s";
+        let loader = "$ProgressPreference = 'SilentlyContinue';$s = [Console]::In.ReadToEnd(); Invoke-Expression $s";
         let utf16: Vec<u8> = loader.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
         let args = format!("-NoProfile -NonInteractive -EncodedCommand {}", STANDARD.encode(utf16));
         let cmd = s.call(&envelope(to, &format!("{ns}/Command"), Some(&shell), &[("WINRS_CONSOLEMODE_STDIN", "TRUE"), ("WINRS_SKIP_CMD_SHELL", "FALSE")],
@@ -378,7 +422,7 @@ pub fn run_script(s: &mut Session, to: &str, script: &str, limit: usize, deadlin
             let end = if i + 1 == chunks.len() { " End=\"true\"" } else { "" };
             s.call(&envelope(to, &format!("{ns}/Send"), Some(&shell), &[], &format!("<rsp:Send><rsp:Stream Name=\"stdin\" CommandId=\"{command}\"{end}>{}</rsp:Stream></rsp:Send>", STANDARD.encode(c))))?;
         }
-        let mut out = vec![];
+        let (mut out, mut err) = (vec![], vec![]);
         loop {
             if Instant::now() > deadline {
                 return Err(Failure::Timeout);
@@ -400,12 +444,19 @@ pub fn run_script(s: &mut Session, to: &str, script: &str, limit: usize, deadlin
                     if out.len() > limit {
                         return Err(Failure::Protocol("output limit"));
                     }
+                } else if tag.contains("Name=\"stderr\"") && err.len() < 64 << 10 {
+                    err.extend(STANDARD.decode(rest[gt + 1..close].trim()).unwrap_or_default());
                 }
                 rest = &rest[close..];
             }
             if r.contains("CommandState/Done") {
                 let code: i64 = between(&r, "<rsp:ExitCode", "</rsp:ExitCode>").and_then(|c| c.trim().parse().ok()).unwrap_or(0);
-                if code != 0 {
+                if code != 0 || (out.is_empty() && debug()) {
+                    if debug() {
+                        // отладка: код и короткий очищенный хвост stderr цели
+                        let e = String::from_utf8_lossy(&err).split_whitespace().collect::<Vec<_>>().join(" ");
+                        eprintln!("winrm debug: exit {code}, stdout {} B, stderr: {}", out.len(), e.chars().rev().take(600).collect::<Vec<_>>().into_iter().rev().collect::<String>());
+                    }
                     return Err(Failure::Script);
                 }
                 return Ok(String::from_utf8_lossy(&out).into_owned());
@@ -416,6 +467,10 @@ pub fn run_script(s: &mut Session, to: &str, script: &str, limit: usize, deadlin
     result
 }
 
+fn debug() -> bool {
+    std::env::var("SURVEYSCAN_AGENT_DEBUG").as_deref() == Ok("1")
+}
+
 /// Сбор Windows по WinRM: (кандидаты, 12 разделов) или причина отказа.
 pub fn collect(t: &Target) -> Result<(serde_json::Value, Vec<serde_json::Value>), Failure> {
     let deadline = Instant::now() + Duration::from_secs(150);
@@ -423,6 +478,11 @@ pub fn collect(t: &Target) -> Result<(serde_json::Value, Vec<serde_json::Value>)
     let to = format!("http://{}:{}/wsman", t.host, t.port);
     let out = run_script(&mut s, &to, crate::winrmparse::SCRIPT, 16 << 20, deadline)?;
     let now = crate::client::now_rfc3339();
-    let (sections, cands) = crate::winrmparse::parse(out.as_bytes(), &now).map_err(|_| Failure::Script)?;
+    let (sections, cands) = crate::winrmparse::parse(out.as_bytes(), &now).map_err(|e| {
+        if debug() {
+            eprintln!("winrm debug: {e}; stdout {} B, head: {:?}", out.len(), out.chars().take(200).collect::<String>());
+        }
+        Failure::Script
+    })?;
     Ok((serde_json::Value::Array(cands), crate::winrmparse::complete12(sections, &now)))
 }

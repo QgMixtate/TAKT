@@ -94,6 +94,8 @@ jobs:
       - name: Rust portable collects this Windows over WinRM (HTTP 5985, NTLM, per-message encryption, local account) — C52.06
         working-directory: v2
         shell: pwsh
+        env:
+          SURVEYSCAN_AGENT_DEBUG: '1'
         run: |
           $ErrorActionPreference = 'Stop'
           $pwText = [guid]::NewGuid().ToString() + 'aA1!'
@@ -120,8 +122,13 @@ jobs:
           if ($out.Contains($pwText) -or [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($pkg)).Contains($pwText)) { throw 'password leaked' }
           & .\surveyscan-portable.exe verify --package $pkg --public-key $pub
           if ($LASTEXITCODE -ne 0) { throw 'Go verify of the rust WinRM package failed' }
+          # вход текущей учёткой (встроенный SSPI, без пароля): вход должен пройти — сбор или отказ прав UAC, но не AUTH_FAILED
+          @{ profiles = @(@{ name = 'me'; kind = 'winrm'; auth = 'current_user' }); rules = @(@{ profile = 'me'; kind = 'windows_winrm' }) } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $state 'profiles.json') -Encoding ascii
+          $cu = '' | & $exe collect --state $state --dry-run --no-host --secrets-stdin 2>&1 | Out-String
+          Write-Output $cu
+          if ($cu -notmatch 'DRY RUN: 1 target\(s\) ok' -and $cu -notmatch 'FAILED: ACCESS_DENIED') { throw 'current_user WinRM sign-in failed' }
           Remove-LocalUser -Name ssrust
-          Write-Output "rust portable WinRM: $rows rows, AUTH_FAILED on a wrong password, Go verified"
+          Write-Output "rust portable WinRM: $rows rows, AUTH_FAILED on a wrong password, current_user sign-in, Go verified"
           exit 0
       - name: Rust agent as a LocalSystem service through SCM (install, start, clean stop on missing identity, uninstall)
         working-directory: v2

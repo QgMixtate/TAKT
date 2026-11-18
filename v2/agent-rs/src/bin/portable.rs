@@ -135,11 +135,8 @@ fn main() -> ExitCode {
                     let (ip, kind) = (h["ip"].as_str().unwrap_or_default().to_string(), h["kind"].as_str().unwrap_or_default());
                     match profiles.bind(&ip, kind, None) {
                         Some(pr) if pr.kind == "ssh" => plan.push((ip, pr.clone())),
-                        Some(pr) if pr.kind == "winrm" && pr.auth == "password" => winrm_plan.push((ip, pr.clone())),
-                        Some(pr) => {
-                            // вход текущей учёткой Windows (current_user) — следующий шаг: узел помечается, а не пропадает
-                            outcomes.insert(ip, serde_json::json!({"outcome": "skipped", "reason": "COLLECTOR_NOT_AVAILABLE", "profile": pr.name}));
-                        }
+                        Some(pr) if pr.kind == "winrm" => winrm_plan.push((ip, pr.clone())),
+                        Some(_) => {}
                         None => {}
                     }
                 }
@@ -178,7 +175,7 @@ fn main() -> ExitCode {
                             sc.spawn(|| loop {
                                 let Some((ip, pr)) = queue.lock().unwrap().pop() else { return };
                                 eprintln!("winrm {ip}: сбор (профиль «{}»)", pr.name);
-                                let t = ssagent::winrm::Target { host: ip.clone(), ip: ip.clone(), port: pr.port.unwrap_or(5985), user: pr.user.clone(), password: secrets.get(&pr.name).unwrap_or("").to_string(), kdc: pr.kdc.clone() };
+                                let t = ssagent::winrm::Target { host: ip.clone(), ip: ip.clone(), port: pr.port.unwrap_or(5985), user: if pr.auth == "current_user" { String::new() } else { pr.user.clone() }, password: secrets.get(&pr.name).unwrap_or("").to_string(), kdc: pr.kdc.clone() };
                                 let r = ssagent::winrm::collect(&t);
                                 out.lock().unwrap().push((ip, pr.name.clone(), r));
                             });

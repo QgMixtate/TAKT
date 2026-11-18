@@ -31,3 +31,5 @@ pub mod profiles;
 pub mod sshcollect;
 pub mod winrmparse;
 pub mod winrm;
+#[cfg(windows)]
+pub mod winsspi;

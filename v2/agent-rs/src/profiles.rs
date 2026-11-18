@@ -12,6 +12,7 @@ pub struct Profile {
     pub name: String,
     /// ssh | winrm
     pub kind: String,
+    #[serde(default)]
     pub user: String,
     /// password | key (ssh) | current_user (winrm на Windows: Kerberos/NTLM текущего входа)
     pub auth: String,
