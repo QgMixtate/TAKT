@@ -177,6 +177,7 @@ impl Agent {
         let now = Instant::now;
         let (mut inventory_at, mut heartbeat_at, mut profile_at, mut profile12_at) = (now(), now(), now(), now());
         let (mut delivery_at, mut backoff) = (now(), Duration::from_secs(1));
+        let mut renewal_at = now();
         while !stop() {
             if now() >= profile_at {
                 self.poll_profile10();
@@ -184,6 +185,21 @@ impl Agent {
             }
             if now() >= profile12_at {
                 profile12_at = now() + if self.ensure_profile12() { Duration::from_secs(60) } else { Duration::from_secs(20) };
+            }
+            if now() >= renewal_at && crate::renew::due(&self.client) {
+                match self.client.renew() {
+                    Ok(()) => {
+                        if let Some(p) = self.profile10.clone() {
+                            profile::apply(&mut self.client, &p);
+                        }
+                        report("renewal_checked");
+                    }
+                    Err(e) => {
+                        report("renewal_pending");
+                        detail("renewal", &e);
+                    }
+                }
+                renewal_at = now() + Duration::from_secs(60);
             }
             if now() >= heartbeat_at {
                 match self.client.heartbeat() {

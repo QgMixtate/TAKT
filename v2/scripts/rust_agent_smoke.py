@@ -50,6 +50,10 @@ def scenario(**s):
  sections=int(sql(f"SELECT count(DISTINCT s.section_name) FROM inventory.observation_sections s JOIN inventory.observations o USING(tenant_id,observation_id) WHERE o.source_id='{source}'"))
  assert sections>=10,sections
  checks.append(f'rust agent inventory 1.2: capabilities negotiated (collector + centre signatures), signed profile cached, Linux collected ({sections} sections), signed batch queued, delivered and removed only on the centre-signed result')
+ p=subprocess.run([rust,'renew','--config',str(base/'rust'/'agent.json')],capture_output=True,text=True,timeout=60);assert p.returncode==0 and 'certificate_renewed' in p.stdout,(p.stdout,p.stderr)
+ assert (base/'rust'/'state'/'tls-identity.json').exists() and not (base/'rust'/'state'/'renewal.pending.json').exists()
+ p=subprocess.run([rust,'heartbeat','--config',str(base/'rust'/'agent.json')],capture_output=True,text=True,timeout=60);assert p.returncode==0 and 'heartbeat_accepted' in p.stdout,p.stderr
+ checks.append('rust agent certificate renewal: fresh cert_renew challenge, new TLS key and CSR, signed request, result verified to the CA with unchanged claims; heartbeat works on the rotated identity')
  # Go-агент работает на каталоге состояния Rust-агента: формат совпадает (замена без перерегистрации)
  go=str(ROOT/'.dist/surveyscan-agent');process=start('go-agent-on-rust-state',[go,'run','--config',str(base/'rust'/'agent.json')]);deadline=time.monotonic()+120
  while time.monotonic()<deadline:

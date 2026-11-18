@@ -43,6 +43,16 @@ fn main() -> ExitCode {
                 }),
             None => Err("profile --config ПУТЬ".into()),
         },
+        Some("renew") => match arg(&args, "--config") {
+            Some(config) => ssagent::enroll::read_config(std::path::Path::new(&config)).and_then(|cfg| {
+                let _lock = ssagent::run::lock_state(std::path::Path::new(&cfg.state_directory))?;
+                let mut c = ssagent::client::Client::open(cfg)?;
+                c.renew()?;
+                println!("certificate_renewed");
+                Ok(())
+            }),
+            None => Err("renew --config ПУТЬ".into()),
+        },
         Some("run") | Some("once") => match arg(&args, "--config") {
             Some(config) => ssagent::enroll::read_config(std::path::Path::new(&config)).and_then(|cfg| {
                 let (mut agent, _lock) = ssagent::run::Agent::open(cfg)?;
