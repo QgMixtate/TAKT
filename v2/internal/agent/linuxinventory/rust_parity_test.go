@@ -36,6 +36,9 @@ func TestRustParityVectors(t *testing.T) {
 		"apk":      APKPackages(read("apk")),
 		"services": SystemdServices(read("units"), read("unitfiles")),
 		"dmi":      DMI(dmi),
+		"identity": Identity(read("hostname"), read("machine-id")),
+		"os":       OS(read("os-release"), read("uname")),
+		"network":  Network(read("iplink"), read("ipaddr")),
 	}
 	raw, err := json.MarshalIndent(got, "", " ")
 	if err != nil {

@@ -24,6 +24,9 @@ fn linux_parsers_match_go_vectors() {
         "apk": p::apk_packages(&read("apk")),
         "services": p::systemd_services(&read("units"), &read("unitfiles")),
         "dmi": p::dmi(&dmi),
+        "identity": p::identity(&read("hostname"), &read("machine-id")),
+        "os": p::os(&read("os-release"), &read("uname")),
+        "network": p::network(&read("iplink"), &read("ipaddr")),
     });
     let want: Value = serde_json::from_str(&read("expected.json")).unwrap();
     for (k, v) in want.as_object().unwrap() {

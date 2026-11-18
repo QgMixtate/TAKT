@@ -87,6 +87,12 @@
    "name": "Physical memory"
   }
  ],
+ "identity": [
+  {
+   "hostname": "calc-dep",
+   "machine_uuid": "01234567-89ab-cdef-0123-456789abcdef"
+  }
+ ],
  "mounts": [
   {
    "device_id": "/dev/sda1",
@@ -101,6 +107,46 @@
    "kind": "mount",
    "name": "/mnt/my disk",
    "read_only": false
+  }
+ ],
+ "network": [
+  {
+   "addresses": [
+    {
+     "ip": "10.170.108.7",
+     "prefix": 24
+    },
+    {
+     "ip": "2001:db8::7",
+     "prefix": 64
+    }
+   ],
+   "interface_index": 2,
+   "mac": "bc:24:11:aa:bb:cc",
+   "mtu": 1500,
+   "name": "ens18"
+  },
+  {
+   "addresses": [],
+   "interface_index": 3,
+   "mtu": 1450,
+   "name": "veth1"
+  },
+  {
+   "addresses": [
+    {
+     "ip": "172.17.0.1",
+     "prefix": 16
+    }
+   ],
+   "name": "docker0"
+  }
+ ],
+ "os": [
+  {
+   "architecture": "amd64",
+   "name": "Debian GNU/Linux",
+   "version": "12"
   }
  ],
  "packages": [

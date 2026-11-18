@@ -491,3 +491,153 @@ pub fn dmi(files: &HashMap<String, String>) -> Vec<Row> {
     }
     vec![r]
 }
+
+fn machine_id_ok(id: &str) -> bool {
+    id.len() == 32 && id.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// Вывод `hostname` и /etc/machine-id → строка identity (как linuxinventory.Identity).
+pub fn identity(hostname: &str, machine_id: &str) -> Vec<Row> {
+    let h = clean(hostname.trim(), 255);
+    if h.is_empty() {
+        return vec![];
+    }
+    let mut r = row(json!({"hostname": h}));
+    let id = machine_id.trim().to_lowercase();
+    if machine_id_ok(&id) {
+        r.insert("machine_uuid".into(), format!("{}-{}-{}-{}-{}", &id[..8], &id[8..12], &id[12..16], &id[16..20], &id[20..]).into());
+    }
+    vec![r]
+}
+
+/// os-release (как данные) и `uname -m` → строка os (как linuxinventory.OS).
+pub fn os(os_release: &str, uname: &str) -> Vec<Row> {
+    let mut values: HashMap<&str, String> = HashMap::new();
+    for l in lines(os_release) {
+        let l = l.trim();
+        let Some((k, v)) = cut(l, "=") else { continue };
+        if l.starts_with('#') || !["NAME", "VERSION_ID", "ID"].contains(&k) {
+            continue;
+        }
+        let v = if v.starts_with('"') {
+            match serde_json::from_str::<String>(v) {
+                Ok(u) => u,
+                Err(_) => return vec![],
+            }
+        } else {
+            v.trim_matches('\'').to_string()
+        };
+        values.insert(k, v);
+    }
+    let mut name = values.get("NAME").cloned().unwrap_or_default();
+    if name.is_empty() {
+        name = values.get("ID").cloned().unwrap_or_default();
+    }
+    let version = values.get("VERSION_ID").cloned().unwrap_or_default();
+    let arch = match uname.trim() {
+        "x86_64" | "amd64" => "amd64",
+        "aarch64" | "arm64" => "arm64",
+        "i386" | "i686" => "386",
+        _ => "",
+    };
+    if clean(&name, 128).is_empty() || clean(&version, 128).is_empty() || arch.is_empty() {
+        return vec![];
+    }
+    vec![row(json!({"name": name, "version": version, "architecture": arch}))]
+}
+
+fn mac_ok(m: &str) -> bool {
+    let b = m.as_bytes();
+    b.len() == 17 && b.iter().enumerate().all(|(i, c)| if i % 3 == 2 { *c == b':' } else { c.is_ascii_digit() || (b'a'..=b'f').contains(c) })
+}
+
+/// `ip -o link show` и `ip -o addr show` → интерфейсы (как linuxinventory.Network); lo и link-local пропускаются.
+pub fn network(link: &str, addr: &str) -> Vec<Row> {
+    struct Nic {
+        index: i64,
+        mac: String,
+        mtu: i64,
+        addrs: Vec<Value>,
+    }
+    let mut nics: HashMap<String, Nic> = HashMap::new();
+    let mut order: Vec<String> = vec![];
+    let mut get = |name: &str, nics: &mut HashMap<String, Nic>| {
+        if !nics.contains_key(name) {
+            nics.insert(name.to_string(), Nic { index: 0, mac: String::new(), mtu: 0, addrs: vec![] });
+            order.push(name.to_string());
+        }
+    };
+    for l in lines(link) {
+        let f = fields(l);
+        if f.len() < 3 {
+            continue;
+        }
+        let idx = f[0].trim_end_matches(':').parse::<i64>();
+        let name = f[1].split('@').next().unwrap_or("").trim_end_matches(':');
+        let Ok(idx) = idx else { continue };
+        if idx < 1 || name == "lo" || clean(name, 128).is_empty() {
+            continue;
+        }
+        get(name, &mut nics);
+        let n = nics.get_mut(name).unwrap();
+        n.index = idx;
+        let mut i = 2;
+        while i + 1 < f.len() {
+            match f[i] {
+                "mtu" => n.mtu = f[i + 1].parse().unwrap_or(0),
+                "link/ether" => {
+                    let m = f[i + 1].to_lowercase();
+                    if m != "00:00:00:00:00:00" && mac_ok(&m) {
+                        n.mac = m;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+    }
+    for l in lines(addr) {
+        let f = fields(l);
+        if f.len() < 4 || (f[2] != "inet" && f[2] != "inet6") {
+            continue;
+        }
+        let name = f[1].split('@').next().unwrap_or("");
+        if name == "lo" {
+            continue;
+        }
+        let Some((ip, bits)) = f[3].split_once('/') else { continue };
+        let Ok(ip) = ip.parse::<std::net::IpAddr>() else { continue };
+        let Ok(bits) = bits.parse::<u8>() else { continue };
+        let link_local = match ip {
+            std::net::IpAddr::V4(a) => a.is_link_local(),
+            std::net::IpAddr::V6(a) => (a.segments()[0] & 0xffc0) == 0xfe80,
+        };
+        if bits > if ip.is_ipv4() { 32 } else { 128 } || link_local {
+            continue;
+        }
+        get(name, &mut nics);
+        let n = nics.get_mut(name).unwrap();
+        if n.addrs.len() < 64 {
+            n.addrs.push(json!({"ip": ip.to_string(), "prefix": bits}));
+        }
+    }
+    let mut rows = vec![];
+    for name in order {
+        if rows.len() >= MAX_ROWS {
+            break;
+        }
+        let n = &nics[&name];
+        let mut r = row(json!({"name": name, "addresses": n.addrs}));
+        if !n.mac.is_empty() {
+            r.insert("mac".into(), n.mac.clone().into());
+        }
+        if n.mtu > 0 {
+            r.insert("mtu".into(), n.mtu.into());
+        }
+        if n.index > 0 {
+            r.insert("interface_index".into(), n.index.into());
+        }
+        rows.push(r);
+    }
+    rows
+}
