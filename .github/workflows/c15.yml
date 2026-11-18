@@ -105,7 +105,7 @@ jobs:
           & $exe install-service --name SurveyscanRustCi --config $cfg
           if ($LASTEXITCODE -eq 0) { throw 'second install must be refused' }
           $qc = (sc.exe qc SurveyscanRustCi) -join ' '
-          if ($qc -notmatch 'AUTO_START \(DELAYED\)' -or $qc -notmatch 'LocalSystem') { throw "unexpected service config: $qc" }
+          if ($qc -notmatch 'AUTO_START\s+\(DELAYED\)' -or $qc -notmatch 'LocalSystem') { throw "unexpected service config: $qc" }
           sc.exe start SurveyscanRustCi | Out-Null
           $deadline = (Get-Date).AddSeconds(30)
           do { Start-Sleep -Milliseconds 500; $q = (sc.exe queryex SurveyscanRustCi) -join ' ' } while ($q -notmatch 'STOPPED' -and (Get-Date) -lt $deadline)
