@@ -53,6 +53,30 @@ fn main() -> ExitCode {
             println!("Передайте public_key в центр для доверия при импорте. Ключ подписи остаётся в {}", dir.display());
             Ok(())
         }),
+        Some("discover") => state().and_then(|dir| {
+            use ssagent::discover as d;
+            let list = |name: &str| arg(&args, name).map(|v| v.split(',').filter(|x| !x.trim().is_empty()).map(d::Net::parse).collect::<Result<Vec<_>, _>>()).unwrap_or(Ok(vec![]));
+            let (ranges, excluded) = (list("--range")?, list("--exclude")?);
+            if ranges.is_empty() {
+                return Err("discover --state КАТАЛОГ --range 10.20.0.0/16[,…] [--exclude …] [--rate 200] [--parallel 64] [--timeout-ms 800] [--max-minutes 60]".into());
+            }
+            let num = |n: &str, def: u64, lo: u64, hi: u64| -> Result<u64, String> {
+                arg(&args, n).map(|v| v.parse::<u64>().ok().filter(|x| (lo..=hi).contains(x)).ok_or(format!("{n}: {lo}..{hi}"))).unwrap_or(Ok(def))
+            };
+            let addresses = d::hosts(&ranges, &excluded)?;
+            let o = d::Options { ports: d::DEFAULT_PORTS.to_vec(), timeout: std::time::Duration::from_millis(num("--timeout-ms", 800, 100, 10000)?), parallel: num("--parallel", 64, 1, 256)? as usize,
+                rate_per_sec: num("--rate", 200, 1, 5000)? as u32, deadline: Some(std::time::Instant::now() + std::time::Duration::from_secs(60 * num("--max-minutes", 60, 1, 1440)?)) };
+            p::load(&dir)?;
+            eprintln!("обследование: {} адресов, порты {:?}, не более {} подключений/с, параллельно {}", addresses.len(), o.ports, o.rate_per_sec, o.parallel);
+            let started = ssagent::client::now_rfc3339();
+            let (hosts, complete) = d::run(&addresses, &o, &|done, total, found| eprintln!("[{done}/{total}] найдено: {found}"));
+            let doc = serde_json::json!({"ranges": ranges.iter().map(|r| r.text()).collect::<Vec<_>>(), "excluded": excluded.iter().map(|r| r.text()).collect::<Vec<_>>(),
+                "started_at": started, "finished_at": ssagent::client::now_rfc3339(), "complete": complete, "hosts": hosts});
+            ssagent::state::save_json(&dir.join(p::DISCOVERY_FILE), &doc)?;
+            let count = |k: &str| hosts.iter().filter(|h| h["kind"] == k).count();
+            println!("DISCOVERED: {} узлов (Linux/SSH {}, Windows {}, сетевых {}, не определено {}){}", hosts.len(), count("linux_ssh"), count("windows_winrm"), count("network_snmp"), count("unknown"), if complete { "" } else { "; обследование прервано по сроку" });
+            Ok(())
+        }),
         Some("center-key") => state().and_then(|dir| {
             let k = arg(&args, "--center-key").ok_or("--center-key КЛЮЧ")?;
             println!("encryption_key_id={}: следующие пакеты шифруются ключом центра", p::set_center_key(&dir, &k)?);
@@ -79,7 +103,15 @@ fn main() -> ExitCode {
             }
             let o = p::observation(&dir, &id, "host", &name, &candidates, sections)?;
             let signed = p::sign_observation(&key, &o)?;
-            let mut data = p::write_package(&key, &id, &[signed])?;
+            // узлы последнего обследования (C23.04): до профилей учёток все, кроме этого ПК, — «нет профиля»
+            let discovery = match std::fs::read(dir.join(p::DISCOVERY_FILE)) {
+                Ok(raw) => {
+                    let last: serde_json::Value = serde_json::from_slice(&raw).map_err(|_| "discovery-last.json повреждён")?;
+                    Some(p::discovery_doc(&last, &Default::default())?)
+                }
+                Err(_) => None,
+            };
+            let mut data = p::write_package_with(&key, &id, &[signed], discovery.as_deref())?;
             let center = p::center_key(&dir)?;
             if let Some(c) = center {
                 data = p::seal(&c, &data)?;

@@ -26,3 +26,4 @@ pub mod wmi_windows;
 #[cfg(windows)]
 pub mod winsvc;
 pub mod portable;
+pub mod discover;

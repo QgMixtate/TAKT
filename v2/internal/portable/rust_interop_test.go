@@ -3,6 +3,7 @@ package portable
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,6 +39,15 @@ func TestRustPortableEncryptedPackageImports(t *testing.T) {
 	if err != nil || len(signing) != ed25519.PublicKeySize {
 		t.Fatal("public key", err)
 	}
+	// обследование (C52.06/C23.04): локальный адрес с открытым портом WinRM — узел попадает в discovery.json
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	if out, err = exec.Command(bin, "discover", "--state", state, "--range", "127.0.0.1/32", "--rate", "1000").CombinedOutput(); err != nil {
+		t.Fatal(string(out))
+	}
 	if out, err = exec.Command(bin, "collect", "--state", state, "--out", pkg).CombinedOutput(); err != nil {
 		t.Fatal(string(out))
 	}
@@ -60,6 +70,10 @@ func TestRustPortableEncryptedPackageImports(t *testing.T) {
 	res, err := Import(plain, map[string]ed25519.PublicKey{KeyID(key): key}, Known{}, DefaultLimits(), v)
 	if err != nil || len(res.Accepted) != 1 || len(res.Quarantined) != 0 {
 		t.Fatal("import", err, res.Quarantined)
+	}
+	// 127.0.0.1 отвечает RST на прочие порты — узел найден, профиля нет (сбор удалённых — следующий шаг)
+	if res.Discovery == nil || len(res.Discovery.Hosts) != 1 || res.Discovery.Hosts[0].IP != "127.0.0.1" || res.Discovery.Hosts[0].Outcome != "no_profile" {
+		t.Fatal("discovery in package", res.Discovery)
 	}
 	if out, err = exec.Command(bin, "collect", "--state", state, "--out", pkg).CombinedOutput(); err == nil {
 		t.Fatal("an existing package must never be overwritten", string(out))

@@ -152,15 +152,27 @@ fn zip_store(files: &[(String, Vec<u8>)]) -> Vec<u8> {
 
 /// Пакет C23: канонический манифест, подпись манифеста (base64), наблюдения по id.
 pub fn write_package(key: &SigningKey, id: &Identity, observations: &[(String, Vec<u8>)]) -> Result<Vec<u8>, String> {
+    write_package_with(key, id, observations, None)
+}
+
+/// То же с discovery.json (C23.04): файл перечислен в манифесте (sha256, размер) и покрыт его подписью.
+pub fn write_package_with(key: &SigningKey, id: &Identity, observations: &[(String, Vec<u8>)], discovery: Option<&[u8]>) -> Result<Vec<u8>, String> {
     let mut items: Vec<(String, Vec<u8>)> = observations.to_vec();
     items.sort_by(|a, b| a.0.cmp(&b.0));
     let manifest = json!({"format_version": 1, "tenant_id": id.tenant_id, "source_id": id.source_id, "key_id": id.key_id, "created_at": now_rfc3339(),
         "observations": items.iter().map(|(i, raw)| json!({"observation_id": i, "sha256": sign::hex(&Sha256::digest(raw)), "size": raw.len()})).collect::<Vec<_>>()});
+    let mut manifest = manifest;
+    if let Some(d) = discovery {
+        manifest["discovery"] = json!({"sha256": sign::hex(&Sha256::digest(d)), "size": d.len()});
+    }
     let canon = canonical::canonical_value(&manifest)?;
     let mut msg = MANIFEST_DOMAIN.to_vec();
     msg.extend_from_slice(&canon);
     let sig = STANDARD.encode(key.sign(&msg).to_bytes());
     let mut files = vec![("manifest.json".to_string(), canon), ("manifest.sig".to_string(), sig.into_bytes())];
+    if let Some(d) = discovery {
+        files.push(("discovery.json".to_string(), d.to_vec()));
+    }
     files.extend(items.into_iter().map(|(i, raw)| (format!("obs/{i}.json"), raw)));
     Ok(zip_store(&files))
 }
@@ -218,4 +230,31 @@ pub fn publish(out: &Path, data: &[u8]) -> Result<(), String> {
 
 pub fn public_b64url(key: &VerifyingKey) -> String {
     URL_SAFE_NO_PAD.encode(key.to_bytes())
+}
+
+pub const DISCOVERY_FILE: &str = "discovery-last.json";
+
+/// discovery.json для пакета (C23.04) из последнего обследования: исход по каждому узлу — из outcomes (ip → исход,
+/// причина, профиль, наблюдение); узлы без записи — no_profile.
+pub fn discovery_doc(last: &Value, outcomes: &std::collections::HashMap<String, Value>) -> Result<Vec<u8>, String> {
+    let hosts: Vec<Value> = last["hosts"].as_array().ok_or("discovery invalid")?.iter().map(|h| {
+        let mut row = serde_json::Map::new();
+        for k in ["ip", "ports", "kind"] {
+            row.insert(k.into(), h[k].clone());
+        }
+        match outcomes.get(h["ip"].as_str().unwrap_or_default()) {
+            Some(Value::Object(o)) => {
+                for (k, v) in o {
+                    row.insert(k.clone(), v.clone());
+                }
+            }
+            _ => {
+                row.insert("outcome".into(), "no_profile".into());
+            }
+        }
+        Value::Object(row)
+    }).collect();
+    let doc = json!({"schema_version": {"major": 1, "minor": 0}, "ranges": last["ranges"], "excluded": last["excluded"], "started_at": last["started_at"],
+        "finished_at": last["finished_at"], "complete": last["complete"], "hosts": hosts});
+    serde_json::to_vec(&doc).map_err(|e| e.to_string())
 }
