@@ -101,7 +101,8 @@ jobs:
           $pwText = [guid]::NewGuid().ToString() + 'aA1!'
           New-LocalUser -Name ssrust -Password (ConvertTo-SecureString $pwText -AsPlainText -Force) -AccountNeverExpires | Out-Null
           $acct = "$env:COMPUTERNAME\ssrust"
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\prepare-winrm-target.ps1 -Account $acct -Collector 10.0.0.2 -Kerberos | Out-Null
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\prepare-winrm-target.ps1 -Account $acct -Collector 10.0.0.2 -Kerberos 2>&1 | Out-String | Write-Output
+          if ($LASTEXITCODE -ne 0) { throw "prepare-winrm-target.ps1 failed: $LASTEXITCODE" }
           $exe = (Resolve-Path agent-rs\target\release\surveyscan-portable.exe).Path
           $root = Join-Path $env:RUNNER_TEMP 'rust-winrm'
           $state = Join-Path $root 'state'

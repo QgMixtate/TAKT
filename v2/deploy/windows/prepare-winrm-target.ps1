@@ -32,7 +32,10 @@ if (-not $Gpo) {
 # Stand report #13: Get-WmiObject -Class __SystemSecurity may return an object without methods; call the singleton
 # methods by path. The descriptor is read and written in binary form (GetSD/SetSD) and edited with .NET:
 # GetSecurityDescriptor resolves every trustee and fails ("Unexpected error") on a SID of a deleted account.
-$bin = (Invoke-WmiMethod -Namespace 'root/cimv2' -Path '__SystemSecurity=@' -Name GetSD).SD
+$wmiSec = New-Object System.Management.ManagementObject('root\cimv2:__SystemSecurity=@')
+$got = $wmiSec.InvokeMethod('GetSD', $null, $null)
+if ($got['ReturnValue'] -ne 0) { throw "WMI GetSD failed: $($got['ReturnValue'])" }
+$bin = [byte[]]$got['SD']
 $raw = [System.Security.AccessControl.RawSecurityDescriptor]::new([byte[]]$bin, 0)
 $present = $raw.DiscretionaryAcl | Where-Object { $_.AceQualifier -eq 'AccessAllowed' -and $_.SecurityIdentifier.Value -eq $sid -and ($_.AccessMask -band 0x21) -eq 0x21 }
 if ($present) { Write-Host '[ok] WMI root\cimv2 rights present' }
@@ -43,8 +46,9 @@ else {
   $raw.DiscretionaryAcl.InsertAce($at, $ace)
   $out = New-Object byte[] $raw.BinaryLength
   $raw.GetBinaryForm($out, 0)
-  $r = Invoke-WmiMethod -Namespace 'root/cimv2' -Path '__SystemSecurity=@' -Name SetSD -ArgumentList (,$out)
-  if ($r.ReturnValue -ne 0) { throw "WMI SetSD failed: $($r.ReturnValue)" }
+  $in = $wmiSec.GetMethodParameters('SetSD'); $in['SD'] = $out
+  $r = $wmiSec.InvokeMethod('SetSD', $in, $null)
+  if ($r['ReturnValue'] -ne 0) { throw "WMI SetSD failed: $($r['ReturnValue'])" }
   Write-Host '[+] WMI root\cimv2: Enable Account + Remote Enable'
 }
 
