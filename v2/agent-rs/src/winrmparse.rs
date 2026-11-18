@@ -228,8 +228,25 @@ fn placeholder(v: &str) -> bool {
 }
 
 /// Вывод сценария → (6 разделов, кандидаты). Неразбираемый вывод или fatal — ошибка.
+fn strip_nulls(v: &mut Value) {
+    match v {
+        Value::Object(m) => {
+            m.retain(|_, x| !x.is_null());
+            m.values_mut().for_each(strip_nulls);
+        }
+        Value::Array(a) => {
+            a.retain(|x| !x.is_null());
+            a.iter_mut().for_each(strip_nulls);
+        }
+        _ => {}
+    }
+}
+
 pub fn parse(raw: &[u8], now: &str) -> Result<(Vec<Value>, Vec<Value>), String> {
-    let p: Payload = serde_json::from_slice(raw).map_err(|_| "winrm: unexpected output from target".to_string())?;
+    // null в выводе PowerShell (пустые свойства WMI) — как в Go: нулевое значение поля
+    let mut v: Value = serde_json::from_slice(raw).map_err(|e| format!("winrm: unexpected output from target ({e})"))?;
+    strip_nulls(&mut v);
+    let p: Payload = serde_json::from_value(v).map_err(|e| format!("winrm: unexpected output from target ({e})"))?;
     if !p.fatal.is_empty() {
         return Err(format!("winrm: collection script failed on the target ({})", s(&p.fatal, 64)));
     }

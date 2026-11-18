@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 fn winrm_parse_matches_go_vectors() {
     let dir = format!("{}/testdata/winrm", env!("CARGO_MANIFEST_DIR"));
     let mut got = serde_json::Map::new();
-    for name in ["full", "errors", "fatal"] {
+    for name in ["full", "errors", "fatal", "nulls"] {
         let raw = std::fs::read(format!("{dir}/{name}.json")).unwrap();
         let v = match ssagent::winrmparse::parse(&raw, "2026-01-01T00:00:00Z") {
             Err(_) => json!({"error": true}),

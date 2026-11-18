@@ -14,7 +14,7 @@ import (
 func TestRustParityVectors(t *testing.T) {
 	dir := filepath.Join("..", "..", "..", "agent-rs", "testdata", "winrm")
 	got := map[string]any{}
-	for _, name := range []string{"full", "errors", "fatal"} {
+	for _, name := range []string{"full", "errors", "fatal", "nulls"} {
 		raw, err := os.ReadFile(filepath.Join(dir, name+".json"))
 		if err != nil {
 			t.Fatal(err)

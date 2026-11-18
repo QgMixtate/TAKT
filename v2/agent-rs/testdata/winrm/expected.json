@@ -208,5 +208,89 @@
     "status": "partial"
    }
   ]
+ },
+ "nulls": {
+  "candidates": [
+   {
+    "kind": "hostname",
+    "namespace": "hostname.raw",
+    "value": "WIN-SRV01"
+   },
+   {
+    "kind": "bios_uuid",
+    "namespace": "smbios",
+    "value": "4c4c4544-0000-1000-8000-b2c04f000000"
+   },
+   {
+    "kind": "machine_uuid",
+    "namespace": "windows-machine-guid",
+    "value": "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"
+   }
+  ],
+  "sections": [
+   {
+    "name": "identity",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 1,
+    "records": [
+     {
+      "hostname": "WIN-SRV01",
+      "machine_uuid": "4c4c4544-0000-1000-8000-b2c04f000000"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "os",
+    "reason_code": "SOURCE_UNAVAILABLE",
+    "record_count": 0,
+    "records": [],
+    "status": "unavailable"
+   },
+   {
+    "name": "network",
+    "reason_code": "SOURCE_UNAVAILABLE",
+    "record_count": 0,
+    "records": [],
+    "status": "unavailable"
+   },
+   {
+    "name": "hardware",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 3,
+    "records": [
+     {
+      "bytes": 4294967296,
+      "kind": "memory",
+      "name": "Physical memory"
+     },
+     {
+      "kind": "cpu",
+      "logical_processors": 4,
+      "model": "Intel Xeon",
+      "name": "Logical processors"
+     },
+     {
+      "kind": "bios",
+      "name": "BIOS 6.00"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "software",
+    "reason_code": "SOURCE_UNAVAILABLE",
+    "record_count": 0,
+    "records": [],
+    "status": "unavailable"
+   },
+   {
+    "name": "services",
+    "reason_code": "SOURCE_UNAVAILABLE",
+    "record_count": 0,
+    "records": [],
+    "status": "unavailable"
+   }
+  ]
  }
 }
