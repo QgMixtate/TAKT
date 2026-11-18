@@ -1,0 +1,212 @@
+{
+ "errors": {
+  "candidates": [],
+  "sections": [
+   {
+    "name": "identity",
+    "reason_code": "ACCESS_DENIED",
+    "record_count": 0,
+    "records": [],
+    "status": "unavailable"
+   },
+   {
+    "name": "os",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 1,
+    "records": [
+     {
+      "architecture": "amd64",
+      "boot_time": "2026-11-09T22:38:46Z",
+      "boot_time_quality": "estimated",
+      "build": "19045",
+      "name": "Microsoft Windows 10 Pro",
+      "version": "10.0.19045"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "network",
+    "reason_code": "SOURCE_UNAVAILABLE",
+    "record_count": 0,
+    "records": [],
+    "status": "unavailable"
+   },
+   {
+    "name": "hardware",
+    "reason_code": "SOURCE_ERROR",
+    "record_count": 0,
+    "records": [],
+    "status": "unavailable"
+   },
+   {
+    "name": "software",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 1,
+    "records": [
+     {
+      "name": "Only32",
+      "registry_key": "K",
+      "registry_view": "32",
+      "scope": "machine",
+      "source": "uninstall_registry"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "services",
+    "reason_code": "ACCESS_DENIED",
+    "record_count": 0,
+    "records": [],
+    "status": "unavailable"
+   }
+  ]
+ },
+ "fatal": {
+  "error": true
+ },
+ "full": {
+  "candidates": [
+   {
+    "kind": "hostname",
+    "namespace": "hostname.raw",
+    "value": "WIN-SRV01"
+   },
+   {
+    "kind": "bios_uuid",
+    "namespace": "smbios",
+    "value": "4c4c4544-0000-1000-8000-b2c04f000000"
+   },
+   {
+    "kind": "machine_uuid",
+    "namespace": "windows-machine-guid",
+    "value": "0b1c2d3e-4f50-6172-8394-a5b6c7d8e9f0"
+   }
+  ],
+  "sections": [
+   {
+    "name": "identity",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 1,
+    "records": [
+     {
+      "domain": "lab.local",
+      "hostname": "WIN-SRV01",
+      "machine_uuid": "4c4c4544-0000-1000-8000-b2c04f000000"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "os",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 1,
+    "records": [
+     {
+      "architecture": "amd64",
+      "boot_time": "2026-11-10T01:38:46Z",
+      "boot_time_quality": "estimated",
+      "build": "17763",
+      "name": "Microsoft Windows Server 2019 Standard",
+      "version": "10.0.17763"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "network",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 1,
+    "records": [
+     {
+      "addresses": [
+       {
+        "ip": "192.168.1.10",
+        "prefix": 24
+       },
+       {
+        "ip": "2001:db8::10",
+        "prefix": 64
+       }
+      ],
+      "dhcp_enabled": false,
+      "dns_servers": [
+       "192.168.1.1"
+      ],
+      "gateways": [
+       "192.168.1.1"
+      ],
+      "interface_index": 3,
+      "mac": "00:0c:29:aa:bb:cc",
+      "mtu": 1500,
+      "name": "Intel Ethernet"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "hardware",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 3,
+    "records": [
+     {
+      "bytes": 4294967296,
+      "kind": "memory",
+      "name": "Physical memory"
+     },
+     {
+      "kind": "cpu",
+      "logical_processors": 4,
+      "model": "Intel Xeon",
+      "name": "Logical processors"
+     },
+     {
+      "kind": "bios",
+      "name": "BIOS 6.00",
+      "vendor": "Phoenix"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "software",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 1,
+    "records": [
+     {
+      "name": "7-Zip",
+      "registry_key": "{ABC}",
+      "registry_view": "64",
+      "scope": "machine",
+      "source": "uninstall_registry",
+      "vendor": "Igor Pavlov",
+      "version": "23.01"
+     }
+    ],
+    "status": "partial"
+   },
+   {
+    "name": "services",
+    "reason_code": "REMOTE_WINRM_PARTIAL",
+    "record_count": 2,
+    "records": [
+     {
+      "account": "NT AUTHORITY\\NetworkService",
+      "display_name": "Windows Remote Management",
+      "executable": "C:\\Windows\\System32\\svchost.exe -k NetworkService",
+      "name": "WinRM",
+      "start_mode": "auto",
+      "state": "running"
+     },
+     {
+      "name": "Odd",
+      "start_mode": "demand",
+      "state": "unknown"
+     }
+    ],
+    "status": "partial"
+   }
+  ]
+ }
+}

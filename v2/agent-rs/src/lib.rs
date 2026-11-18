@@ -29,3 +29,4 @@ pub mod portable;
 pub mod discover;
 pub mod profiles;
 pub mod sshcollect;
+pub mod winrmparse;
