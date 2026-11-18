@@ -10,3 +10,4 @@ pub mod state;
 pub mod claims;
 pub mod tls;
 pub mod enroll;
+pub mod client;

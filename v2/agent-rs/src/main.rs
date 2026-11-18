@@ -25,7 +25,14 @@ fn main() -> ExitCode {
                 _ => Err("register --collector URL --code КОД --fingerprint ОТПЕЧАТОК --config ПУТЬ --state КАТАЛОГ".into()),
             }
         }
-        _ => Err("используйте register (установка по коду) или version".into()),
+        Some("heartbeat") => match arg(&args, "--config") {
+            Some(config) => ssagent::state::load_json::<ssagent::enroll::Config>(std::path::Path::new(&config))
+                .and_then(ssagent::client::Client::open)
+                .and_then(|mut c| c.heartbeat())
+                .map(|_| println!("heartbeat_accepted")),
+            None => Err("heartbeat --config ПУТЬ".into()),
+        },
+        _ => Err("используйте register (установка по коду), heartbeat или version".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,

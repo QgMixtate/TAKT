@@ -28,7 +28,7 @@ rustls-pki-types = "1"
 rustls-webpki = { version = "0.103", default-features = false, features = ["ring", "std"] }
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 x509-parser = "0.16"
-time = { version = "0.3", features = ["parsing"] }
+time = { version = "0.3", features = ["parsing", "formatting"] }
 
 [profile.release]
 lto = "thin"

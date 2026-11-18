@@ -28,6 +28,11 @@ def scenario(**s):
  assert sql(f"SELECT state FROM sources.sources WHERE source_id='{source}'")=='active';assert not (base/'rust'/'state'/'registration-grant.json').exists()
  checks.append('rust agent installs by registration code through the site collector: pinned CA, prepare, register, enroll')
  p=register('again',fp,1);assert 'код не принят' in p.stderr;checks.append('single-use code is exhausted for a second machine')
+ for _ in range(2):
+  p=subprocess.run([rust,'heartbeat','--config',str(base/'rust'/'agent.json')],capture_output=True,text=True,timeout=60);assert p.returncode==0 and 'heartbeat_accepted' in p.stdout,p.stderr
+ assert sql(f"SELECT count(*) FROM sources.heartbeat_state WHERE source_id='{source}' AND last_contact_at>now()-interval '2 minutes'")=='1'
+ assert json.loads((base/'rust'/'state'/'sequences.json').read_text())['heartbeat']=='2'
+ checks.append('rust agent heartbeat: fresh challenge, signed (RFC 8785, Ed25519), mTLS to the bound collector, sequence persisted')
  # Go-агент работает на каталоге состояния Rust-агента: формат совпадает (замена без перерегистрации)
  go=str(ROOT/'.dist/surveyscan-agent');process=start('go-agent-on-rust-state',[go,'run','--config',str(base/'rust'/'agent.json')]);deadline=time.monotonic()+120
  while time.monotonic()<deadline:
