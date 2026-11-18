@@ -118,6 +118,7 @@ jobs:
           do { Start-Sleep -Milliseconds 200; sc.exe query SurveyscanRustCi | Out-Null } while ($LASTEXITCODE -eq 0 -and (Get-Date) -lt $deadline)
           if ($LASTEXITCODE -eq 0) { throw 'service still present after uninstall' }
           Write-Output 'rust agent service: installed, started by SCM, stopped cleanly (no identity), removed'
+          exit 0
       - name: prepare-winrm-target.ps1 under Windows PowerShell 5.1 (local account, run twice — idempotent; stand report 13)
         shell: powershell
         run: |
