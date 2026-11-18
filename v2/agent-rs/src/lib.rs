@@ -25,3 +25,4 @@ pub mod collect_windows;
 pub mod wmi_windows;
 #[cfg(windows)]
 pub mod winsvc;
+pub mod portable;

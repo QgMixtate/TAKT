@@ -9,6 +9,10 @@ description = "SurveyScan host agent and portable (Rust, C52): same C03/C15 wire
 name = "surveyscan-agent"
 path = "src/main.rs"
 
+[[bin]]
+name = "surveyscan-portable"
+path = "src/bin/portable.rs"
+
 [lib]
 name = "ssagent"
 path = "src/lib.rs"
@@ -28,6 +32,8 @@ rustls-pki-types = "1"
 rustls-webpki = { version = "0.103", default-features = false, features = ["ring", "std"] }
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
 x509-parser = "0.16"
+hpke = { version = "0.12", default-features = false, features = ["alloc", "x25519"] }
+crc32fast = "1"
 time = { version = "0.3", features = ["parsing", "formatting", "macros"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
