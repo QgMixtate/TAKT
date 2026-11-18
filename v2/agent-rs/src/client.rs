@@ -25,6 +25,7 @@ pub struct Client {
     pub key: SigningKey,
     pub http: ureq::Agent,
     pub expires: OffsetDateTime,
+    pub verifier: std::sync::Arc<tls::CollectorVerifier>,
     state: PathBuf,
     sequence: state::Counters,
 }
@@ -67,15 +68,13 @@ impl Client {
             return Err("agent identity not trusted".into());
         }
         let expires = OffsetDateTime::parse(&result.expires_at, &Rfc3339).map_err(|_| "agent identity not trusted")?;
-        let http = tls::collector_agent(
-            tls::CollectorVerifier::new(ca, &cfg.tenant_id, &cfg.collector_source_id, &claims.collector),
-            Some((chain_der(&result.certificate_chain_pem)?, private_der(&private)?)),
-        )?;
+        let verifier = std::sync::Arc::new(tls::CollectorVerifier::new(ca, &cfg.tenant_id, &cfg.collector_source_id, &claims.collector));
+        let http = tls::collector_agent_shared(verifier.clone(), Some((chain_der(&result.certificate_chain_pem)?, private_der(&private)?)), 30)?;
         let sequence: state::Counters = state::load_json(&st.join("sequences.json"))?;
         for s in [&sequence.inventory, &sequence.heartbeat] {
             s.parse::<u64>().map_err(|_| "invalid agent counters")?;
         }
-        Ok(Client { cfg, claims, key, http, expires, state: st, sequence })
+        Ok(Client { cfg, claims, key, http, expires, verifier, state: st, sequence })
     }
 
     /// Следующий номер (inventory или heartbeat) — сохраняется на диск до отправки, как в Go (повтор не переиспользует номер).
@@ -122,6 +121,15 @@ impl Client {
         let code = resp.status();
         let v: Value = serde_json::from_reader(std::io::Read::take(resp.into_reader(), 4 << 20)).unwrap_or(Value::Null);
         Ok((code, v))
+    }
+
+    /// Утверждения collector из последнего TLS-соединения (обязательны для проверки его подписанных кадров).
+    pub fn peer(&self) -> Result<claims::Claims, String> {
+        let p = self.verifier.peer.lock().map_err(|_| "collector identity unavailable")?.clone().ok_or("collector identity unavailable")?;
+        if p.kind != "collector" || p.tenant != self.claims.tenant || p.source != self.cfg.collector_source_id || p.collector != self.claims.collector {
+            return Err("collector scope mismatch".into());
+        }
+        Ok(p)
     }
 
     /// Heartbeat: свежий вызов (challenge) от центра → подписанный heartbeat с nonce и следующим номером.

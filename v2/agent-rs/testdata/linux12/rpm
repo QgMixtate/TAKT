@@ -1,0 +1,4 @@
+bash	5.1.8-6.el9	x86_64
+gpg-pubkey	abc-def	(none)
+kernel	5.14.0-362.el9	x86_64
+weird	1.0	(none)

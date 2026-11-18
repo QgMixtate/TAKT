@@ -12,3 +12,5 @@ pub mod tls;
 pub mod enroll;
 pub mod client;
 pub mod profile;
+pub mod inventory12;
+pub mod linuxparse;

@@ -1,0 +1,263 @@
+{
+ "accounts": [
+  {
+   "gid": 0,
+   "kind": "user",
+   "name": "root",
+   "shell": "/bin/bash",
+   "uid": 0
+  },
+  {
+   "gid": 1,
+   "kind": "user",
+   "name": "daemon",
+   "shell": "/usr/sbin/nologin",
+   "uid": 1
+  },
+  {
+   "gid": 1001,
+   "kind": "user",
+   "name": "scan",
+   "shell": "/bin/bash",
+   "uid": 1001
+  },
+  {
+   "gid": 0,
+   "kind": "group",
+   "name": "root"
+  },
+  {
+   "gid": 27,
+   "kind": "group",
+   "name": "sudo"
+  },
+  {
+   "gid": 27,
+   "group": "sudo",
+   "kind": "membership",
+   "name": "scan"
+  },
+  {
+   "gid": 27,
+   "group": "sudo",
+   "kind": "membership",
+   "name": "admin"
+  },
+  {
+   "gid": 1001,
+   "kind": "group",
+   "name": "scan"
+  }
+ ],
+ "apk": [
+  {
+   "architecture": "x86_64",
+   "name": "musl",
+   "scope": "machine",
+   "source": "apk",
+   "version": "1.2.4-r2"
+  },
+  {
+   "architecture": "x86_64",
+   "name": "busybox",
+   "scope": "machine",
+   "source": "apk",
+   "version": "1.36.1-r5"
+  }
+ ],
+ "dmi": [
+  {
+   "kind": "bios",
+   "model": "Standard PC (Q35 + ICH9, 2009)",
+   "name": "BIOS 1.16.2-debian-1.16.2-1",
+   "uuid": "4c4c4544-0042-3510-8051-b4c04f4a4e32",
+   "vendor": "QEMU"
+  }
+ ],
+ "hardware": [
+  {
+   "kind": "cpu",
+   "logical_processors": 2,
+   "model": "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
+   "name": "Logical processors"
+  },
+  {
+   "bytes": 8326410240,
+   "kind": "memory",
+   "name": "Physical memory"
+  }
+ ],
+ "mounts": [
+  {
+   "device_id": "/dev/sda1",
+   "filesystem": "ext4",
+   "kind": "mount",
+   "name": "/",
+   "read_only": false
+  },
+  {
+   "device_id": "tmpfs",
+   "filesystem": "tmpfs",
+   "kind": "mount",
+   "name": "/mnt/my disk",
+   "read_only": false
+  }
+ ],
+ "packages": [
+  {
+   "architecture": "amd64",
+   "name": "bash",
+   "scope": "machine",
+   "source": "dpkg",
+   "version": "5.2.15-2+b2"
+  },
+  {
+   "architecture": "amd64",
+   "name": "libc6",
+   "scope": "machine",
+   "source": "dpkg",
+   "version": "2.36-9+deb12u4"
+  }
+ ],
+ "routes": [
+  {
+   "destination": "0.0.0.0/0",
+   "family": "ipv4",
+   "gateway": "192.168.1.1",
+   "interface": "eth0",
+   "kind": "route",
+   "metric": 100
+  },
+  {
+   "destination": "192.168.1.0/24",
+   "family": "ipv4",
+   "gateway": "0.0.0.0",
+   "interface": "eth0",
+   "kind": "route",
+   "metric": 100
+  }
+ ],
+ "rpm": [
+  {
+   "architecture": "x86_64",
+   "name": "bash",
+   "scope": "machine",
+   "source": "rpm",
+   "version": "5.1.8-6.el9"
+  },
+  {
+   "architecture": "x86_64",
+   "name": "kernel",
+   "scope": "machine",
+   "source": "rpm",
+   "version": "5.14.0-362.el9"
+  },
+  {
+   "name": "weird",
+   "scope": "machine",
+   "source": "rpm",
+   "version": "1.0"
+  }
+ ],
+ "services": [
+  {
+   "display_name": "Regular background program processing daemon",
+   "name": "cron",
+   "start_mode": "auto",
+   "state": "stopped"
+  },
+  {
+   "display_name": "One shot",
+   "name": "oneshot",
+   "start_mode": "demand",
+   "state": "stopped"
+  },
+  {
+   "display_name": "OpenBSD Secure Shell server",
+   "name": "ssh",
+   "start_mode": "auto",
+   "state": "running"
+  },
+  {
+   "name": "unused",
+   "start_mode": "disabled",
+   "state": "stopped"
+  }
+ ],
+ "tcp": [
+  {
+   "family": "ipv4",
+   "kind": "tcp",
+   "local_address": "0.0.0.0",
+   "local_port": 22,
+   "remote_address": "0.0.0.0",
+   "remote_port": 0,
+   "state": "LISTEN"
+  },
+  {
+   "family": "ipv4",
+   "kind": "tcp",
+   "local_address": "192.168.1.2",
+   "local_port": 80,
+   "remote_address": "192.168.1.1",
+   "remote_port": 49153,
+   "state": "TIME_WAIT"
+  },
+  {
+   "family": "ipv4",
+   "kind": "tcp",
+   "local_address": "127.0.0.1",
+   "local_port": 8080,
+   "remote_address": "127.0.0.1",
+   "remote_port": 54321,
+   "state": "ESTABLISHED"
+  }
+ ],
+ "tcp6": [
+  {
+   "family": "ipv6",
+   "kind": "tcp",
+   "local_address": "::",
+   "local_port": 22,
+   "remote_address": "::",
+   "remote_port": 0,
+   "state": "LISTEN"
+  },
+  {
+   "family": "ipv6",
+   "kind": "tcp",
+   "local_address": "fe80::5054:ff:fe1d:adb6",
+   "local_port": 53,
+   "remote_address": "::",
+   "remote_port": 0,
+   "state": "LISTEN"
+  },
+  {
+   "family": "ipv4",
+   "kind": "tcp",
+   "local_address": "127.0.0.1",
+   "local_port": 8080,
+   "remote_address": "127.0.0.1",
+   "remote_port": 54321,
+   "state": "ESTABLISHED"
+  }
+ ],
+ "udp": [
+  {
+   "family": "ipv4",
+   "kind": "udp",
+   "local_address": "127.0.0.53",
+   "local_port": 53,
+   "remote_address": "0.0.0.0",
+   "remote_port": 0
+  },
+  {
+   "family": "ipv4",
+   "kind": "udp",
+   "local_address": "0.0.0.0",
+   "local_port": 68,
+   "remote_address": "0.0.0.0",
+   "remote_port": 0
+  }
+ ]
+}

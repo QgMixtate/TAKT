@@ -95,11 +95,13 @@ pub struct CollectorVerifier {
     pub source: String,
     pub collector: String,
     provider: Arc<rustls::crypto::CryptoProvider>,
+    /// Утверждения сертификата collector последнего проверенного соединения (ключ подписи кадров collector).
+    pub peer: Mutex<Option<claims::Claims>>,
 }
 
 impl CollectorVerifier {
     pub fn new(ca: Vec<u8>, tenant: &str, source: &str, collector: &str) -> Self {
-        Self { ca, tenant: tenant.into(), source: source.into(), collector: collector.into(), provider: provider() }
+        Self { ca, tenant: tenant.into(), source: source.into(), collector: collector.into(), provider: provider(), peer: Mutex::new(None) }
     }
 }
 
@@ -115,6 +117,9 @@ impl ServerCertVerifier for CollectorVerifier {
             let c = claims::from_der(end).map_err(bad)?;
             if c.kind != "collector" || c.source != self.source || c.tenant != self.tenant || (!self.collector.is_empty() && c.collector != self.collector) {
                 return Err(bad("collector identity mismatch".into()));
+            }
+            if let Ok(mut p) = self.peer.lock() {
+                *p = Some(c);
             }
         }
         Ok(ServerCertVerified::assertion())
@@ -132,6 +137,11 @@ impl ServerCertVerifier for CollectorVerifier {
 
 pub fn collector_agent(v: CollectorVerifier, identity: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>) -> Result<ureq::Agent, String> {
     Ok(agent(config(Arc::new(v), identity)?, 12))
+}
+
+/// Как collector_agent, но проверяющий доступен вызывающему (утверждения collector после соединения).
+pub fn collector_agent_shared(v: Arc<CollectorVerifier>, identity: Option<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>, timeout_s: u64) -> Result<ureq::Agent, String> {
+    Ok(agent(config(v, identity)?, timeout_s))
 }
 
 pub trait TakeBytes: std::io::Read + Sized {

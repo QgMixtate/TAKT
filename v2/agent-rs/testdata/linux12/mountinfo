@@ -1,0 +1,4 @@
+22 1 8:1 / / rw,relatime shared:1 - ext4 /dev/sda1 rw
+23 22 0:5 / /proc rw - proc proc rw
+24 22 8:2 / /mnt/my\040disk ro,nosuid - xfs /dev/sdb1 ro
+25 22 0:44 / /mnt/my\040disk rw - tmpfs tmpfs rw

@@ -1,0 +1,5 @@
+ssh.service enabled enabled
+cron.service enabled enabled
+oneshot.service static -
+unused.service disabled enabled
+getty@.service enabled enabled
