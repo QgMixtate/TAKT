@@ -80,7 +80,12 @@ fn collect() -> Result<(Value, Vec<Value>), String> {
         let s = crate::collect_linux::collect();
         Ok((s.candidates, s.sections))
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(windows)]
+    {
+        let s = crate::collect_windows::collect();
+        Ok((s.candidates, s.sections))
+    }
+    #[cfg(not(any(target_os = "linux", windows)))]
     {
         Err("inventory collection for this OS is not implemented yet".into())
     }

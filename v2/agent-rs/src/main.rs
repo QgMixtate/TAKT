@@ -43,6 +43,20 @@ fn main() -> ExitCode {
                 }),
             None => Err("profile --config ПУТЬ".into()),
         },
+        Some("inventory-section") => match args.get(1) {
+            // один раздел сбора этого хоста (JSON) — для сравнения с Go-агентом на эталонных ВМ (C52-01)
+            #[cfg(windows)]
+            Some(name) => {
+                println!("{}", ssagent::collect_windows::section(name));
+                Ok(())
+            }
+            #[cfg(target_os = "linux")]
+            Some(name) => {
+                let s = ssagent::collect_linux::collect();
+                s.sections.into_iter().find(|x| x["name"] == name.as_str()).map(|x| println!("{x}")).ok_or_else(|| "unknown section".to_string())
+            }
+            _ => Err("inventory-section ИМЯ".into()),
+        },
         Some("renew") => match arg(&args, "--config") {
             Some(config) => ssagent::enroll::read_config(std::path::Path::new(&config)).and_then(|cfg| {
                 let _lock = ssagent::run::lock_state(std::path::Path::new(&cfg.state_directory))?;

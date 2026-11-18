@@ -20,7 +20,12 @@ pub fn local() -> Option<String> {
     normalize(&raw)
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(windows)]
 pub fn local() -> Option<String> {
-    None // Windows (MachineGuid) — со службой Windows (C52.02, шаг Windows)
+    crate::collect_windows::machine_guid().and_then(|g| normalize(&g))
+}
+
+#[cfg(not(any(target_os = "linux", windows)))]
+pub fn local() -> Option<String> {
+    None
 }

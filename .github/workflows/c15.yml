@@ -1,9 +1,9 @@
 name: surveyscan-c15-contract-preparation
 on:
   push:
-    paths: ['v2/cmd/surveyscan-portable/**', 'docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', '.github/workflows/c15.yml']
+    paths: ['v2/cmd/surveyscan-portable/**', 'docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', 'v2/agent-rs/**', 'v2/scripts/rust_windows_parity.py', '.github/workflows/c15.yml']
   pull_request:
-    paths: ['v2/cmd/surveyscan-portable/**', 'docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', '.github/workflows/c15.yml']
+    paths: ['v2/cmd/surveyscan-portable/**', 'docs/plans/surveyscan-v2/contracts/C15/**', 'v2/contracts/c15*', 'v2/internal/platform/wire/inventory12*', 'v2/internal/agent/windowsinventory/**', 'v2/internal/platform/winstate/**', 'v2/internal/platform/diskspool/**', 'v2/internal/platform/privatefile/**', 'v2/internal/platform/machineid/**', 'v2/internal/agent/**', 'v2/internal/platform/winservice/**', 'v2/cmd/surveyscan-agent/**', 'v2/cmd/surveyscan-portable/**', 'v2/internal/portableaudit/**', 'v2/internal/portable/**', 'v2/go.mod', 'v2/go.sum', 'v2/deploy/windows/prepare-winrm-target.ps1', 'v2/agent-rs/**', 'v2/scripts/rust_windows_parity.py', '.github/workflows/c15.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -13,7 +13,7 @@ concurrency:
 jobs:
   contract-and-native-baseline:
     runs-on: windows-2022
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -83,6 +83,14 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "portable package verify failed ($LASTEXITCODE)" }
           $item = Get-Item $pkg
           Write-Output "portable package: $($item.Length) bytes"
+      - name: Rust agent on Windows Server 2022 — sections identical to the Go agent on the same host (C52-01)
+        working-directory: v2
+        shell: pwsh
+        run: |
+          cargo build --release --locked --manifest-path agent-rs/Cargo.toml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/rust_windows_parity.py .\surveyscan-portable.exe agent-rs\target\release\surveyscan-agent.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: prepare-winrm-target.ps1 under Windows PowerShell 5.1 (local account, run twice — idempotent; stand report 13)
         shell: powershell
         run: |

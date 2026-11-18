@@ -19,3 +19,5 @@ pub mod spool12;
 pub mod collect_linux;
 pub mod run;
 pub mod renew;
+#[cfg(windows)]
+pub mod collect_windows;

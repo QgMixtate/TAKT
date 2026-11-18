@@ -759,6 +759,7 @@ dependencies = [
  "sha2",
  "time",
  "ureq",
+ "windows-sys",
  "x509-parser",
 ]
 
