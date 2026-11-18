@@ -68,6 +68,14 @@ jobs:
           cargo build --release --locked --target x86_64-pc-windows-gnu
           cargo build --release --locked
           cd .. && SURVEYSCAN_RUST_PORTABLE="$PWD/agent-rs/target/release/surveyscan-portable" go test -count=1 -run RustPortable ./internal/portable
+      - name: Rust binaries for the stand (Linux musl, Windows) — .dist/rust with SHA256SUMS
+        run: make rust
+      - name: Keep Rust binaries as a CI artifact (stand tests download them from Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-agent-portable-${{ github.sha }}
+          path: v2/.dist/rust
+          retention-days: 14
       - name: Rust portable (C52.06) — subnet discover, credential profile, SSH collection of a local sshd, Go verify
         run: |
           sudo apt-get install -y --no-install-recommends openssh-server

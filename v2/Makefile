@@ -6,7 +6,7 @@ DIRTY := $(shell test -z "$$(git status --porcelain --untracked-files=normal)" &
 MODULE := github.com/QgMixtate/surveyscan/v2
 BUILD_FLAGS = -X $(MODULE)/internal/platform/buildinfo.Version=$(VERSION) -X $(MODULE)/internal/platform/buildinfo.Revision=$(REVISION) -X $(MODULE)/internal/platform/buildinfo.Dirty=$(DIRTY)
 
-.PHONY: build test vet contracts integration dev-up dev-down fmt-check verify
+.PHONY: build rust test vet contracts integration dev-up dev-down fmt-check verify
 build:
 	mkdir -p .dist/contracts
 	$(GO) version
@@ -21,6 +21,15 @@ build:
 	cp contracts/*.json .dist/contracts/
 	chmod 755 .dist .dist/contracts .dist/surveyscan-* .dist/surveyscanctl
 	chmod 644 .dist/contracts/*.json
+# Rust-агент и Rust-portable (C52): Linux (musl, статически) и Windows — в .dist/rust; нужны rustup-цели
+# x86_64-unknown-linux-musl, x86_64-pc-windows-gnu, musl-tools и gcc-mingw-w64-x86-64.
+rust:
+	cd agent-rs && cargo build --release --locked --target x86_64-unknown-linux-musl && cargo build --release --locked --target x86_64-pc-windows-gnu
+	mkdir -p .dist/rust/linux .dist/rust/windows
+	cp agent-rs/target/x86_64-unknown-linux-musl/release/surveyscan-agent agent-rs/target/x86_64-unknown-linux-musl/release/surveyscan-portable .dist/rust/linux/
+	cp agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-agent.exe agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-portable.exe .dist/rust/windows/
+	cd .dist/rust && sha256sum linux/* windows/* > SHA256SUMS
+
 test:
 	$(GO) test -mod=readonly -count=1 -p 2 ./...
 vet:
