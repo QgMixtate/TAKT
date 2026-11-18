@@ -44,9 +44,9 @@ else {
   # canonical order: explicit ACEs before inherited ones
   $at = @($raw.DiscretionaryAcl | Where-Object { -not $_.IsInherited }).Count
   $raw.DiscretionaryAcl.InsertAce($at, $ace)
-  $out = New-Object byte[] $raw.BinaryLength
+  $out = [byte[]]::new($raw.BinaryLength)
   $raw.GetBinaryForm($out, 0)
-  $in = $wmiSec.GetMethodParameters('SetSD'); $in['SD'] = $out
+  $in = $wmiSec.GetMethodParameters('SetSD'); $in.Properties['SD'].Value = $out
   $r = $wmiSec.InvokeMethod('SetSD', $in, $null)
   if ($r['ReturnValue'] -ne 0) { throw "WMI SetSD failed: $($r['ReturnValue'])" }
   Write-Host '[+] WMI root\cimv2: Enable Account + Remote Enable'
