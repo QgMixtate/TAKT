@@ -29,16 +29,22 @@ if (-not $Gpo) {
 }
 
 # 2. WMI namespace root\cimv2: Enable Account (0x1) + Remote Enable (0x20), inherited by sub-namespaces
-# Stand report #13: Get-WmiObject -Class __SystemSecurity may return an object without methods
-# ("GetSecurityDescriptor" call failed); call the singleton methods explicitly by path instead.
-$sd = (Invoke-WmiMethod -Namespace 'root/cimv2' -Path '__SystemSecurity=@' -Name GetSecurityDescriptor).Descriptor
-if ($sd.DACL | Where-Object { $_.Trustee.SidString -eq $sid -and ($_.AccessMask -band 0x21) -eq 0x21 }) { Write-Host '[ok] WMI root\cimv2 rights present' }
+# Stand report #13: Get-WmiObject -Class __SystemSecurity may return an object without methods; call the singleton
+# methods by path. The descriptor is read and written in binary form (GetSD/SetSD) and edited with .NET:
+# GetSecurityDescriptor resolves every trustee and fails ("Unexpected error") on a SID of a deleted account.
+$bin = (Invoke-WmiMethod -Namespace 'root/cimv2' -Path '__SystemSecurity=@' -Name GetSD).SD
+$raw = [System.Security.AccessControl.RawSecurityDescriptor]::new([byte[]]$bin, 0)
+$present = $raw.DiscretionaryAcl | Where-Object { $_.AceQualifier -eq 'AccessAllowed' -and $_.SecurityIdentifier.Value -eq $sid -and ($_.AccessMask -band 0x21) -eq 0x21 }
+if ($present) { Write-Host '[ok] WMI root\cimv2 rights present' }
 else {
-  $trustee = ([wmiclass]'Win32_Trustee').CreateInstance(); $trustee.SidString = $sid
-  $ace = ([wmiclass]'Win32_ACE').CreateInstance(); $ace.AccessMask = 0x21; $ace.AceFlags = 0x2; $ace.AceType = 0; $ace.Trustee = $trustee
-  $sd.DACL += $ace.psobject.ImmediateBaseObject
-  $r = Invoke-WmiMethod -Namespace 'root/cimv2' -Path '__SystemSecurity=@' -Name SetSecurityDescriptor -ArgumentList $sd.psobject.ImmediateBaseObject
-  if ($r.ReturnValue -ne 0) { throw "WMI SetSecurityDescriptor failed: $($r.ReturnValue)" }
+  $ace = [System.Security.AccessControl.CommonAce]::new([System.Security.AccessControl.AceFlags]::ContainerInherit, [System.Security.AccessControl.AceQualifier]::AccessAllowed, 0x21, [System.Security.Principal.SecurityIdentifier]::new($sid), $false, $null)
+  # canonical order: explicit ACEs before inherited ones
+  $at = @($raw.DiscretionaryAcl | Where-Object { -not ($_.AceFlags -band [System.Security.AccessControl.AceFlags]::Inherited) }).Count
+  $raw.DiscretionaryAcl.InsertAce($at, $ace)
+  $out = New-Object byte[] $raw.BinaryLength
+  $raw.GetBinaryForm($out, 0)
+  $r = Invoke-WmiMethod -Namespace 'root/cimv2' -Path '__SystemSecurity=@' -Name SetSD -ArgumentList (,$out)
+  if ($r.ReturnValue -ne 0) { throw "WMI SetSD failed: $($r.ReturnValue)" }
   Write-Host '[+] WMI root\cimv2: Enable Account + Remote Enable'
 }
 
