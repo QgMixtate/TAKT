@@ -94,6 +94,24 @@ impl Client {
         Ok(json!({"payload": payload, "digest": sign::digest_hex(&c), "key_id": self.claims.key_id, "signature": sign::sign(&self.key, domain, &c)}))
     }
 
+    pub fn state_dir(&self) -> PathBuf {
+        self.state.clone()
+    }
+
+    /// POST с телом ответа как есть (до 4 МиБ) — для подписанных кадров, где важны исходные байты.
+    pub fn post_raw(&self, path: &str, body: &Value) -> Result<(u16, Vec<u8>), String> {
+        let r = self.http.post(&format!("{}{}", self.cfg.collector_url, path)).set("Content-Type", "application/json").send_json(body);
+        let resp = match r {
+            Ok(r) => r,
+            Err(ureq::Error::Status(_, r)) => r,
+            Err(e) => return Err(format!("collector unavailable: {e}")),
+        };
+        let code = resp.status();
+        let mut raw = Vec::new();
+        std::io::Read::read_to_end(&mut std::io::Read::take(resp.into_reader(), 4 << 20), &mut raw).map_err(|e| e.to_string())?;
+        Ok((code, raw))
+    }
+
     fn post(&self, path: &str, body: &Value) -> Result<(u16, Value), String> {
         let r = self.http.post(&format!("{}{}", self.cfg.collector_url, path)).set("Content-Type", "application/json").send_json(body);
         let resp = match r {

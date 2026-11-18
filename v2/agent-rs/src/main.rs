@@ -32,7 +32,18 @@ fn main() -> ExitCode {
                 .map(|_| println!("heartbeat_accepted")),
             None => Err("heartbeat --config ПУТЬ".into()),
         },
-        _ => Err("используйте register (установка по коду), heartbeat или version".into()),
+        Some("profile") => match arg(&args, "--config") {
+            Some(config) => ssagent::state::load_json::<ssagent::enroll::Config>(std::path::Path::new(&config))
+                .and_then(ssagent::client::Client::open)
+                .and_then(|mut c| {
+                    let current = ssagent::profile::cached(&c)?;
+                    let (p, changed) = ssagent::profile::poll(&mut c, current.as_ref())?;
+                    println!("profile_revision={} managed={} changed={}", p["config"]["profile_revision"].as_str().unwrap_or("?"), p["managed"], changed);
+                    Ok(())
+                }),
+            None => Err("profile --config ПУТЬ".into()),
+        },
+        _ => Err("используйте register (установка по коду), heartbeat, profile или version".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,

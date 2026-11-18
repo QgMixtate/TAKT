@@ -33,6 +33,15 @@ def scenario(**s):
  assert sql(f"SELECT count(*) FROM sources.heartbeat_state WHERE source_id='{source}' AND last_contact_at>now()-interval '2 minutes'")=='1'
  assert json.loads((base/'rust'/'state'/'sequences.json').read_text())['heartbeat']=='2'
  checks.append('rust agent heartbeat: fresh challenge, signed (RFC 8785, Ed25519), mTLS to the bound collector, sequence persisted')
+ prof=lambda:subprocess.run([rust,'profile','--config',str(base/'rust'/'agent.json')],capture_output=True,text=True,timeout=60)
+ p=prof();assert p.returncode==0 and 'profile_revision=1 managed=false' in p.stdout,(p.stdout,p.stderr);assert not (base/'rust'/'state'/'profile.json').exists()
+ status,cur,_=request(s['tls_port'],s['plain'],'GET',f'/api/v1/sources/{source}/profile',None,headers);assert status==200,status
+ patch=dict(headers,**{'If-Match':f'"profile:{source}:{cur["config"]["profile_revision"]}"'})
+ status,upd,_=request(s['tls_port'],s['plain'],'PATCH',f'/api/v1/sources/{source}/profile',{'heartbeat_seconds':45,'inventory_seconds':900,'jitter_percent':5,'spool_limit_bytes':16777216},patch);assert status==200,(status,upd)
+ p=prof();assert p.returncode==0 and 'managed=true changed=true' in p.stdout,(p.stdout,p.stderr);assert (base/'rust'/'state'/'profile.json').exists()
+ p=prof();assert p.returncode==0 and 'changed=false' in p.stdout,(p.stdout,p.stderr)
+ assert json.loads((base/'rust'/'state'/'diagnostics.json').read_text())['pending_files']==0
+ checks.append('rust agent profile: signed request with diagnostics, centre-signed response verified, managed revision cached in profile.json, unchanged on repeat')
  # Go-агент работает на каталоге состояния Rust-агента: формат совпадает (замена без перерегистрации)
  go=str(ROOT/'.dist/surveyscan-agent');process=start('go-agent-on-rust-state',[go,'run','--config',str(base/'rust'/'agent.json')]);deadline=time.monotonic()+120
  while time.monotonic()<deadline:
