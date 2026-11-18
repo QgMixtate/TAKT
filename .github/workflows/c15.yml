@@ -91,6 +91,33 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/rust_windows_parity.py .\surveyscan-portable.exe agent-rs\target\release\surveyscan-agent.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Rust agent as a LocalSystem service through SCM (install, start, clean stop on missing identity, uninstall)
+        working-directory: v2
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path agent-rs\target\release\surveyscan-agent.exe).Path
+          $root = Join-Path $env:RUNNER_TEMP 'rust-svc'
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $cfg = Join-Path $root 'agent.json'
+          @{ tenant_id = [guid]::NewGuid().ToString(); site_id = [guid]::NewGuid().ToString(); network_scope_id = [guid]::NewGuid().ToString(); collector_url = 'https://collector.invalid:18443'; collector_source_id = [guid]::NewGuid().ToString(); ca_certificate_file = (Join-Path $root 'ca.pem'); state_directory = (Join-Path $root 'state'); inventory_seconds = 0; heartbeat_seconds = 0; jitter_percent = 0; spool_limit_bytes = 0 } | ConvertTo-Json | Set-Content $cfg -Encoding ascii
+          & $exe install-service --name SurveyscanRustCi --config $cfg
+          if ($LASTEXITCODE -ne 0) { throw "install-service failed ($LASTEXITCODE)" }
+          & $exe install-service --name SurveyscanRustCi --config $cfg
+          if ($LASTEXITCODE -eq 0) { throw 'second install must be refused' }
+          $qc = (sc.exe qc SurveyscanRustCi) -join ' '
+          if ($qc -notmatch 'AUTO_START \(DELAYED\)' -or $qc -notmatch 'LocalSystem') { throw "unexpected service config: $qc" }
+          sc.exe start SurveyscanRustCi | Out-Null
+          $deadline = (Get-Date).AddSeconds(30)
+          do { Start-Sleep -Milliseconds 500; $q = (sc.exe queryex SurveyscanRustCi) -join ' ' } while ($q -notmatch 'STOPPED' -and (Get-Date) -lt $deadline)
+          Write-Output "sc queryex: $q"
+          if ($q -notmatch 'STOPPED' -or $q -notmatch '1066') { throw 'service must stop with a service-specific error without an identity' }
+          if (-not (Test-Path (Join-Path $root 'state\.state.lock'))) { throw 'service did not reach the state lock' }
+          & $exe uninstall-service --name SurveyscanRustCi
+          if ($LASTEXITCODE -ne 0) { throw "uninstall-service failed ($LASTEXITCODE)" }
+          $deadline = (Get-Date).AddSeconds(10)
+          do { Start-Sleep -Milliseconds 200; sc.exe query SurveyscanRustCi | Out-Null } while ($LASTEXITCODE -eq 0 -and (Get-Date) -lt $deadline)
+          if ($LASTEXITCODE -eq 0) { throw 'service still present after uninstall' }
+          Write-Output 'rust agent service: installed, started by SCM, stopped cleanly (no identity), removed'
       - name: prepare-winrm-target.ps1 under Windows PowerShell 5.1 (local account, run twice — idempotent; stand report 13)
         shell: powershell
         run: |

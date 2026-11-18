@@ -23,3 +23,5 @@ pub mod renew;
 pub mod collect_windows;
 #[cfg(windows)]
 pub mod wmi_windows;
+#[cfg(windows)]
+pub mod winsvc;

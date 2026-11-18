@@ -67,6 +67,36 @@ fn main() -> ExitCode {
             }),
             None => Err("renew --config ПУТЬ".into()),
         },
+        #[cfg(windows)]
+        Some("install-service") | Some("uninstall-service") | Some("service") => {
+            let name = arg(&args, "--name").unwrap_or_else(|| ssagent::winsvc::DEFAULT_NAME.to_string());
+            match args[0].as_str() {
+                "uninstall-service" => ssagent::winsvc::uninstall(&name).map(|_| println!("service_removed")),
+                "install-service" => match arg(&args, "--config") {
+                    Some(c) if std::path::Path::new(&c).is_absolute() => std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
+                        ssagent::winsvc::install(&name, &exe.to_string_lossy(), &["service".into(), "--name".into(), name.clone(), "--config".into(), c])
+                    }).map(|_| println!("service_installed")),
+                    _ => Err("для службы требуется абсолютный --config".into()),
+                },
+                _ => match arg(&args, "--config") {
+                    None => Err("service --config ПУТЬ".into()),
+                    Some(config) => ssagent::winsvc::run(&name, move || {
+                        let r = ssagent::enroll::read_config(std::path::Path::new(&config)).and_then(|cfg| {
+                            let (mut agent, _lock) = ssagent::run::Agent::open(cfg)?;
+                            agent.run(&|| ssagent::winsvc::STOP.load(std::sync::atomic::Ordering::SeqCst));
+                            Ok(())
+                        });
+                        match r {
+                            Ok(()) => 0,
+                            Err(e) => {
+                                eprintln!("{e}");
+                                2
+                            }
+                        }
+                    }),
+                },
+            }
+        }
         Some("run") | Some("once") => match arg(&args, "--config") {
             Some(config) => ssagent::enroll::read_config(std::path::Path::new(&config)).and_then(|cfg| {
                 let (mut agent, _lock) = ssagent::run::Agent::open(cfg)?;

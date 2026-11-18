@@ -54,10 +54,21 @@ pub fn lock_state(dir: &std::path::Path) -> Result<Lock, String> {
     Ok(Lock(f))
 }
 
-#[cfg(not(unix))]
+/// Windows: .state.lock, открытый без общего доступа (как winstate.Root.Lock в Go) — второй агент получает отказ.
+#[cfg(windows)]
+pub struct Lock(#[allow(dead_code)] std::fs::File);
+
+#[cfg(windows)]
+pub fn lock_state(dir: &std::path::Path) -> Result<Lock, String> {
+    use std::os::windows::fs::OpenOptionsExt;
+    crate::state::ensure_dir(dir)?;
+    std::fs::OpenOptions::new().create(true).read(true).write(true).share_mode(0).open(dir.join(".state.lock")).map(Lock).map_err(|_| "agent state already in use".into())
+}
+
+#[cfg(not(any(unix, windows)))]
 pub struct Lock;
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 pub fn lock_state(_dir: &std::path::Path) -> Result<Lock, String> {
     Ok(Lock)
 }
