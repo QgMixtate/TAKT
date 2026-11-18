@@ -186,3 +186,33 @@ pub fn register(o: &RegisterOptions) -> Result<(), String> {
     let _ = std::fs::remove_file(grant_path);
     Ok(())
 }
+
+/// Чтение конфигурации с умолчаниями и проверками — как agent.ReadConfig (900 с сбор, 60 с heartbeat, очередь 64 МиБ).
+pub fn read_config(path: &Path) -> Result<Config, String> {
+    let mut c: Config = state::load_json(path)?;
+    if ![&c.tenant_id, &c.site_id, &c.network_scope_id, &c.collector_source_id].iter().all(|s| claims::valid_id(s)) || !Path::new(&c.state_directory).is_absolute() || c.ca_certificate_file.is_empty() {
+        return Err("explicit scoped agent configuration required".into());
+    }
+    let rest = c.collector_url.strip_prefix("https://").ok_or("HTTPS collector origin required")?;
+    let rest = rest.trim_end_matches('/');
+    if rest.is_empty() || rest.contains(['/', '?', '#', '@']) {
+        return Err("HTTPS collector origin required".into());
+    }
+    if !c.inventory_platform.is_empty() && !["windows/amd64", "linux/amd64", "network/snmp"].contains(&c.inventory_platform.as_str()) {
+        return Err("unsupported inventory_platform".into());
+    }
+    c.collector_url = c.collector_url.trim_end_matches('/').to_string();
+    if c.inventory_seconds == 0 {
+        c.inventory_seconds = 900;
+    }
+    if c.heartbeat_seconds == 0 {
+        c.heartbeat_seconds = 60;
+    }
+    if c.spool_limit_bytes == 0 {
+        c.spool_limit_bytes = 64 * 1024 * 1024;
+    }
+    if !(60..=86400).contains(&c.inventory_seconds) || !(30..=3600).contains(&c.heartbeat_seconds) || !(0..=25).contains(&c.jitter_percent) || !(524288..=1073741824).contains(&c.spool_limit_bytes) {
+        return Err("agent intervals or spool bounds invalid".into());
+    }
+    Ok(c)
+}

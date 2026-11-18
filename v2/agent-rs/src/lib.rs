@@ -14,3 +14,7 @@ pub mod client;
 pub mod profile;
 pub mod inventory12;
 pub mod linuxparse;
+pub mod spool12;
+#[cfg(target_os = "linux")]
+pub mod collect_linux;
+pub mod run;

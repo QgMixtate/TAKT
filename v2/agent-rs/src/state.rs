@@ -131,3 +131,16 @@ pub fn prepare(state: &Path, machine: &str) -> Result<Preparation, String> {
     save_json(&path, &prep)?;
     Ok(prep)
 }
+
+/// Каталог состояния/очереди 0700 (создаётся при отсутствии).
+pub fn ensure_dir(path: &Path) -> Result<(), String> {
+    if !path.exists() {
+        fs::create_dir_all(path).map_err(|e| e.to_string())?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(path, fs::Permissions::from_mode(0o700)).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}

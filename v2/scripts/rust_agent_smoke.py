@@ -42,6 +42,14 @@ def scenario(**s):
  p=prof();assert p.returncode==0 and 'changed=false' in p.stdout,(p.stdout,p.stderr)
  assert json.loads((base/'rust'/'state'/'diagnostics.json').read_text())['pending_files']==0
  checks.append('rust agent profile: signed request with diagnostics, centre-signed response verified, managed revision cached in profile.json, unchanged on repeat')
+ p=subprocess.run([rust,'once','--config',str(base/'rust'/'agent.json')],capture_output=True,text=True,timeout=180,env=dict(os.environ,SURVEYSCAN_AGENT_DEBUG='1'))
+ assert p.returncode==0 and 'inventory_delivered' in p.stdout,(p.stdout[-800:],p.stderr[-800:])
+ assert (base/'rust'/'state'/'inventory-profile12.json').exists() and not list((base/'rust'/'state'/'spool').glob('*.pending'))
+ assert sql(f"SELECT count(*) FROM inventory.observations WHERE source_id='{source}'")=='1'
+ assert int(sql(f"SELECT count(*) FROM inventory.record_section_state12 r JOIN inventory.observations o ON o.tenant_id=r.tenant_id AND o.observation_id=r.last_attempt_id WHERE o.source_id='{source}'"))>=10
+ sections=int(sql(f"SELECT count(DISTINCT s.section_name) FROM inventory.observation_sections s JOIN inventory.observations o USING(tenant_id,observation_id) WHERE o.source_id='{source}'"))
+ assert sections>=10,sections
+ checks.append(f'rust agent inventory 1.2: capabilities negotiated (collector + centre signatures), signed profile cached, Linux collected ({sections} sections), signed batch queued, delivered and removed only on the centre-signed result')
  # Go-агент работает на каталоге состояния Rust-агента: формат совпадает (замена без перерегистрации)
  go=str(ROOT/'.dist/surveyscan-agent');process=start('go-agent-on-rust-state',[go,'run','--config',str(base/'rust'/'agent.json')]);deadline=time.monotonic()+120
  while time.monotonic()<deadline:
@@ -54,4 +62,4 @@ def scenario(**s):
  report={'package':'C52.02','status':'passed','checks':checks,'count':len(checks),'target':'rust agent register + real compiled collector/center + PostgreSQL'}
  (STATE/'c52-rust-agent-smoke.json').write_text(json.dumps(report,ensure_ascii=False,indent=1)+'\n');print(json.dumps(report,ensure_ascii=False))
 
-if __name__=='__main__':machine_harness(agent_scenario=scenario)
+if __name__=='__main__':machine_harness(agent_scenario=scenario,inventory12=True,collector_inventory12=True)

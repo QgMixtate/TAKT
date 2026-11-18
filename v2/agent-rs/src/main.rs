@@ -26,14 +26,14 @@ fn main() -> ExitCode {
             }
         }
         Some("heartbeat") => match arg(&args, "--config") {
-            Some(config) => ssagent::state::load_json::<ssagent::enroll::Config>(std::path::Path::new(&config))
+            Some(config) => ssagent::enroll::read_config(std::path::Path::new(&config))
                 .and_then(ssagent::client::Client::open)
                 .and_then(|mut c| c.heartbeat())
                 .map(|_| println!("heartbeat_accepted")),
             None => Err("heartbeat --config ПУТЬ".into()),
         },
         Some("profile") => match arg(&args, "--config") {
-            Some(config) => ssagent::state::load_json::<ssagent::enroll::Config>(std::path::Path::new(&config))
+            Some(config) => ssagent::enroll::read_config(std::path::Path::new(&config))
                 .and_then(ssagent::client::Client::open)
                 .and_then(|mut c| {
                     let current = ssagent::profile::cached(&c)?;
@@ -43,7 +43,32 @@ fn main() -> ExitCode {
                 }),
             None => Err("profile --config ПУТЬ".into()),
         },
-        _ => Err("используйте register (установка по коду), heartbeat, profile или version".into()),
+        Some("run") | Some("once") => match arg(&args, "--config") {
+            Some(config) => ssagent::enroll::read_config(std::path::Path::new(&config)).and_then(|cfg| {
+                let (mut agent, _lock) = ssagent::run::Agent::open(cfg)?;
+                if args[0] == "once" {
+                    // один проход: профиль 1.2, сбор, очередь, доставка (проверка установки и smoke)
+                    if !agent.ensure_profile12() {
+                        return Err("inventory profile 1.2 unavailable".into());
+                    }
+                    let delivery = agent.inventory()?;
+                    // результат центра приходит асинхронно через collector — ждём до 2 мин, как цикл доставки
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+                    while let Err(e) = agent.client.flush() {
+                        if std::time::Instant::now() > deadline {
+                            return Err(e);
+                        }
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                    }
+                    println!("inventory_delivered {delivery}");
+                    return Ok(());
+                }
+                agent.run(&|| false);
+                Ok(())
+            }),
+            None => Err("run --config ПУТЬ".into()),
+        },
+        _ => Err("используйте register (установка по коду), run, once, heartbeat, profile или version".into()),
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,
