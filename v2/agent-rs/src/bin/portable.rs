@@ -130,18 +130,20 @@ fn main() -> ExitCode {
                 let profiles = ssagent::profiles::Profiles::load(&dir)?;
                 let hosts = last["hosts"].as_array().cloned().unwrap_or_default();
                 let mut plan = vec![];
+                let mut winrm_plan: Vec<(String, ssagent::profiles::Profile)> = vec![];
                 for h in &hosts {
                     let (ip, kind) = (h["ip"].as_str().unwrap_or_default().to_string(), h["kind"].as_str().unwrap_or_default());
                     match profiles.bind(&ip, kind, None) {
                         Some(pr) if pr.kind == "ssh" => plan.push((ip, pr.clone())),
+                        Some(pr) if pr.kind == "winrm" && pr.auth == "password" => winrm_plan.push((ip, pr.clone())),
                         Some(pr) => {
-                            // WinRM в Rust-portable — следующий шаг C52.06: узел с профилем помечается, а не пропадает
+                            // вход текущей учёткой Windows (current_user) — следующий шаг: узел помечается, а не пропадает
                             outcomes.insert(ip, serde_json::json!({"outcome": "skipped", "reason": "COLLECTOR_NOT_AVAILABLE", "profile": pr.name}));
                         }
                         None => {}
                     }
                 }
-                let needed: Vec<&ssagent::profiles::Profile> = plan.iter().map(|(_, pr)| pr).collect();
+                let needed: Vec<&ssagent::profiles::Profile> = plan.iter().chain(winrm_plan.iter()).map(|(_, pr)| pr).collect();
                 let secrets = if args.iter().any(|a| a == "--secrets-stdin") { secrets_from_stdin()? } else { ssagent::profiles::Secrets::prompt(&needed)? };
                 let known = ssagent::sshcollect::KnownHosts::load(&dir);
                 let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(|e| e.to_string())?;
@@ -167,6 +169,40 @@ fn main() -> ExitCode {
                     out
                 });
                 known.save(&dir)?;
+                // WinRM: до 8 узлов параллельно (блокирующий клиент — по потоку на узел)
+                let winrm_results: Vec<(String, String, Result<(serde_json::Value, Vec<serde_json::Value>), ssagent::winrm::Failure>)> = {
+                    let queue = std::sync::Mutex::new(winrm_plan.clone());
+                    let out = std::sync::Mutex::new(vec![]);
+                    std::thread::scope(|sc| {
+                        for _ in 0..8 {
+                            sc.spawn(|| loop {
+                                let Some((ip, pr)) = queue.lock().unwrap().pop() else { return };
+                                eprintln!("winrm {ip}: сбор (профиль «{}»)", pr.name);
+                                let t = ssagent::winrm::Target { host: ip.clone(), ip: ip.clone(), port: pr.port.unwrap_or(5985), user: pr.user.clone(), password: secrets.get(&pr.name).unwrap_or("").to_string(), kdc: pr.kdc.clone() };
+                                let r = ssagent::winrm::collect(&t);
+                                out.lock().unwrap().push((ip, pr.name.clone(), r));
+                            });
+                        }
+                    });
+                    out.into_inner().unwrap()
+                };
+                let mut winrm_results = winrm_results;
+                winrm_results.sort_by(|a, b| a.0.cmp(&b.0));
+                for (ip, profile, r) in winrm_results {
+                    match r {
+                        Ok((candidates, sections)) => {
+                            report("winrm", &ip, &sections);
+                            let o = p::observation(&dir, &id, "winrm", &ip, &candidates, sections)?;
+                            outcomes.insert(ip, serde_json::json!({"outcome": "collected", "profile": profile, "observation_id": o["observation_id"]}));
+                            observations.push(o);
+                        }
+                        Err(f) => {
+                            failed_targets += 1;
+                            println!("{:<6} {:<24} FAILED: {}", "winrm", ip, f.code());
+                            outcomes.insert(ip, serde_json::json!({"outcome": f.outcome(), "reason": f.code(), "profile": profile}));
+                        }
+                    }
+                }
                 let mut results = results;
                 results.sort_by(|a, b| a.0.cmp(&b.0));
                 for (ip, profile, r) in results {

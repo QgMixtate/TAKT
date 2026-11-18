@@ -22,6 +22,9 @@ pub struct Profile {
     pub transport: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub port: Option<u16>,
+    /// WinRM Kerberos: адрес KDC (например, dc.domain.local); без него вход — NTLM
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kdc: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

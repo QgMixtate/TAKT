@@ -91,6 +91,38 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts/rust_windows_parity.py .\surveyscan-portable.exe agent-rs\target\release\surveyscan-agent.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Rust portable collects this Windows over WinRM (HTTP 5985, NTLM, per-message encryption, local account) — C52.06
+        working-directory: v2
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pwText = [guid]::NewGuid().ToString() + 'aA1!'
+          New-LocalUser -Name ssrust -Password (ConvertTo-SecureString $pwText -AsPlainText -Force) -AccountNeverExpires | Out-Null
+          $acct = "$env:COMPUTERNAME\ssrust"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\prepare-winrm-target.ps1 -Account $acct -Collector 10.0.0.2 -Kerberos | Out-Null
+          $exe = (Resolve-Path agent-rs\target\release\surveyscan-portable.exe).Path
+          $root = Join-Path $env:RUNNER_TEMP 'rust-winrm'
+          $state = Join-Path $root 'state'
+          $init = & $exe init --state $state --tenant 00000000-0000-4000-8000-000000000051 --site 00000000-0000-4000-8000-000000000052 --scope 00000000-0000-4000-8000-000000000053
+          if ($LASTEXITCODE -ne 0) { throw "rust portable init failed" }
+          $pub = ($init | Select-String '^public_key=(.+)$').Matches[0].Groups[1].Value
+          @{ profiles = @(@{ name = 'local'; kind = 'winrm'; user = $acct; auth = 'password' }); rules = @(@{ profile = 'local'; kind = 'windows_winrm' }) } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $state 'profiles.json') -Encoding ascii
+          @{ ranges = @('127.0.0.1/32'); excluded = @(); started_at = '2026-11-18T10:00:00Z'; finished_at = '2026-11-18T10:00:01Z'; complete = $true; hosts = @(@{ ip = '127.0.0.1'; ports = @(5985); kind = 'windows_winrm' }) } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $state 'discovery-last.json') -Encoding ascii
+          $bad = "local=wrong$pwText" | & $exe collect --state $state --dry-run --no-host --secrets-stdin | Out-String
+          Write-Output $bad
+          if ($bad -notmatch 'FAILED: AUTH_FAILED') { throw 'wrong password must give AUTH_FAILED' }
+          $pkg = Join-Path $root 'audit.zip'
+          $out = "local=$pwText" | & $exe collect --state $state --out $pkg --no-host --secrets-stdin | Out-String
+          Write-Output $out
+          if ($LASTEXITCODE -ne 0 -or $out -notmatch 'EXPORTED: 1 observation') { throw 'rust portable WinRM collection failed' }
+          $rows = [int](($out | Select-String 'winrm\s+127\.0\.0\.1\s+rows=(\d+)').Matches[0].Groups[1].Value)
+          if ($rows -lt 20) { throw "too few rows over WinRM: $rows" }
+          if ($out.Contains($pwText) -or [System.Text.Encoding]::Latin1.GetString([System.IO.File]::ReadAllBytes($pkg)).Contains($pwText)) { throw 'password leaked' }
+          & .\surveyscan-portable.exe verify --package $pkg --public-key $pub
+          if ($LASTEXITCODE -ne 0) { throw 'Go verify of the rust WinRM package failed' }
+          Remove-LocalUser -Name ssrust
+          Write-Output "rust portable WinRM: $rows rows, AUTH_FAILED on a wrong password, Go verified"
+          exit 0
       - name: Rust agent as a LocalSystem service through SCM (install, start, clean stop on missing identity, uninstall)
         working-directory: v2
         shell: pwsh

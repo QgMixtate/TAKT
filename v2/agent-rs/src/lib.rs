@@ -30,3 +30,4 @@ pub mod discover;
 pub mod profiles;
 pub mod sshcollect;
 pub mod winrmparse;
+pub mod winrm;
