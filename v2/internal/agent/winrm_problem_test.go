@@ -19,6 +19,9 @@ func TestWinRMProblemCodes(t *testing.T) {
 		{winrminv.ErrAuth, "auth_failed"},
 		{winrminv.ErrAccess, "access_denied"},
 		{winrminv.ErrTLS, "tls_failed"},
+		{winrminv.ErrTLSUnknownCA, "tls_unknown_ca"},
+		{winrminv.ErrTLSName, "tls_name_mismatch"},
+		{winrminv.ErrTLSExpired, "tls_expired"},
 		{&winrmkrb.CodedError{Code: "kerberos_login:KRB_AP_ERR_SKEW"}, "kerberos_login:KRB_AP_ERR_SKEW"},
 		{errors.New("something else"), ""},
 	} {

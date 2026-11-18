@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -40,6 +41,10 @@ func (r *Registry) discoveryDo(w http.ResponseWriter, req *http.Request, status 
 	out, e := fn(ctx, tx, id)
 	if e == nil {
 		e = tx.Commit(ctx)
+	}
+	if errors.Is(e, sources.ErrTargetExists) {
+		access.APIError(w, 409, "TARGET_EXISTS")
+		return
 	}
 	if e != nil {
 		cmdbError(w, req, e)

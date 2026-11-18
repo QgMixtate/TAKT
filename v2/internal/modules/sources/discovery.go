@@ -3,6 +3,7 @@ package sources
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 	"slices"
 	"sort"
@@ -147,8 +148,14 @@ func parseNetwork(cidr string) (netip.Prefix, bool) {
 	return p, true
 }
 
+// ErrTargetExists — на этом адресе уже есть неотключённая цель того же вида (стенд №17: вместо «Состояние изменилось»).
+var ErrTargetExists = fmt.Errorf("sources: active collect target for this address exists: %w", domain.Conflict)
+
 func discoveryConflict(e error) error {
 	var pg *pgconn.PgError
+	if errors.As(e, &pg) && pg.Code == "23505" && pg.ConstraintName == "remote_target_once" {
+		return ErrTargetExists
+	}
 	if errors.As(e, &pg) && pg.Code == "23505" {
 		return domain.Conflict
 	}

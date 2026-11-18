@@ -50,14 +50,14 @@ func (Store) RecordSuccess(ctx context.Context, tx pgx.Tx, o contracts.Observati
 }
 func (Store) Summaries(ctx context.Context, tx pgx.Tx, tenant string, ids []string) ([]contracts.SourceSummary, error) {
 	out := []contracts.SourceSummary{}
-	rows, e := tx.Query(ctx, `SELECT s.tenant_id::text,s.source_id::text,s.source_kind,s.site_id::text,s.state,s.generation_id::text,GREATEST(s.last_contact_at,(SELECT h.last_contact_at FROM sources.heartbeat_state h WHERE h.tenant_id=s.tenant_id AND h.source_id=s.source_id AND h.generation_id=s.generation_id)),GREATEST(s.last_successful_inventory_at,p.last_successful_inventory_at) FROM sources.sources s LEFT JOIN sources.inventory_progress p USING(tenant_id,source_id,generation_id) WHERE s.tenant_id=$1 AND s.source_id=ANY($2::uuid[]) ORDER BY s.source_id`, tenant, ids)
+	rows, e := tx.Query(ctx, `SELECT s.tenant_id::text,s.source_id::text,s.source_kind,s.site_id::text,s.state,s.generation_id::text,GREATEST(s.last_contact_at,(SELECT h.last_contact_at FROM sources.heartbeat_state h WHERE h.tenant_id=s.tenant_id AND h.source_id=s.source_id AND h.generation_id=s.generation_id)),GREATEST(s.last_successful_inventory_at,p.last_successful_inventory_at),CASE WHEN s.source_kind='agent' THEN COALESCE((SELECT g.acquisition FROM sources.agents g WHERE g.tenant_id=s.tenant_id AND g.source_id=s.source_id LIMIT 1),'agent') END FROM sources.sources s LEFT JOIN sources.inventory_progress p USING(tenant_id,source_id,generation_id) WHERE s.tenant_id=$1 AND s.source_id=ANY($2::uuid[]) ORDER BY s.source_id`, tenant, ids)
 	if e != nil {
 		return out, e
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var s contracts.SourceSummary
-		if e = rows.Scan(&s.TenantID, &s.SourceID, &s.Kind, &s.SiteID, &s.State, &s.Generation, &s.LastContact, &s.LastInventory); e != nil {
+		if e = rows.Scan(&s.TenantID, &s.SourceID, &s.Kind, &s.SiteID, &s.State, &s.Generation, &s.LastContact, &s.LastInventory, &s.Acquisition); e != nil {
 			return out, e
 		}
 		s.ContactStatus = "unknown"

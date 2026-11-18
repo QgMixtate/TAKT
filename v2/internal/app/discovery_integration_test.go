@@ -398,6 +398,10 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if tg.State != "pending" || tg.Port != 22 || tg.Source != nil {
 		t.Fatalf("target %+v", tg)
 	}
+	// Стенд №17: вторая неотключённая цель того же вида на тот же адрес — понятный код, а не «Состояние изменилось».
+	if dup := call("admin", "POST", "/api/v1/discovery/targets", target51(`,"host_key_sha256":"`+hostKey+`"`), 409); !strings.Contains(string(dup), "TARGET_EXISTS") {
+		t.Fatalf("duplicate target error %s", dup)
+	}
 	code, raw = post("/api/v1/machine/collect-targets", []byte("{}"))
 	if code != 200 || !strings.Contains(string(raw), tg.ID) || !strings.Contains(string(raw), "scanprobe") || strings.Contains(string(raw), "c51-target-secret") {
 		t.Fatalf("collector targets %d %s", code, raw)

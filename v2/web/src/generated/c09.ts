@@ -133,6 +133,11 @@ export interface components {
             generation_id: string;
             /** @enum {unknown} */
             contact_status: "recently_seen" | "stale" | "unknown";
+            /**
+             * @description Для source_kind=agent: как собираются данные — агент на хосте или collector по SSH/WinRM.
+             * @enum {unknown}
+             */
+            acquisition?: "agent" | "ssh" | "winrm" | "snmp";
         };
         InventoryDetail: {
             schema_version: components["schemas"]["Version"];
@@ -145,6 +150,17 @@ export interface components {
             facts: components["schemas"]["CurrentFact"][];
             sections: components["schemas"]["SectionDetail"][];
             sources: components["schemas"]["SourceSummary"][];
+            /** @description Имена хоста по записям источников: действующие (valid_to=null) и прежние, новые сверху. */
+            hostnames?: components["schemas"]["HostnameEntry"][];
+        };
+        HostnameEntry: {
+            value: string;
+            /** Format: uuid */
+            source_id: string;
+            /** Format: date-time */
+            valid_from: string;
+            /** Format: date-time */
+            valid_to: string | null;
         };
     };
     responses: never;

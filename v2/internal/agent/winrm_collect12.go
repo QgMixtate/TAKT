@@ -121,6 +121,12 @@ func WinRMProblem(err error) string {
 		return "auth_failed"
 	case errors.Is(err, winrminv.ErrAccess):
 		return "access_denied"
+	case errors.Is(err, winrminv.ErrTLSUnknownCA):
+		return "tls_unknown_ca"
+	case errors.Is(err, winrminv.ErrTLSName):
+		return "tls_name_mismatch"
+	case errors.Is(err, winrminv.ErrTLSExpired):
+		return "tls_expired"
 	case errors.Is(err, winrminv.ErrTLS):
 		return "tls_failed"
 	}

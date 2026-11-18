@@ -3,6 +3,7 @@ package winrminv
 import (
 	"bytes"
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -24,9 +25,13 @@ var (
 	ErrRun    = errors.New("winrm: remote command failed")
 	ErrAuth   = errors.New("winrm: authentication rejected by the target (HTTP 401)")
 	ErrTLS    = errors.New("winrm: TLS verification of the target certificate failed")
-	ErrNet    = errors.New("winrm: target unreachable")
-	ErrAccess = errors.New("winrm: access denied for the collection account")
-	ErrExit   = errors.New("winrm: remote PowerShell exited with a non-zero code")
+	// Уточнения ErrTLS (стенд №17: «текст отказа TLS не говорит, что не так»); errors.Is(…, ErrTLS) для них истинно.
+	ErrTLSUnknownCA = fmt.Errorf("%w: certificate is not issued by the configured CA", ErrTLS)
+	ErrTLSName      = fmt.Errorf("%w: certificate does not match the computer name", ErrTLS)
+	ErrTLSExpired   = fmt.Errorf("%w: certificate expired or not yet valid", ErrTLS)
+	ErrNet          = errors.New("winrm: target unreachable")
+	ErrAccess       = errors.New("winrm: access denied for the collection account")
+	ErrExit         = errors.New("winrm: remote PowerShell exited with a non-zero code")
 )
 
 // classify сводит ошибку транспорта к безопасной категории без текста ответа цели.
@@ -53,7 +58,7 @@ func classifyKind(err error) error {
 	case strings.Contains(text, "401") || strings.Contains(text, "unauthorized") || strings.Contains(text, "ntlm"):
 		return ErrAuth
 	case strings.Contains(text, "x509") || strings.Contains(text, "certificate") || strings.Contains(text, "tls"):
-		return ErrTLS
+		return classifyTLS(err, text)
 	case strings.Contains(text, "refused") || strings.Contains(text, "timeout") || strings.Contains(text, "no route") || strings.Contains(text, "deadline") ||
 		strings.Contains(text, "unreachable") || strings.Contains(text, "no such host") || strings.Contains(text, "connection reset"):
 		return ErrNet
@@ -284,4 +289,19 @@ func connectKerberos(r SecretReader, t Target) (Runner, error) {
 		return nil, errors.New("winrm: client setup failed")
 	}
 	return winrmRunner{client: client, close: tr.Close}, nil
+}
+
+func classifyTLS(err error, text string) error {
+	var unknown x509.UnknownAuthorityError
+	var name x509.HostnameError
+	var invalid x509.CertificateInvalidError
+	switch {
+	case errors.As(err, &unknown) || strings.Contains(text, "unknown authority"):
+		return ErrTLSUnknownCA
+	case errors.As(err, &name) || strings.Contains(text, "certificate is valid for") || strings.Contains(text, "doesn't contain any ip sans"):
+		return ErrTLSName
+	case errors.As(err, &invalid) && invalid.Reason == x509.Expired, strings.Contains(text, "has expired") || strings.Contains(text, "not yet valid"):
+		return ErrTLSExpired
+	}
+	return ErrTLS
 }

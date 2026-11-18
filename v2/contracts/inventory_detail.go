@@ -30,8 +30,9 @@ type SectionDetail struct {
 }
 type SourceSummary struct {
 	Source
-	ContactStatus string `json:"contact_status"`
-	Generation    string `json:"generation_id"`
+	ContactStatus string  `json:"contact_status"`
+	Generation    string  `json:"generation_id"`
+	Acquisition   *string `json:"acquisition,omitempty"` // agent | ssh | winrm (только source_kind=agent)
 }
 type InventoryDetail struct {
 	Version     Version         `json:"schema_version"`
@@ -42,4 +43,13 @@ type InventoryDetail struct {
 	Facts       []CurrentFact   `json:"facts"`
 	Sections    []SectionDetail `json:"sections"`
 	Sources     []SourceSummary `json:"sources"`
+	Hostnames   []HostnameEntry `json:"hostnames,omitempty"`
+}
+
+// HostnameEntry — имя хоста из записи источника и срок его действия (смена имени видна в карточке).
+type HostnameEntry struct {
+	Value     string     `json:"value"`
+	SourceID  string     `json:"source_id"`
+	ValidFrom time.Time  `json:"valid_from"`
+	ValidTo   *time.Time `json:"valid_to"`
 }

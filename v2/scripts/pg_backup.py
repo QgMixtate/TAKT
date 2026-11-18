@@ -17,15 +17,24 @@ import tempfile
 from release import digest, read_json, require
 
 
+def operation_timeout():
+    """Тайм-аут одной операции PostgreSQL (с): по умолчанию 1800 — 300 не хватало базе стенда (отчёт №17–18);
+    переопределяется SURVEYSCAN_PG_OPERATION_TIMEOUT (60..86400)."""
+    raw = os.environ.get('SURVEYSCAN_PG_OPERATION_TIMEOUT', '1800')
+    require(raw.isdigit() and 60 <= int(raw) <= 86400, 'SURVEYSCAN_PG_OPERATION_TIMEOUT must be 60..86400 seconds')
+    return int(raw)
+
+
 class Client:
     def __init__(self, commands=None, env=None):
         self.commands = commands or {name: [name] for name in ('psql', 'pg_dump', 'pg_restore')}
         self.env = env
+        self.timeout = operation_timeout()
 
     def run(self, tool, args, stdin=None, stdout=None):
         result = subprocess.run(self.commands[tool] + args, stdin=stdin,
                                 stdout=stdout if stdout is not None else subprocess.PIPE,
-                                stderr=subprocess.PIPE, timeout=300, env=self.env)
+                                stderr=subprocess.PIPE, timeout=self.timeout, env=self.env)
         require(result.returncode == 0, 'PostgreSQL client operation failed; backup/restore incomplete')
         return result.stdout or b''
 

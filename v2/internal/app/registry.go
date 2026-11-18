@@ -154,6 +154,15 @@ func (r *Registry) IngestAuthorized(ctx context.Context, tenant, source string, 
 				return result, e
 			}
 		}
+		if resolved.Renamed {
+			version, e := r.Assets.Bump(ctx, tx, tenant, resolved.AssetID)
+			if e != nil {
+				return result, e
+			}
+			if e = r.assetEvent(ctx, tx, tenant, resolved.AssetID, version, "asset.facts_changed.v1", "Assets", "HOSTNAME_CHANGED", source, o.ID); e != nil {
+				return result, e
+			}
+		}
 		link, e := r.Assets.Link(ctx, tx, o, resolved.AssetID)
 		if e != nil {
 			return result, e

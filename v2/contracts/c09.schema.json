@@ -486,6 +486,15 @@
             "stale",
             "unknown"
           ]
+        },
+        "acquisition": {
+          "enum": [
+            "agent",
+            "ssh",
+            "winrm",
+            "snmp"
+          ],
+          "description": "Для source_kind=agent: как собираются данные — агент на хосте или collector по SSH/WinRM."
         }
       },
       "required": [
@@ -541,6 +550,14 @@
             "$ref": "#/$defs/SourceSummary"
           },
           "maxItems": 2054
+        },
+        "hostnames": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "$ref": "#/$defs/HostnameEntry"
+          },
+          "description": "Имена хоста по записям источников: действующие (valid_to=null) и прежние, новые сверху."
         }
       },
       "required": [
@@ -554,6 +571,38 @@
         "sources"
       ],
       "additionalProperties": false
+    },
+    "HostnameEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "source_id",
+        "valid_from",
+        "valid_to"
+      ],
+      "properties": {
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "valid_from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "valid_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      }
     }
   }
 }

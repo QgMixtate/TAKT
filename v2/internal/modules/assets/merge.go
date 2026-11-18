@@ -3,6 +3,7 @@ package assets
 import (
 	"context"
 	"errors"
+	"github.com/QgMixtate/surveyscan/v2/contracts"
 
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/domain"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/identifier"
@@ -210,4 +211,28 @@ func (Store) SetClass(ctx context.Context, tx pgx.Tx, tenant, asset, revision st
 		return domain.Revision
 	}
 	return nil
+}
+
+// Hostnames — имена хоста актива по записям источников (действующие и закрытые), новые сверху, до 50.
+func (Store) Hostnames(ctx context.Context, tx pgx.Tx, tenant, asset string) ([]contracts.HostnameEntry, error) {
+	rows, e := tx.Query(ctx, `SELECT i.normalized_value,r.source_id::text,i.valid_from,i.valid_to FROM assets.asset_identifiers i JOIN assets.source_records r ON r.tenant_id=i.tenant_id AND r.source_record_key=i.source_record_key
+WHERE i.tenant_id=$1 AND i.asset_uid=$2 AND i.kind='hostname' ORDER BY i.valid_to IS NULL DESC,COALESCE(i.valid_to,i.valid_from) DESC LIMIT 50`, tenant, asset)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	out := []contracts.HostnameEntry{}
+	for rows.Next() {
+		var h contracts.HostnameEntry
+		if e = rows.Scan(&h.Value, &h.SourceID, &h.ValidFrom, &h.ValidTo); e != nil {
+			return nil, e
+		}
+		h.ValidFrom = h.ValidFrom.UTC()
+		if h.ValidTo != nil {
+			v := h.ValidTo.UTC()
+			h.ValidTo = &v
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
 }

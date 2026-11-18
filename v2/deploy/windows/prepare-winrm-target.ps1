@@ -59,7 +59,16 @@ $listener = Get-ChildItem WSMan:\localhost\Listener | Where-Object { $_.Keys -co
 $thumb = $null
 if ($listener) {
   $thumb = (Get-ChildItem "$($listener.PSPath)" | Where-Object Name -eq 'CertificateThumbprint').Value
-  Write-Host "[ok] HTTPS listener exists"
+  $current = Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Thumbprint -eq $thumb } | Select-Object -First 1
+  # стенд №17: прежний прослушиватель на самоподписанном сертификате мешал перейти на CA домена — перепривязываем
+  if ($domainCert -and $thumb -ne $domainCert.Thumbprint -and (-not $current -or $current.Issuer -eq $current.Subject)) {
+    Remove-Item -Path $listener.PSPath -Recurse -Force
+    New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $domainCert.Thumbprint -Force | Out-Null
+    $thumb = $domainCert.Thumbprint
+    Write-Host "[+] HTTPS listener on 5986 moved to the domain CA certificate for $fqdn"
+  } else {
+    Write-Host "[ok] HTTPS listener exists"
+  }
 } elseif ($domainCert) {
   New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $domainCert.Thumbprint -Force | Out-Null
   $thumb = $domainCert.Thumbprint

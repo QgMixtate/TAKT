@@ -63,12 +63,24 @@ func (r *Registry) InventoryDetail(ctx context.Context, id accessport.Identity, 
 	for _, s := range ids12 {
 		ids[s] = true
 	}
+	// Все источники, чьи записи сопоставлены с активом: факты portable могли быть перекрыты более свежим
+	// SSH/WinRM, но источник остаётся источником актива (стенд №18).
+	records, e := r.Assets.SourceRecords(ctx, tx, id.TenantID, uid)
+	if e != nil {
+		return out, e
+	}
+	for _, rec := range records {
+		ids[rec.SourceID] = true
+	}
 	sources := make([]string, 0, len(ids))
 	for id := range ids {
 		sources = append(sources, id)
 	}
 	out.Sources, e = r.Sources.Summaries(ctx, tx, id.TenantID, sources)
 	if e != nil {
+		return out, e
+	}
+	if out.Hostnames, e = r.Assets.Hostnames(ctx, tx, id.TenantID, uid); e != nil {
 		return out, e
 	}
 	raw, e := json.Marshal(out)

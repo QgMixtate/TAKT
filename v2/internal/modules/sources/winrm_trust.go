@@ -47,7 +47,7 @@ func ParseDomainCA(pemText string) ([]TrustCert, error) {
 			return nil, domain.Invalid
 		}
 		sum := sha256.Sum256(b.Bytes)
-		out = append(out, TrustCert{Subject: c.Subject.String(), Issuer: c.Issuer.String(), NotAfter: c.NotAfter.UTC(), SHA256: hex.EncodeToString(sum[:])})
+		out = append(out, TrustCert{Subject: readableDN(c.Subject), Issuer: readableDN(c.Issuer), NotAfter: c.NotAfter.UTC(), SHA256: hex.EncodeToString(sum[:])})
 	}
 	if len(out) == 0 {
 		return nil, domain.Invalid

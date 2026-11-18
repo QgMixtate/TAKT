@@ -22,6 +22,9 @@ type Resolution struct {
 	// AutoMatched — запись привязана к существующему активу по единственному надёжному сильному
 	// идентификатору (C25.01, вариант Б); вызывающий фиксирует аудит и историю актива.
 	AutoMatched bool
+	// Renamed — запись прислала другое имя хоста: прежний идентификатор hostname закрыт (valid_to), вызывающий
+	// фиксирует HOSTNAME_CHANGED в истории актива (стенд №18: «старое имя не закрыто, истории смены нет»).
+	Renamed bool
 }
 
 // strongKind — сильные идентификаторы (C25.01 §1). IP/MAC/hostname — слабые и никогда не склеивают.
@@ -315,6 +318,21 @@ SELECT $1,$2,$3,$4,$5,'open' WHERE NOT EXISTS(SELECT 1 FROM assets.reconciliatio
 		_, e = tx.Exec(ctx, `INSERT INTO assets.asset_identifiers(tenant_id,identifier_id,asset_uid,kind,namespace,normalized_value,strength,source_record_key) SELECT $1,$2,$3,$4,$5,$6,$7,$8 WHERE NOT EXISTS(SELECT 1 FROM assets.asset_identifiers WHERE tenant_id=$1 AND asset_uid=$3 AND kind=$4 AND namespace=$5 AND normalized_value=$6 AND source_record_key=$8 AND valid_to IS NULL)`, o.TenantID, identifier.New(), result.AssetID, c.Kind, c.Namespace, c.Value, strength, result.RecordKey)
 		if e != nil {
 			return result, e
+		}
+	}
+	hostnames := map[string][]string{}
+	for _, c := range normalized {
+		if c.Kind == "hostname" {
+			hostnames[c.Namespace] = append(hostnames[c.Namespace], c.Value)
+		}
+	}
+	for namespace, values := range hostnames {
+		tag, e := tx.Exec(ctx, `UPDATE assets.asset_identifiers SET valid_to=now() WHERE tenant_id=$1 AND asset_uid=$2 AND kind='hostname' AND namespace=$3 AND source_record_key=$4 AND valid_to IS NULL AND NOT normalized_value=ANY($5::text[])`, o.TenantID, result.AssetID, namespace, result.RecordKey, values)
+		if e != nil {
+			return result, e
+		}
+		if tag.RowsAffected() > 0 && !result.Created {
+			result.Renamed = true
 		}
 	}
 	return result, nil
