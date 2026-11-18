@@ -93,7 +93,15 @@ func TestServiceLifecycleThroughSCM(t *testing.T) {
 	if err = Uninstall(name); err != nil {
 		t.Fatal("uninstall", err)
 	}
-	if _, _, err = Status(name); err == nil {
+	// DeleteService только помечает службу; SCM удаляет её, когда закрыты все дескрипторы (гонка в CI 18.11).
+	gone := false
+	for deadline := time.Now().Add(10 * time.Second); time.Now().Before(deadline); time.Sleep(200 * time.Millisecond) {
+		if _, _, err = Status(name); err != nil {
+			gone = true
+			break
+		}
+	}
+	if !gone {
 		t.Fatal("service still present after uninstall")
 	}
 	if Install(Spec{Name: "bad name", Exe: exe}) == nil || Install(Spec{Name: name, Exe: "relative.exe"}) == nil {

@@ -21,3 +21,5 @@ pub mod run;
 pub mod renew;
 #[cfg(windows)]
 pub mod collect_windows;
+#[cfg(windows)]
+pub mod wmi_windows;

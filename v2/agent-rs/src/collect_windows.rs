@@ -394,6 +394,7 @@ pub fn section(name: &str) -> Value {
         "routes_ports" => routes(),
         "resources" => resources(),
         "neighbors" => neighbors(),
+        "updates" | "protection" => return crate::wmi_windows::section(name),
         _ => return failed(name, "unsupported", "SECTION_UNSUPPORTED"),
     };
     if rows.is_empty() {
@@ -405,7 +406,7 @@ pub fn section(name: &str) -> Value {
 /// Кандидаты идентичности — как candidatesFromSections в Go: hostname.raw и MachineGuid.
 pub fn collect() -> Snapshot {
     let names = ["identity", "os", "network", "hardware", "software", "updates", "services", "users_groups", "routes_ports", "resources", "protection", "neighbors"];
-    let sections: Vec<Value> = names.iter().map(|n| section(n)).collect();
+    let sections: Vec<Value> = names.iter().map(|n| worker_section(n)).collect();
     let mut candidates = vec![];
     if let Some(h) = sections[0]["records"][0]["hostname"].as_str().filter(|h| h.len() <= 512) {
         candidates.push(json!({"kind": "hostname", "namespace": "hostname.raw", "value": h}));
@@ -642,4 +643,48 @@ fn accounts() -> Vec<Value> {
         );
     }
     rows
+}
+
+/// Раздел в отдельном процессе (этот же exe, `inventory-section`) с лимитом 30 с и вывода — как workerSection в Go:
+/// зависший провайдер (COM/WMI, реестр, NetAPI) не останавливает цикл агента и не теряет другие разделы.
+pub fn worker_section(name: &str) -> Value {
+    use std::io::Read;
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    const LIMIT: usize = 1 << 20; // wire.Inventory12MaxPayload
+    let Ok(exe) = std::env::current_exe() else { return failed(name, "unavailable", "WORKER_UNAVAILABLE") };
+    let Ok(mut child) = Command::new(exe).args(["inventory-section", name]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null()).spawn() else {
+        return failed(name, "unavailable", "WORKER_UNAVAILABLE");
+    };
+    let mut out = child.stdout.take().expect("piped stdout");
+    let reader = std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = (&mut out).take(LIMIT as u64 + 1).read_to_end(&mut b);
+        b
+    });
+    let start = Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break Some(st),
+            Ok(None) if start.elapsed() > Duration::from_secs(30) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(25)),
+            Err(_) => break None,
+        }
+    };
+    let Some(status) = status else { return failed(name, "unavailable", "TIMEOUT") };
+    let raw = reader.join().unwrap_or_default();
+    if raw.len() > LIMIT {
+        return failed(name, "unavailable", "LIMIT_REACHED");
+    }
+    if !status.success() {
+        return failed(name, "unavailable", "WORKER_FAILED");
+    }
+    match serde_json::from_slice::<Value>(&raw) {
+        Ok(v) if v["name"] == name && v["records"].is_array() && v["record_count"].as_u64() == v["records"].as_array().map(|a| a.len() as u64) => v,
+        _ => failed(name, "unavailable", "INVALID_WORKER_RESPONSE"),
+    }
 }

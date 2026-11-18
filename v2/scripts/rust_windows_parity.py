@@ -14,11 +14,12 @@ def key(name,row):
     if name=='services':return row['name']
     if name=='resources':return (row['name'],row.get('total_bytes'),row.get('filesystem'))
     if name=='neighbors':return (row['address'],row['interface_index'],row.get('mac'))
+    if name=='protection':return (row['kind'],row['name'],row.get('enabled'),row.get('state'))
     if name=='software':return (row['name'],row.get('registry_key'),row.get('registry_view'),row.get('scope'))
     return json.dumps(row,sort_keys=True)
 
 checks=[]
-for name in ['identity','os','network','hardware','software','services','users_groups','routes_ports','resources','neighbors']:
+for name in ['identity','os','network','hardware','software','updates','services','users_groups','routes_ports','resources','protection','neighbors']:
     g=section([go,'inventory-worker',name]);r=section([rust,'inventory-section',name])
     if name=='neighbors':  # кэш ARP/NDP меняется между вызовами — сравниваются только постоянные записи
         g['records']=[x for x in g['records'] if x.get('state')=='permanent'];r['records']=[x for x in r['records'] if x.get('state')=='permanent']
