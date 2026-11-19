@@ -235,6 +235,7 @@ export const api={
  software:(uid:string,filter:string,cursor:string|null)=>call<SoftwarePage>('/api/v1/assets/'+encodeURIComponent(uid)+'/software?limit=100'+(filter?'&filter='+encodeURIComponent(filter):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),'SoftwarePage'),
  components:(uid:string)=>call<ComponentList>('/api/v1/assets/'+encodeURIComponent(uid)+'/components','ComponentList'),
  products:(q:string)=>call<ProductList>('/api/v1/software?q='+encodeURIComponent(q),'ProductList'),
+ rsmSiteHealth:()=>call<{items:{site_id:string;name:string;hosts:number;green:number;yellow:number;red:number;grey:number;systems:{service_uid:string;name:string;criticality:string;hosts:number;green:number;yellow:number;red:number;grey:number}[]}[]}>('/api/v1/rsm/health/sites','RSMSiteHealthList'),
  rsmOverview:()=>call<RSMOverview>('/api/v1/rsm/overview','RSMOverview'),
  rsmSystems:(f:RSMSystemQuery)=>{const q=new URLSearchParams({limit:String(f.limit??100),offset:String(f.offset??0)});if(f.color)q.set('color',f.color);if(f.criticality?.length)q.set('criticality',f.criticality.join(','));if(f.env)q.set('env',f.env);if(f.direction)q.set('direction',f.direction);if(f.problems)q.set('problems','true');if(f.no_owner)q.set('no_owner','true');if(f.q)q.set('q',f.q);return call<RSMSystemPage>('/api/v1/rsm/systems?'+q.toString(),'RSMSystemPage')},
  rsmSystemCard:(uid:string)=>call<RSMSystemCard>('/api/v1/rsm/systems/'+encodeURIComponent(uid)+'/card','RSMSystemCard'),

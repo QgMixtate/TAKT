@@ -452,6 +452,7 @@ func TestC54RSMHTTP(t *testing.T) {
 			t.Fatalf("system=none must list hosts outside systems: %+v", hp)
 		}
 	}
+	get("/api/v1/rsm/health/sites", "SiteHealthList")
 	for _, by := range []string{"site", "owner", "system", "os"} {
 		get("/api/v1/hosts/tree?by="+by, "HostTree")
 	}

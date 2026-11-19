@@ -54,6 +54,10 @@ try{
  for(const s of [/Далее: зависимости/,/Далее: ответственные/,/Далее: проверка/])await page.getByRole('button',{name:s}).click();
  await page.getByRole('button',{name:'Создать систему'}).click();await expect(page.getByText('Компонентов: 1, правил: 1')).toBeVisible();await page.getByRole('button',{name:'Открыть карточку системы'}).click();await expect(page.getByRole('heading',{name:'Smoke мастер',level:1})).toBeVisible();
  checks.push('C53.07 new-system wizard creates system, environments, component with role and rule through the real API');
+ // C53.06: «Здоровье» — дерево направление → система → среда → компонент → хост с причинами цвета; разрез по площадкам
+ await page.getByRole('navigation',{name:'Разделы'}).getByRole('button',{name:/^Здоровье/}).click();await expect(page.getByRole('heading',{name:/Компания:/})).toBeVisible();await page.getByRole('radio',{name:'все'}).click();await expect(page.locator('.health-table')).toContainText('CRM Web');
+ await page.getByRole('radio',{name:/Площадка → система/}).click();await expect(page.locator('.health-table')).toContainText('площадка');await page.screenshot({path:'../.local/c53-health.png'});
+ checks.push('C53.06 health tree: direction and site views down to hosts and reasons');
  // C51: «Обследования сети» — вкладки, подсеть из боковой панели, запуск, результат настоящего collector
  await page.getByRole('button',{name:/Обследования сети/}).click();await expect(page.getByRole('heading',{name:'Обследования сети.'})).toBeVisible();
  await page.getByRole('button',{name:'+ Новая подсеть'}).click();let drawer=page.getByRole('dialog',{name:'Новая подсеть'});

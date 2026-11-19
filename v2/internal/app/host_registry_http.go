@@ -305,6 +305,93 @@ func (r *Registry) hostRegistryHandlers(h map[string]rsmRoute) {
 			reply(w, req, out, e)
 		})}
 	}
+	h["GET /api/v1/rsm/health/sites"] = read(func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity) {
+		if _, ok := queryOnly(w, req); !ok {
+			return
+		}
+		out, e := r.RSMSiteHealth(ctx, id)
+		reply(w, req, out, e)
+	})
 	h["POST /api/v1/hosts/assign"] = write("assets:write", r.HostBulkAssign)
 	h["POST /api/v1/hosts/collect"] = write("assets:write", r.HostBulkCollect)
+}
+
+// RSMSiteHealth — разрез «Здоровья» по площадкам (C53.06): цвета хостов площадки и системы, чьи хосты на ней.
+type RSMSiteSystem struct {
+	UID         string `json:"service_uid"`
+	Name        string `json:"name"`
+	Criticality string `json:"criticality"`
+	Hosts       int    `json:"hosts"`
+	Green       int    `json:"green"`
+	Yellow      int    `json:"yellow"`
+	Red         int    `json:"red"`
+	Grey        int    `json:"grey"`
+}
+
+type RSMSiteHealth struct {
+	SiteID  string          `json:"site_id"`
+	Name    string          `json:"name"`
+	Hosts   int             `json:"hosts"`
+	Green   int             `json:"green"`
+	Yellow  int             `json:"yellow"`
+	Red     int             `json:"red"`
+	Grey    int             `json:"grey"`
+	Systems []RSMSiteSystem `json:"systems"`
+}
+
+type RSMSiteHealthList struct {
+	Items []RSMSiteHealth `json:"items"`
+}
+
+func (r *Registry) RSMSiteHealth(ctx context.Context, id accessport.Identity) (RSMSiteHealthList, error) {
+	out := RSMSiteHealthList{Items: []RSMSiteHealth{}}
+	tx, e := r.readTx(ctx, id)
+	if e != nil {
+		return out, e
+	}
+	defer tx.Rollback(ctx)
+	rows, e := tx.Query(ctx, `SELECT st.site_id::text,st.name,count(*),count(*) FILTER (WHERE COALESCE(hs.color,'grey')='green'),count(*) FILTER (WHERE hs.color='yellow'),count(*) FILTER (WHERE hs.color='red'),count(*) FILTER (WHERE COALESCE(hs.color,'grey')='grey')
+FROM assets.assets a JOIN scope.sites st ON st.tenant_id=a.tenant_id AND st.site_id=a.site_id LEFT JOIN cmdb.host_states hs ON hs.tenant_id=a.tenant_id AND hs.asset_uid=a.asset_uid
+WHERE a.tenant_id=$1 AND a.merged_into IS NULL AND a.retired_at IS NULL GROUP BY 1,2 ORDER BY count(*) FILTER (WHERE hs.color='red') DESC,2`, id.TenantID)
+	if e != nil {
+		return out, e
+	}
+	index := map[string]int{}
+	for rows.Next() {
+		var s RSMSiteHealth
+		if e = rows.Scan(&s.SiteID, &s.Name, &s.Hosts, &s.Green, &s.Yellow, &s.Red, &s.Grey); e != nil {
+			rows.Close()
+			return out, e
+		}
+		s.Systems = []RSMSiteSystem{}
+		index[s.SiteID] = len(out.Items)
+		out.Items = append(out.Items, s)
+	}
+	rows.Close()
+	rows, e = tx.Query(ctx, `SELECT a.site_id::text,s.service_uid::text,s.name,s.criticality,count(DISTINCT a.asset_uid),count(DISTINCT a.asset_uid) FILTER (WHERE COALESCE(hs.color,'grey')='green'),
+count(DISTINCT a.asset_uid) FILTER (WHERE hs.color='yellow'),count(DISTINCT a.asset_uid) FILTER (WHERE hs.color='red'),count(DISTINCT a.asset_uid) FILTER (WHERE COALESCE(hs.color,'grey')='grey')
+FROM cmdb.bindings b JOIN cmdb.components c ON c.tenant_id=b.tenant_id AND c.component_id=b.component_id AND c.retired_at IS NULL
+JOIN cmdb.environments e ON e.tenant_id=c.tenant_id AND e.environment_id=c.environment_id AND e.retired_at IS NULL
+JOIN cmdb.services s ON s.tenant_id=e.tenant_id AND s.service_uid=e.service_uid AND s.retired_at IS NULL
+JOIN assets.assets a ON a.tenant_id=b.tenant_id AND a.asset_uid=b.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
+LEFT JOIN cmdb.host_states hs ON hs.tenant_id=a.tenant_id AND hs.asset_uid=a.asset_uid
+WHERE b.tenant_id=$1 AND b.valid_to IS NULL AND b.status='active' GROUP BY 1,2,3,4 ORDER BY 8 DESC,7 DESC,3`, id.TenantID)
+	if e != nil {
+		return out, e
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var site string
+		var x RSMSiteSystem
+		if e = rows.Scan(&site, &x.UID, &x.Name, &x.Criticality, &x.Hosts, &x.Green, &x.Yellow, &x.Red, &x.Grey); e != nil {
+			return out, e
+		}
+		if i, ok := index[site]; ok {
+			out.Items[i].Systems = append(out.Items[i].Systems, x)
+		}
+	}
+	if e = rows.Err(); e != nil {
+		return out, e
+	}
+	return out, tx.Commit(ctx)
 }

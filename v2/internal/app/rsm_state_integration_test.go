@@ -249,7 +249,10 @@ JOIN c ON c.k=a.r%(SELECT m FROM m) WHERE a.r%20<>0`,
 	})
 	measure("component hosts page", func() error { _, e := store.ComponentHostStates(ctx, read, load, component, 0, 100); return e })
 	measure("unassigned hosts page", func() error { _, e := store.UnassignedHosts(ctx, read, load, "", 100); return e })
-	measure("hosts registry page (name)", func() error { _, _, e := store.HostRegistryPage(ctx, read, load, cmdb.HostFilter{Limit: 100}); return e })
+	measure("hosts registry page (name)", func() error {
+		_, _, e := store.HostRegistryPage(ctx, read, load, cmdb.HostFilter{Limit: 100})
+		return e
+	})
 	measure("hosts registry page (filter+sort last)", func() error {
 		_, _, e := store.HostRegistryPage(ctx, read, load, cmdb.HostFilter{Query: "load-1", Sort: "last", Desc: true, Limit: 500})
 		return e

@@ -364,3 +364,13 @@ dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;f
 .col-menu{display:flex;flex-direction:column;gap:6px;padding:10px 12px;min-width:200px}
 .hosts-footer{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.hosts-footer label{display:inline-flex;gap:6px;align-items:center}
 @media(max-width:1000px){.hosts-grid{grid-template-columns:1fr}.hosts-tree{position:static;max-height:none}}
+/* C53.06 — здоровье */
+.health{display:flex;flex-direction:column;gap:12px}
+.health-head{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.health-head h2{margin:0;font-size:18px;display:flex;align-items:center;gap:8px}.health-head .hdot{width:10px;height:10px}
+.kpi-cards.inline{margin:0;grid-template-columns:repeat(3,minmax(140px,1fr))}.ok-text{color:#127A4A}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden}.seg button{border:0;background:#fff;padding:6px 12px;font:inherit;font-size:14px;cursor:pointer;color:var(--text-2)}.seg button.on{background:var(--navy);color:#fff}
+.health-table td.lvl{color:var(--text-2);white-space:nowrap;font-size:13px}.health-table .tree-toggle{display:inline-block;width:20px;border:0;background:none;font:inherit;cursor:pointer;color:var(--text-2)}
+.health-table tr.metric td{background:#FAFBFD;font-size:13px}
+.mix{display:inline-flex;gap:4px}.mix span{border-radius:10px;padding:1px 7px;font-size:12px;font-weight:600}.m-green{background:#E2F5EC;color:#127A4A}.m-yellow{background:#FCF1D8;color:#A06E00}.m-red{background:var(--magenta-soft);color:var(--magenta)}.m-grey{background:#EEF1F6;color:#4B5361}
+.hosts-screen .count-strip>.button{align-self:center;margin-left:12px}.hosts-main .toolbar-search{min-width:240px;flex:1 1 240px}

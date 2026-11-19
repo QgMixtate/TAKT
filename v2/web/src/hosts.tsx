@@ -23,7 +23,7 @@ const roleNames:Record<string,string>={accountable:'Ответственный',
 
 function loadCols():Col[]{try{const v=JSON.parse(localStorage.getItem('takt.hosts.cols')??'null');if(Array.isArray(v)&&v.every(x=>x in colNames))return v as Col[]}catch{/* хранилище недоступно */}return defaultCols}
 
-export function HostsScreen({csrf,canWrite,refresh,onOpenAsset,onOpenSystem,onExpired}:{csrf:string;canWrite:boolean;refresh:number;onOpenAsset:(uid:string)=>void;onOpenSystem?:(uid:string)=>void;onExpired:()=>void}){
+export function HostsScreen({csrf,canWrite,refresh,onRefresh,onOpenAsset,onOpenSystem,onExpired}:{onRefresh:()=>void;csrf:string;canWrite:boolean;refresh:number;onOpenAsset:(uid:string)=>void;onOpenSystem?:(uid:string)=>void;onExpired:()=>void}){
  const [filter,setFilter]=useState<Filter>({}),[labels,setLabels]=useState<Record<string,string>>({}),[typed,setTyped]=useState('');
  const [sort,setSort]=useState('name'),[desc,setDesc]=useState(false),[offset,setOffset]=useState(0),[limit,setLimit]=useState<100|250|500>(100);
  const [by,setBy]=useState<TreeBy>('site'),[open,setOpen]=useState<Record<string,boolean>>({}),[cols,setCols]=useState<Col[]>(loadCols),[colMenu,setColMenu]=useState(false),[group,setGroup]=useState<''|'os'|'system'|'site'>('');
@@ -65,7 +65,7 @@ export function HostsScreen({csrf,canWrite,refresh,onOpenAsset,onOpenSystem,onEx
   last:h=><span className="time">{when(h.last_inventory_at)}</span>};
  const strip:[string,string,number|undefined,string,()=>void][]=[['all','всего',c?.total,'',()=>setFilter({q:filter.q})],['fresh','актуальны',c?.fresh,'',()=>set('freshness','fresh')],['partial','неполные',c?.partial,'amber',()=>set('freshness','partial')],['stale','устарели',c?.stale,'warn',()=>set('freshness','stale')],['none','без ответственного',c?.without_owner,'amber',()=>set('owner','none','резерв площадки')],['new','новые за 7 дней',c?.new_7d,'',()=>undefined]];
  return <div className="hosts-screen">
-  <div className="count-strip" role="toolbar" aria-label="Сводка хостов">{strip.map(([k,l,v,tone,on])=><button key={k} className={'count'+((k==='all'&&!filter.freshness&&!filter.owner)||(filter.freshness===k)||(k==='none'&&filter.owner==='none')?' active':'')+(tone&&v?' '+tone:'')} disabled={k==='new'} onClick={on}><b>{v===undefined?'…':fmt(v)}</b> {l}</button>)}<span className="spacer"/><span className="muted strip-note">счётчики — на сервере{c?.computed_at?', обновлено '+new Date(c.computed_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):''}</span></div>
+  <div className="count-strip" role="toolbar" aria-label="Сводка хостов">{strip.map(([k,l,v,tone,on])=><button key={k} className={'count'+((k==='all'&&!filter.freshness&&!filter.owner)||(filter.freshness===k)||(k==='none'&&filter.owner==='none')?' active':'')+(tone&&v?' '+tone:'')} disabled={k==='new'} onClick={on}><b>{v===undefined?'…':fmt(v)}</b> {l}</button>)}<span className="spacer"/><span className="muted strip-note">счётчики — на сервере{c?.computed_at?', обновлено '+new Date(c.computed_at).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):''}</span><button className="button secondary" onClick={onRefresh}>↻ Обновить</button></div>
   <div className="hosts-grid">
    <aside className="hosts-tree panel" aria-label="Дерево группировки">
     <label className="tree-by">Дерево<select aria-label="Дерево группировки" value={by} onChange={e=>{setBy(e.target.value as TreeBy);setOpen({})}}>{(Object.keys(treeNames) as TreeBy[]).map(k=><option key={k} value={k}>{treeNames[k]}</option>)}</select></label>
