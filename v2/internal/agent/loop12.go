@@ -90,7 +90,13 @@ func candidatesFromSections(sections []contracts.Section) []contracts.Candidate 
 // reportDetail сообщает текст ошибки ТОЛЬКО при явном включении SURVEYSCAN_AGENT_DEBUG=1 (диагностика на стенде).
 // По умолчанию наружу идут лишь фиксированные коды событий; текст ошибки может содержать адреса/пути.
 func reportDetail(report func(string), where string, err error) {
-	if err == nil || os.Getenv("SURVEYSCAN_AGENT_DEBUG") != "1" {
+	if err == nil {
+		return
+	}
+	// ISSUES №60: этап отказа пишется всегда (без текста ошибки — в нём могут быть адреса и учётные имена),
+	// чтобы разовый «inventory_failed» в журнале был объясним; полный текст — только в отладке.
+	report("failed_at:" + where)
+	if os.Getenv("SURVEYSCAN_AGENT_DEBUG") != "1" {
 		return
 	}
 	text := strings.NewReplacer("\n", " ", "\r", " ").Replace(err.Error())
@@ -192,6 +198,7 @@ func runLoop12(ctx context.Context, cl client12, report func(string), collect fu
 					reportDetail(report, "collect", result.err)
 				} else if transport == nil {
 					report("inventory_failed")
+					report("failed_at:no_transport")
 				} else if err := cl.queue(ctx, transport, result.snapshot, result.at); err != nil {
 					report("inventory_failed")
 					reportDetail(report, "queue", err)
