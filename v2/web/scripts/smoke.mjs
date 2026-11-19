@@ -47,6 +47,13 @@ try{
  await page.getByRole('button',{name:/критичных/}).click();await expect(page.getByRole('button',{name:/Убрать фильтр Критичность/})).toBeVisible();
  const tree=await (await context.request.get(config.origin+'/api/v1/rsm/systems/'+crm.service_uid)).json();if(tree.environments[0]?.components[0]?.state?.hosts!==1)throw new Error('rsm tree state missing: '+JSON.stringify(tree));
  checks.push('C53.02/C54.04 systems screen: counters strip filters, composition panel with environment/component/host, filter in the panel, system card: environment and component with baseline, host bound by list, rule, recompute, unassigned queue');
+ // C53.07: мастер «Новая система» — шаги описание → среды → компонент с правилом → проверка; система создаётся настоящими вызовами
+ await page.getByRole('navigation',{name:'Разделы'}).getByRole('button',{name:/^Системы/}).click();await page.locator('summary',{hasText:'Действия'}).click();await page.getByRole('button',{name:'Новая система…'}).click();
+ await page.getByLabel('Название').fill('Smoke мастер');await page.getByRole('button',{name:/Далее: среды/}).click();await page.getByRole('button',{name:/Далее: компоненты/}).click();
+ await page.getByLabel('Имя компонента').fill('Веб');await page.getByLabel('Вид правила').selectOption('hostname_glob');await page.getByLabel('Шаблон правила').fill('smoke-web*');
+ for(const s of [/Далее: зависимости/,/Далее: ответственные/,/Далее: проверка/])await page.getByRole('button',{name:s}).click();
+ await page.getByRole('button',{name:'Создать систему'}).click();await expect(page.getByText('Компонентов: 1, правил: 1')).toBeVisible();await page.getByRole('button',{name:'Открыть карточку системы'}).click();await expect(page.getByRole('heading',{name:'Smoke мастер',level:1})).toBeVisible();
+ checks.push('C53.07 new-system wizard creates system, environments, component with role and rule through the real API');
  // C51: «Обследования сети» — вкладки, подсеть из боковой панели, запуск, результат настоящего collector
  await page.getByRole('button',{name:/Обследования сети/}).click();await expect(page.getByRole('heading',{name:'Обследования сети.'})).toBeVisible();
  await page.getByRole('button',{name:'+ Новая подсеть'}).click();let drawer=page.getByRole('dialog',{name:'Новая подсеть'});

@@ -327,3 +327,10 @@ dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;f
 @media(max-width:800px){.week-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .warehouse>.table-panel,.warehouse>.stack,.warehouse>section:not(.panel),.warehouse>div:not(.count-strip):not(.page-tabs):not(.systems-grid){margin-top:16px}
 .discovery>.stack{margin-top:16px}
+.stepper{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.stepper button{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:16px;border:0;background:#EEF1F6;color:#4B5361;font:inherit;font-size:14px;cursor:pointer}
+.stepper button b{font-weight:700}.stepper button.on{background:var(--navy);color:#fff}.stepper button.done{background:#E2F5EC;color:#127A4A}
+.wizard-grid{grid-template-columns:2fr 1fr 1fr;align-items:end;margin-bottom:12px}
+.env-check{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
+.panel-table td input:not([type=checkbox]),.panel-table td select{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;font-size:14px}
+@media(max-width:900px){.wizard-grid{grid-template-columns:1fr}}

@@ -2,6 +2,7 @@ import {useEffect,useState,type ReactNode} from 'react';
 import {SystemsScreen,ComponentsScreen} from './systems';
 import {SystemCardPage,ComponentCardPage} from './cards';
 import {Split,Strip} from './ui';
+import {SystemWizard} from './wizard';
 import {api,ApiError,errorMessage,type AssetRSM,type RSMColor,type RSMComponentDetail,type RSMEnvKind,type RSMImportResult,type RSMNodeState,type RSMOverview,type RSMProposal,type RSMReason,type RSMSystemDetail,type RSMUnassignedPage} from './api';
 
 // C54.04 — РСМ в Web: системы со светофором (сначала проблемные), карточки системы и компонента, предложения правил,
@@ -31,18 +32,19 @@ function useAct(onExpired:()=>void):[boolean,unknown,(fn:()=>Promise<unknown>,af
 }
 const Err=({e}:{e:unknown})=>e?<div className="error" role="alert">{errorMessage(e)}</div>:null;
 
-export type Mode={kind:'components'}|{kind:'list'}|{kind:'system';uid:string}|{kind:'component';id:string;from?:string}|{kind:'proposals'}|{kind:'unassigned'}|{kind:'import'};
+export type Mode={kind:'wizard'}|{kind:'components'}|{kind:'list'}|{kind:'system';uid:string}|{kind:'component';id:string;from?:string}|{kind:'proposals'}|{kind:'unassigned'}|{kind:'import'};
 export function RSMView({start='list',open,csrf,canWrite,onOpenAsset,onNavigate,onCrumbs,onExpired}:{start?:'list'|'components';open?:Mode;csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onNavigate:(view:string)=>void;onCrumbs:(c:string[])=>void;onExpired:()=>void}){
  const home:Mode=start==='components'?{kind:'components'}:{kind:'list'};
  const [mode,setMode0]=useState<Mode>(open??home),[v,setV]=useState(0),[note,setNote]=useState(''),[dirName,setDirName]=useState('');
- const setMode=(m:Mode)=>{if(m.kind==='list'||m.kind==='components')onCrumbs([]);else if(m.kind==='proposals')onCrumbs(['Предложения правил']);else if(m.kind==='unassigned')onCrumbs(['Хосты вне систем']);else if(m.kind==='import')onCrumbs(['Импорт привязок']);setMode0(m)};
+ const setMode=(m:Mode)=>{if(m.kind==='list'||m.kind==='components')onCrumbs([]);else if(m.kind==='proposals')onCrumbs(['Предложения правил']);else if(m.kind==='unassigned')onCrumbs(['Хосты вне систем']);else if(m.kind==='import')onCrumbs(['Импорт привязок']);else if(m.kind==='wizard')onCrumbs(['Новая система']);setMode0(m)};
  const [overview,error]=useLoad<RSMOverview>(()=>api.rsmOverview(),[v],onExpired);
  useEffect(()=>{if(!note)return;const t=setTimeout(()=>setNote(''),6000);return()=>clearTimeout(t)},[note]);
  const [busy,actError,act]=useAct(onExpired);
  const actions=canWrite?<details className="actions-menu"><summary>Действия</summary><div className="popover right">
   <button className="menu-item" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmRecompute(csrf);setNote(r.skipped?'Пересчёт уже идёт в другом процессе':'Пересчитано: хостов '+r.hosts+', узлов '+r.nodes)},()=>setV(x=>x+1))}>Пересчитать состояние сейчас</button>
   <button className="menu-item" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmApplyRules(csrf);setNote('Правила: хостов '+r.assets+', привязано '+r.bound+', предложено '+r.proposed+(r.conflicts?', конфликтов '+r.conflicts:''))},()=>setV(x=>x+1))}>Применить правила ко всем хостам</button>
-  <button className="menu-item" onClick={()=>onNavigate('services')}>Новая система, связи систем…</button>
+  <button className="menu-item" onClick={()=>setMode({kind:'wizard'})}>Новая система…</button>
+  <button className="menu-item" onClick={()=>onNavigate('services')}>Связи систем и бизнес-сервисы…</button>
   <button className="menu-item" onClick={()=>setMode({kind:'import'})}>Импорт привязок CSV…</button>
   <button className="menu-item" onClick={()=>onNavigate('software')}>Поиск ПО по реестру</button>
   <form className="menu-form" onSubmit={e=>{e.preventDefault();if(!dirName.trim())return;void act(()=>api.rsmCreateDirection(csrf,dirName.trim()),()=>{setDirName('');setV(x=>x+1);setNote('Направление добавлено')})}}><label>Новое направление<input value={dirName} onChange={e=>setDirName(e.target.value)} placeholder="например, Финансы"/></label><button className="button small" disabled={busy||!dirName.trim()}>Добавить</button></form>
@@ -53,6 +55,7 @@ export function RSMView({start='list',open,csrf,canWrite,onOpenAsset,onNavigate,
   {mode.kind==='list'?<SystemsScreen overview={overview} actions={actions} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenComponent={id=>setMode({kind:'component',id})} onOpenAsset={onOpenAsset} onUnassigned={()=>setMode({kind:'unassigned'})} onProposals={()=>setMode({kind:'proposals'})} onExpired={onExpired}/>:null}
   {mode.kind==='system'?<SystemCardPage uid={mode.uid} csrf={csrf} canWrite={canWrite} directions={overview?.directions??[]} onBack={()=>{setMode(home);setV(x=>x+1)}} onComponent={(id,from)=>setMode({kind:'component',id,from})} onOpenAsset={onOpenAsset} onOpenSystem={uid=>setMode({kind:'system',uid})} onExpired={onExpired} onChanged={()=>setV(x=>x+1)} onCrumbs={onCrumbs}/>:null}
   {mode.kind==='component'?<ComponentCardPage key={mode.id} id={mode.id} csrf={csrf} canWrite={canWrite} backLabel={mode.from?'Карточка системы':start==='components'?'Все компоненты':'Все системы'} onBack={()=>mode.from?setMode({kind:'system',uid:mode.from}):setMode(home)} onCrumbs={onCrumbs} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenAsset={onOpenAsset} onExpired={onExpired}/>:null}
+  {mode.kind==='wizard'?<SystemWizard csrf={csrf} onDone={uid=>setMode({kind:'system',uid})} onCancel={()=>setMode(home)} onExpired={onExpired}/>:null}
   {mode.kind==='proposals'||mode.kind==='unassigned'||mode.kind==='import'?<UnassignedScreen key={mode.kind} start={mode.kind} csrf={csrf} canWrite={canWrite} onOpenAsset={onOpenAsset} onExpired={onExpired} onChange={()=>setV(x=>x+1)}/>:null}
  </section>;
 }
