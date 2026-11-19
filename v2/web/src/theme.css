@@ -348,3 +348,19 @@ dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;f
 .portal-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
 .portal-tiles .tile{display:flex;flex-direction:column;gap:4px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;font:inherit;color:var(--text);cursor:pointer}
 .portal-tiles .tile b{font-size:16px}.portal-tiles .tile span{color:var(--text-2);font-size:14px}.portal-tiles .tile:hover{border-color:var(--blue)}
+/* C53.04 — плотный реестр хостов */
+.hosts-screen .strip-note{align-self:center;font-size:13px}
+.hosts-grid{display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px;margin-top:14px;align-items:start}
+.hosts-tree{position:sticky;top:12px;max-height:calc(100vh - 140px);overflow:auto}
+.hosts-tree .tree-by{display:flex;flex-direction:column;gap:4px;padding:10px 12px 6px;font-size:13px;color:var(--text-2)}
+.hosts-tree select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit;font-size:14px;color:var(--text)}
+.tree-item.child{padding-left:30px;font-size:13px}.tree-item .caret{width:14px;color:var(--text-2);cursor:pointer}
+.hosts-main{min-width:0;display:flex;flex-direction:column;gap:10px}
+.hosts-table td,.hosts-table th{white-space:nowrap}.hosts-table td.check,.hosts-table th.check{width:28px}
+.th-sort{border:0;background:none;padding:0;font:inherit;color:inherit;cursor:pointer}
+.asset-link.plain{display:inline;border:0;background:none;padding:0;font:inherit;color:var(--text);cursor:pointer;text-align:left}
+.amber-text{color:#A06E00}
+.bulk-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#EAF3F9;border:1px solid #C9E0EF;border-radius:8px;padding:8px 12px}
+.col-menu{display:flex;flex-direction:column;gap:6px;padding:10px 12px;min-width:200px}
+.hosts-footer{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.hosts-footer label{display:inline-flex;gap:6px;align-items:center}
+@media(max-width:1000px){.hosts-grid{grid-template-columns:1fr}.hosts-tree{position:static;max-height:none}}

@@ -80,6 +80,13 @@ export type ServiceDetail=CIService&{tenant_id:string;relations:Relation[]};
 export type RoleName='accountable'|'business_owner'|'technical'|'custodian';
 export type Subject={subject_id:string;kind:'person'|'team';name:string;contact:string;active:boolean;username:string|null;revision:string;site_fallback:boolean;members:number;origin:'local'|'ldap';synced_at:string|null;directory_login?:string};
 export type OrgOverview={tenant_id:string;members:Record<string,string[]>;assets:Record<string,number>;systems:Record<string,number>};
+export type RegistryHost={asset_uid:string;name:string;ip:string;os:string;os_family:'windows'|'linux'|'macos'|'network'|'other'|'unknown';asset_class:string;site_id:string;site_name:string;segment:string;accountable_id:string|null;accountable_name:string;team_name:string;site_fallback:boolean;system_uid:string|null;system_name:string;component_name:string;sections_ok:number;sections_total:number;sources:string[];freshness:'fresh'|'stale'|'unknown';last_inventory_at:string|null;created_at:string;computed_at:string};
+export type HostCounters={total:number;fresh:number;partial:number;stale:number;unknown:number;without_owner:number;new_7d:number;computed_at:string|null};
+export type HostRegistryPage={items:RegistryHost[];total:number;offset:number;limit:100|250|500;counters:HostCounters};
+export type HostTreeNode={key:string;label:string;count:number;children:HostTreeNode[]};
+export type HostTree={by:'site'|'owner'|'system'|'os';nodes:HostTreeNode[]};
+export type HostBulkResult={hosts:number;applied:number;unchanged:number;requested:number;agents:number;no_target:number};
+export type HostQuery={q?:string;site?:string;segment?:string;class?:string;os_family?:string;os?:string;owner?:string;team?:string;system?:string;component?:string;freshness?:string;sort?:string;dir?:'asc'|'desc';offset?:number;limit?:number};
 export type SubjectPage={tenant_id:string;items:Subject[];next_cursor:string|null};
 export type SubjectResult={subject:Subject;reassigned_assignments:number};
 export type Assignment={role:RoleName;subject_id:string;subject_name:string;subject_kind:'person'|'team';valid_from:string;valid_to:string|null;reason_code:string;note:string|null;actor_ref:string};
@@ -304,6 +311,11 @@ export const api={
  member:(team:string,person:string,csrf:string,add:boolean)=>call<Subject>('/api/v1/subjects/'+encodeURIComponent(team)+'/members/'+encodeURIComponent(person),'Subject',{method:add?'PUT':'DELETE',headers:{'X-CSRF-Token':csrf}}),
  assignments:(uid:string)=>call<AssetAssignments>('/api/v1/assets/'+encodeURIComponent(uid)+'/assignments','AssetAssignments'),
  assign:(uid:string,csrf:string,body:{role:RoleName;subject_id:string|null;note?:string;expected_version:string})=>call<AssetAssignments>('/api/v1/assets/'+encodeURIComponent(uid)+'/assignments','AssetAssignments',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ hosts:(f:HostQuery)=>{const q=new URLSearchParams(Object.entries(f).filter(([,v])=>v!==undefined&&v!=='').map(([k,v])=>[k,String(v)]));return call<HostRegistryPage>('/api/v1/hosts?'+q.toString(),'RSMHostRegistryPage')},
+ hostsTree:(by:'site'|'owner'|'system'|'os')=>call<HostTree>('/api/v1/hosts/tree?by='+by,'RSMHostTree'),
+ hostsCSVURL:(f:HostQuery)=>{const q=new URLSearchParams(Object.entries(f).filter(([k,v])=>v!==undefined&&v!==''&&k!=='offset'&&k!=='limit').map(([k,v])=>[k,String(v)]));return '/api/v1/hosts.csv?'+q.toString()},
+ hostsAssign:(csrf:string,body:{asset_uids?:string[];filter?:Record<string,string>;role:RoleName;subject_id:string})=>call<HostBulkResult>('/api/v1/hosts/assign','RSMHostBulkResult',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ hostsCollect:(csrf:string,body:{asset_uids?:string[];filter?:Record<string,string>})=>call<HostBulkResult>('/api/v1/hosts/collect','RSMHostBulkResult',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
  bulkAssign:(csrf:string,body:{role:RoleName;subject_id:string;note?:string;items:{asset_uid:string;expected_version:string}[]})=>call<BulkAssignResult>('/api/v1/assignments/bulk','BulkAssignResult',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
  orgOverview:()=>call<OrgOverview>('/api/v1/org/overview','OrgOverview'),
  worklist:(scope:string,cursor:string|null=null)=>call<WorklistPage>('/api/v1/worklist?limit=100&scope='+encodeURIComponent(scope)+(cursor?'&cursor='+encodeURIComponent(cursor):''),'WorklistPage'),

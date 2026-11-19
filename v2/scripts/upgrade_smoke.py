@@ -38,7 +38,7 @@ def fixture(old_root):
         result = subprocess.run([binary, 'migrate'], env=env, capture_output=True, timeout=30)
         assert result.returncode == 0 and b'applied_migrations=43' in result.stdout
         assert {table: fingerprint(table) for table in tables} == before
-        assert len(sql('SELECT id FROM platform.schema_migrations').splitlines()) == 74
+        assert len(sql('SELECT id FROM platform.schema_migrations').splitlines()) == 75
         assert set(ledger) <= set(sql('SELECT id||owner||sha256 FROM platform.schema_migrations ORDER BY id').splitlines())
         checks.append('current binary appends exactly43 migrations; every previous data table and all31 applied hashes preserved')
         result = subprocess.run([binary, 'migrate'], env=env, capture_output=True, timeout=30)

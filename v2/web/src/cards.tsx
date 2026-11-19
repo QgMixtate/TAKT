@@ -59,8 +59,8 @@ export function TicketsPanel({kind,id,onCreate,onExpired}:{kind:'systems'|'compo
 }
 
 // «Создать обращение» — обращение ITSM со связью с системой (сервис) или активом.
-export function TicketDialog({csrf,title,serviceUid,assetUid,onClose,onCreated,onExpired}:{csrf:string;title:string;serviceUid?:string;assetUid?:string;onClose:()=>void;onCreated:(number:string)=>void;onExpired:()=>void}){
- const [kind,setKind]=useState<TicketKind>('incident'),[t,setT]=useState(title),[desc,setDesc]=useState(''),[impact,setImpact]=useState(2),[urgency,setUrgency]=useState(2),[busy,setBusy]=useState(false),[error,setError]=useState<unknown>(null);
+export function TicketDialog({csrf,title,serviceUid,assetUid,description='',onClose,onCreated,onExpired}:{csrf:string;title:string;serviceUid?:string;assetUid?:string;description?:string;onClose:()=>void;onCreated:(number:string)=>void;onExpired:()=>void}){
+ const [kind,setKind]=useState<TicketKind>('incident'),[t,setT]=useState(title),[desc,setDesc]=useState(description),[impact,setImpact]=useState(2),[urgency,setUrgency]=useState(2),[busy,setBusy]=useState(false),[error,setError]=useState<unknown>(null);
  async function submit(e:React.FormEvent){e.preventDefault();setBusy(true);setError(null);try{const d=await api.createTicket(csrf,{kind,title:t.trim(),description:desc,impact,urgency,service_uid:serviceUid,asset_uid:assetUid});onCreated(d.number)}catch(x){setError(x);if(x instanceof ApiError&&x.status===401)onExpired()}finally{setBusy(false)}}
  return <div className="modal-shade" role="presentation" onClick={onClose}><form className="modal" role="dialog" aria-label="Создать обращение" onClick={e=>e.stopPropagation()} onSubmit={e=>void submit(e)}>
   <h2>Создать обращение</h2><Err e={error}/>
