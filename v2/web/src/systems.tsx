@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useState} from 'react';
-import {api,ApiError,errorMessage,type RSMColor,type RSMComposition,type RSMCompHost,type RSMEnvKind,type RSMNodeState,type RSMOverview,type RSMSystemPage,type RSMSystemQuery,type RSMSystemState} from './api';
+import {api,ApiError,errorMessage,type RSMColor,type RSMComposition,type RSMComponentRow,type RSMCompHost,type RSMEnvKind,type RSMNodeState,type RSMOverview,type RSMSystemPage,type RSMSystemQuery,type RSMSystemState} from './api';
 
 // C53.02 — экран «Системы» по макету C53-mockups/6: полоса счётчиков (она же быстрые фильтры), представления,
 // фильтры-чипы, группировка, выбор колонок, таблица систем (критичность, владелец, хосты, «данные актуальны»,
@@ -133,20 +133,30 @@ export function CompositionPanel({uid,onOpenSystem,onOpenComponent,onOpenAsset,o
 export type {RSMColor};
 
 // Раздел «Компоненты» (меню макета): компоненты всех систем, сначала проблемные, поиск по компоненту, роли, системе.
-export function ComponentsScreen({onOpen,onExpired}:{onOpen:(id:string)=>void;onExpired:()=>void}){
- const [typed,setTyped]=useState(''),[q,setQ]=useState(''),[offset,setOffset]=useState(0);
+export function ComponentsScreen({onOpen,onOpenSystem,onExpired}:{onOpen:(id:string)=>void;onOpenSystem?:(uid:string)=>void;onExpired:()=>void}){
+ // C53.07 (макет «Компоненты»): сводка с фильтрами, группировка по системе, эталон и отклонения, экспорт CSV.
+ const [typed,setTyped]=useState(''),[q,setQ]=useState(''),[offset,setOffset]=useState(0),[filter,setFilter]=useState(''),[group,setGroup]=useState(true);
  useEffect(()=>{const t=setTimeout(()=>{setQ(typed.trim());setOffset(0)},300);return()=>clearTimeout(t)},[typed]);
- const [page,error]=useLive(()=>api.rsmComponents(q,offset),[q,offset],onExpired);
+ const [page,error]=useLive(()=>api.rsmComponents(q,offset,filter),[q,offset,filter],onExpired);
+ const c=page?.counters;const pick=(f:string)=>()=>{setFilter(filter===f?'':f);setOffset(0)};
+ const base=(r:RSMComponentRow)=>[r.baseline.os?'ОС '+r.baseline.os:'',...Object.entries(r.baseline.software??{}).map(([n,v])=>n+(v?' '+v:''))].filter(Boolean).join(' · ');
+ function csv(){if(!page)return;const cell=(v:string)=>'"'+v.replace(/"/g,'""')+'"';const rows=[['Компонент','Система','Среда','Роль','Критичный','Хостов','Эталон','Отклонений','Проблемы'],...page.items.map(r=>[r.name,r.system_name,r.environment_name,r.role??'',r.critical?'да':'нет',String(r.state?.hosts??0),base(r),String(r.state?.problems?.baseline??0),problemsText(r.state)])];
+  const blob=new Blob(['\ufeff'+rows.map(x=>x.map(cell).join(';')).join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='компоненты.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+ const rows:React.ReactNode[]=[];let last='';
+ for(const r of page?.items??[]){
+  if(group&&r.service_uid!==last){last=r.service_uid;const n=(page?.items??[]).filter(x=>x.service_uid===r.service_uid);rows.push(<tr key={'g'+r.service_uid} className="group-row"><td colSpan={9}><span className="caret">▾</span> <button className="link plain" onClick={()=>onOpenSystem?.(r.service_uid)}><b>{r.system_name}</b></button> <span className="muted">· {[...new Set(n.map(x=>envTitle[x.environment_kind].toLowerCase()))].join(', ')} · {n.length} {plural(n.length,'компонент','компонента','компонентов')}</span></td></tr>)}
+  const st=r.state,pt=problemsText(st),dev=st?.problems?.baseline??0,b=base(r);
+  rows.push(<tr key={r.component_id}><td><button className="row-title" onClick={()=>onOpen(r.component_id)}>{r.name}</button></td><td className="muted">{r.system_name} / {envTitle[r.environment_kind].toLowerCase()}</td><td>{r.role??<span className="muted">—</span>}</td><td>{r.critical?<span className="crit crit-high">критичный</span>:<span className="crit crit-low">обычный</span>}</td><td className="num">{fmt(st?.hosts??0)}</td><td className={b?'':'muted'}>{b||'эталон не задан'}</td><td className={'num'+(dev?' problem-text':'')}>{b?fmt(dev):'—'}</td><td>{st?<Fresh s={st}/>:<span className="muted">—</span>}</td><td className={pt?'problem-text':'muted'}>{pt||'—'}</td></tr>);
+ }
  return <div className="systems-screen">
-  <div className="count-strip"><span className="count active"><b>{page?fmt(page.total):'…'}</b> {plural(page?.total??0,'компонент','компонента','компонентов')}{q?' по запросу':''}</span></div>
+  <div className="count-strip" role="toolbar" aria-label="Сводка компонентов">{([['','компонентов',c?.total,''],['critical','критичных',c?.critical,''],['deviating','с отклонением от эталона',c?.deviating,'warn'],['no_baseline','без эталона',c?.no_baseline,'amber'],['no_hosts','без хостов',c?.no_hosts,'amber']] as [string,string,number|undefined,string][]).map(([k,l,n,tone])=><button key={k||'all'} className={'count'+(filter===k?' active':'')+(tone&&n?' '+tone:'')} onClick={pick(k)}><b>{n===undefined?'…':fmt(n)}</b> {l}</button>)}</div>
   <div className="systems-main solo">
-   <div className="systems-toolbar"><input className="toolbar-search" aria-label="Поиск компонентов" placeholder="Компонент, роль или система" value={typed} onChange={e=>setTyped(e.target.value)}/></div>
+   <div className="systems-toolbar"><input className="toolbar-search" aria-label="Поиск компонентов" placeholder="Компонент, роль или система" value={typed} onChange={e=>setTyped(e.target.value)}/>{filter?<span className="chip">{({critical:'Критичные',deviating:'С отклонением от эталона',no_baseline:'Без эталона',no_hosts:'Без хостов'} as Record<string,string>)[filter]} <button aria-label="Убрать фильтр" onClick={pick(filter)}>×</button></span>:null}
+    <span className="spacer"/><select aria-label="Группировать" value={group?'system':''} onChange={e=>setGroup(!!e.target.value)}><option value="system">Группировать: система</option><option value="">Без группировки</option></select><button className="button" disabled={!page?.items.length} onClick={csv}>Экспорт CSV</button></div>
    {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
-   <div className="table-panel dense">{page&&page.items.length===0?<div className="empty"><h3>Компонентов нет</h3><p>Компоненты заводятся в карточке системы (вкладка «Состав») или импортом.</p></div>:
-    <div className="table-scroll"><table className="systems-table"><thead><tr><th>Компонент</th><th>Система</th><th>Среда</th><th>Роль</th><th className="num">Хостов</th><th>Данные актуальны</th><th>Проблемы</th></tr></thead><tbody>{page?.items.map(c=>{const st=c.state;const pt=problemsText(st);return <tr key={c.component_id} onClick={()=>onOpen(c.component_id)}>
-     <td><button className="row-title" onClick={e=>{e.stopPropagation();onOpen(c.component_id)}}>{c.name}</button>{c.critical?<small className="muted"> · критичный</small>:null}</td><td>{c.system_name}</td><td>{envTitle[c.environment_kind]}{c.environment_name.toLowerCase()!==envTitle[c.environment_kind].toLowerCase()?' · '+c.environment_name:''}</td><td>{c.role??<span className="muted">—</span>}</td>
-     <td className="num">{fmt(st?.hosts??0)}</td><td>{st?<Fresh s={st}/>:<span className="muted">—</span>}</td><td className={pt?'problem-text':'muted'}>{pt||'—'}</td></tr>})}</tbody></table></div>}</div>
-   <div className="systems-footer">Показаны {fmt(page?.items.length??0)} из {fmt(page?.total??0)}{page?.next_offset!=null?<> · <button className="link" onClick={()=>setOffset(page.next_offset!)}>следующие 100</button></>:null}{offset>0?<> · <button className="link" onClick={()=>setOffset(Math.max(0,offset-100))}>предыдущие</button></>:null}</div>
+   <div className="table-panel dense">{page&&page.items.length===0?<div className="empty"><h3>Компонентов нет</h3><p>{filter||q?'Нет компонентов по фильтру.':'Компоненты заводятся в карточке системы (вкладка «Состав») или импортом.'}</p></div>:
+    <div className="table-scroll"><table className="systems-table"><thead><tr><th>Компонент</th><th>Система / среда</th><th>Роль</th><th>Критичность</th><th className="num">Хостов</th><th>Эталон</th><th className="num">Отклонений</th><th>Данные актуальны</th><th>Проблемы</th></tr></thead><tbody>{rows}</tbody></table></div>}</div>
+   <div className="systems-footer">Показаны {fmt(page?.items.length??0)} из {fmt(page?.total??0)}{page?.next_offset!=null?<> · <button className="link" onClick={()=>setOffset(page.next_offset!)}>следующие 100</button></>:null}{offset>0?<> · <button className="link" onClick={()=>setOffset(Math.max(0,offset-100))}>предыдущие</button></>:null} · клик по компоненту — карточка компонента, по системе — карточка системы</div>
   </div>
  </div>;
 }

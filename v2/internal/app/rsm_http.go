@@ -7,6 +7,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"github.com/QgMixtate/surveyscan/v2/contracts"
 	"io"
 	"net/http"
 	"strconv"
@@ -92,6 +93,12 @@ type RSMProposalList struct {
 type RSMAssetRef struct {
 	AssetUID string `json:"asset_uid"`
 	Name     string `json:"name"`
+	// C53.07: для очереди «Хосты вне систем» — IP, ОС, площадка, когда хост появился в реестре.
+	IP        string     `json:"ip,omitempty"`
+	OS        *string    `json:"os,omitempty"`
+	Site      string     `json:"site,omitempty"`
+	Since     *time.Time `json:"since,omitempty"`
+	Inventory *time.Time `json:"last_inventory_at,omitempty"`
 }
 
 type RSMUnassignedPage struct {
@@ -337,8 +344,49 @@ func (r *Registry) RSMUnassigned(ctx context.Context, id accessport.Identity, af
 	if e != nil {
 		return out, e
 	}
+	ips, e := rsmIPs(ctx, tx, id.TenantID, uids)
+	if e != nil {
+		return out, e
+	}
+	sites, since := map[string]string{}, map[string]time.Time{}
+	rows, e := tx.Query(ctx, `SELECT a.asset_uid::text,COALESCE(st.name,''),a.created_at FROM assets.assets a LEFT JOIN scope.sites st ON st.tenant_id=a.tenant_id AND st.site_id=a.site_id
+WHERE a.tenant_id=$1 AND a.asset_uid=ANY($2::uuid[])`, id.TenantID, uids)
+	if e != nil {
+		return out, e
+	}
+	for rows.Next() {
+		var u, site string
+		var t time.Time
+		if e = rows.Scan(&u, &site, &t); e != nil {
+			rows.Close()
+			return out, e
+		}
+		sites[u], since[u] = site, t
+	}
+	rows.Close()
+	list := make([]*contracts.Asset, 0, len(uids))
 	for _, u := range uids {
-		out.Items = append(out.Items, RSMAssetRef{AssetUID: u, Name: names[u]})
+		if a, e := r.Assets.Get(ctx, tx, id.TenantID, u); e == nil {
+			a := a
+			list = append(list, &a)
+		}
+	}
+	if e = r.Inventory.EnrichMany(ctx, tx, list); e != nil {
+		return out, e
+	}
+	byUID := map[string]*contracts.Asset{}
+	for _, a := range list {
+		byUID[a.UID] = a
+	}
+	for _, u := range uids {
+		ref := RSMAssetRef{AssetUID: u, Name: names[u], IP: ips[u], Site: sites[u]}
+		if t, ok := since[u]; ok {
+			ref.Since = &t
+		}
+		if a := byUID[u]; a != nil {
+			ref.OS, ref.Inventory = a.OS, a.LastInventory
+		}
+		out.Items = append(out.Items, ref)
 	}
 	return out, tx.Commit(ctx)
 }

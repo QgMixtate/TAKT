@@ -62,7 +62,7 @@ function App(){
  async function logout(){try{await api.logout(session!.csrf_token);setSession(null);clearWorkspace()}catch(e){setError(e)}}
  function openSystem(uid:string){navigate('systems');setRsmOpen({kind:'system',uid});setRsmOpenKey(n=>n+1)}
  function openComponent(id:string,sys:string){navigate('systems');setRsmOpen({kind:'component',id,from:sys});setRsmOpenKey(n=>n+1)}
- function navigate(value:View){setCrumbs([]);setRsmOpen(undefined);setTopoFocus('');setProfileSource(null);setView(value);setStack([null]);setSearch('');setSelected(null);setError(null)}
+ function navigate(value:View){setCrumbs([]);setCrumbReset(n=>n+1);setRsmOpen(undefined);setTopoFocus('');setProfileSource(null);setView(value);setStack([null]);setSearch('');setSelected(null);setError(null)}
  const filtered=assets.filter(a=>(freshness==='all'||a.freshness===freshness)&&[a.business.display_name,a.observed_hostname,a.observed_os,a.asset_uid].some(v=>v?.toLowerCase().includes(search.toLowerCase())));
  if(restoring&&!compatError)return <main className="login-layout"><div className="empty" role="status">Загрузка…</div></main>;
  if(portal)return <PortalView csrf={portal} onLogout={()=>{void api.logout(portal).catch(()=>{});setPortal(null)}}/>;

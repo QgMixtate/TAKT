@@ -199,6 +199,10 @@ func TestC54RSMHTTP(t *testing.T) {
 	if code, _, _ := b.request(t, "GET", "/api/v1/rsm/systems?q="+strings.Repeat("x", 201), "", "", "", nil); code != 422 {
 		t.Fatalf("long q: %d", code)
 	}
+	get("/api/v1/rsm/components?filter=no_baseline", "ComponentPage")
+	if code, _, _ := b.request(t, "GET", "/api/v1/rsm/components?filter=bogus", "", "", "", nil); code != 422 {
+		t.Fatalf("bad component filter: %d", code)
+	}
 	if code, raw, _ := b.request(t, "GET", "/api/v1/org/overview", "", "", "", nil); code != 200 || !strings.Contains(string(raw), `"members"`) {
 		t.Fatalf("org overview: %d %s", code, raw)
 	}

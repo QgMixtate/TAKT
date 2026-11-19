@@ -1,6 +1,7 @@
 import {useEffect,useState,type ReactNode} from 'react';
 import {SystemsScreen,ComponentsScreen} from './systems';
 import {SystemCardPage,ComponentCardPage} from './cards';
+import {Split,Strip} from './ui';
 import {api,ApiError,errorMessage,type AssetRSM,type RSMColor,type RSMComponentDetail,type RSMEnvKind,type RSMImportResult,type RSMNodeState,type RSMOverview,type RSMProposal,type RSMReason,type RSMSystemDetail,type RSMUnassignedPage} from './api';
 
 // C54.04 — РСМ в Web: системы со светофором (сначала проблемные), карточки системы и компонента, предложения правил,
@@ -38,7 +39,6 @@ export function RSMView({start='list',open,csrf,canWrite,onOpenAsset,onNavigate,
  const [overview,error]=useLoad<RSMOverview>(()=>api.rsmOverview(),[v],onExpired);
  useEffect(()=>{if(!note)return;const t=setTimeout(()=>setNote(''),6000);return()=>clearTimeout(t)},[note]);
  const [busy,actError,act]=useAct(onExpired);
- const back=<button className="link back" onClick={()=>{setMode(home);setV(x=>x+1)}}>← {start==='components'?'Все компоненты':'Все системы'}</button>;
  const actions=canWrite?<details className="actions-menu"><summary>Действия</summary><div className="popover right">
   <button className="menu-item" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmRecompute(csrf);setNote(r.skipped?'Пересчёт уже идёт в другом процессе':'Пересчитано: хостов '+r.hosts+', узлов '+r.nodes)},()=>setV(x=>x+1))}>Пересчитать состояние сейчас</button>
   <button className="menu-item" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmApplyRules(csrf);setNote('Правила: хостов '+r.assets+', привязано '+r.bound+', предложено '+r.proposed+(r.conflicts?', конфликтов '+r.conflicts:''))},()=>setV(x=>x+1))}>Применить правила ко всем хостам</button>
@@ -49,13 +49,11 @@ export function RSMView({start='list',open,csrf,canWrite,onOpenAsset,onNavigate,
  </div></details>:null;
  return <section className="rsm">
   <Err e={error}/><Err e={actError}/>{note?<p className="rsm-note" role="status">{note} <button className="link" onClick={()=>setNote('')}>скрыть</button></p>:null}
-  {mode.kind==='components'?<ComponentsScreen onOpen={id=>setMode({kind:'component',id})} onExpired={onExpired}/>:null}
+  {mode.kind==='components'?<ComponentsScreen onOpen={id=>setMode({kind:'component',id})} onOpenSystem={uid=>setMode({kind:'system',uid})} onExpired={onExpired}/>:null}
   {mode.kind==='list'?<SystemsScreen overview={overview} actions={actions} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenComponent={id=>setMode({kind:'component',id})} onOpenAsset={onOpenAsset} onUnassigned={()=>setMode({kind:'unassigned'})} onProposals={()=>setMode({kind:'proposals'})} onExpired={onExpired}/>:null}
   {mode.kind==='system'?<SystemCardPage uid={mode.uid} csrf={csrf} canWrite={canWrite} directions={overview?.directions??[]} onBack={()=>{setMode(home);setV(x=>x+1)}} onComponent={(id,from)=>setMode({kind:'component',id,from})} onOpenAsset={onOpenAsset} onOpenSystem={uid=>setMode({kind:'system',uid})} onExpired={onExpired} onChanged={()=>setV(x=>x+1)} onCrumbs={onCrumbs}/>:null}
   {mode.kind==='component'?<ComponentCardPage key={mode.id} id={mode.id} csrf={csrf} canWrite={canWrite} backLabel={mode.from?'Карточка системы':start==='components'?'Все компоненты':'Все системы'} onBack={()=>mode.from?setMode({kind:'system',uid:mode.from}):setMode(home)} onCrumbs={onCrumbs} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenAsset={onOpenAsset} onExpired={onExpired}/>:null}
-  {mode.kind==='proposals'?<>{back}<Proposals csrf={csrf} canWrite={canWrite} onOpenAsset={onOpenAsset} onExpired={onExpired} onChange={()=>setV(x=>x+1)}/></>:null}
-  {mode.kind==='unassigned'?<>{back}<Unassigned onOpenAsset={onOpenAsset} onExpired={onExpired}/></>:null}
-  {mode.kind==='import'?<>{back}<Import csrf={csrf} canWrite={canWrite} onExpired={onExpired}/></>:null}
+  {mode.kind==='proposals'||mode.kind==='unassigned'||mode.kind==='import'?<UnassignedScreen key={mode.kind} start={mode.kind} csrf={csrf} canWrite={canWrite} onOpenAsset={onOpenAsset} onExpired={onExpired} onChange={()=>setV(x=>x+1)}/>:null}
  </section>;
 }
 
@@ -136,37 +134,71 @@ export function ComponentCard({id,csrf,canWrite,onBack,onOpenAsset,onExpired,emb
  </div>;
 }
 
-function Proposals({csrf,canWrite,onOpenAsset,onExpired,onChange}:{csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void;onChange:()=>void}){
- const [data,error,reload]=useLoad<{items:RSMProposal[]}>(()=>api.rsmProposals(),[],onExpired);
+// C53.07 (макет «Хосты вне систем · предложения · импорт»): сводка как вкладки, таблица с выбором, справа — привязка
+// выбранных к компоненту (с правилом по подсети для будущих хостов) или разбор предложений, ниже — импорт CSV.
+function UnassignedScreen({csrf,canWrite,start,onOpenAsset,onExpired,onChange}:{csrf:string;canWrite:boolean;start:'unassigned'|'proposals'|'import';onOpenAsset:(uid:string)=>void;onExpired:()=>void;onChange:()=>void}){
+ const [tab,setTab]=useState<'unassigned'|'proposals'>(start==='proposals'?'proposals':'unassigned'),[stack,setStack]=useState<(string|null)[]>([null]),[n,setN]=useState(0),[q,setQ]=useState('');
+ const [page,error]=useLoad<RSMUnassignedPage>(()=>api.rsmUnassigned(stack.at(-1)??null),[stack,n],onExpired);
+ const [props,perr]=useLoad<{items:RSMProposal[]}>(()=>api.rsmProposals(),[n],onExpired);
+ const [systems]=useLoad<{items:{service_uid:string;name:string}[]}>(()=>api.rsmSystems({limit:500}),[],onExpired);
+ const [sel,setSel]=useState<string[]>([]),[sys,setSys]=useState(''),[env,setEnv]=useState(''),[comp,setComp]=useState(''),[rule,setRule]=useState(false),[note,setNote]=useState('');
+ const [detail]=useLoad<RSMSystemDetail|null>(()=>sys?api.rsmSystem(sys):Promise.resolve(null),[sys],onExpired);
  const [busy,actError,act]=useAct(onExpired);
- const done=()=>{reload();onChange()};
- return <div className="table-panel"><div className="table-toolbar"><h2>Предложения правил <span>{data?.items.length??''}</span></h2></div>
-  <Err e={error}/><Err e={actError}/>
-  {data&&data.items.length===0?<div className="empty"><span>✓</span><h3>Разбирать нечего</h3><p>Хосты, попавшие под правила с режимом «предлагать», и конфликты правил появятся здесь.</p></div>:null}
-  {data?.items.length?<div className="table-scroll"><table><thead><tr><th>Хост</th><th>Куда</th><th>С</th>{canWrite?<th/>:null}</tr></thead><tbody>{data.items.map(p=><tr key={p.binding.binding_id}>
-   <td><button className="asset-link" onClick={()=>onOpenAsset(p.binding.asset_uid)}><span><strong>{p.asset_name||p.binding.asset_uid.slice(0,8)}</strong><small className="mono">{p.binding.asset_uid}</small></span></button></td>
-   <td>{p.system_name} / {p.environment_name} / <strong>{p.component_name}</strong></td><td>{time(p.binding.valid_from)}</td>
-   {canWrite?<td className="actions"><button className="button small" disabled={busy} onClick={()=>void act(()=>api.rsmConfirm(p.binding.binding_id,csrf),done)}>Подтвердить</button><button className="text-link" disabled={busy} onClick={()=>void act(()=>api.rsmReject(p.binding.binding_id,csrf),done)}>Отклонить</button></td>:null}</tr>)}</tbody></table></div>:null}
-  <p className="panel-note">Отклонённую пару правила больше не предлагают. Если хост подошёл под правила «привязывать сразу» двух компонентов, он тоже попадает сюда — молча ничего не привязывается.</p></div>;
-}
-
-function Unassigned({onOpenAsset,onExpired}:{onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
- const [stack,setStack]=useState<(string|null)[]>([null]);
- const [page,error]=useLoad<RSMUnassignedPage>(()=>api.rsmUnassigned(stack.at(-1)??null),[stack],onExpired);
- return <div className="table-panel"><div className="table-toolbar"><h2>Хосты вне систем <span>{page?.total??''}</span></h2></div>
-  <Err e={error}/>
-  {page&&page.items.length===0?<div className="empty"><span>✓</span><h3>Все хосты в системах</h3></div>:null}
-  {page?.items.length?<div className="table-scroll"><table><thead><tr><th>Хост</th></tr></thead><tbody>{page.items.map(x=><tr key={x.asset_uid}><td><button className="asset-link" onClick={()=>onOpenAsset(x.asset_uid)}><span><strong>{x.name||x.asset_uid.slice(0,8)}</strong><small className="mono">{x.asset_uid}</small></span></button></td></tr>)}</tbody></table></div>:null}
-  <div className="pager"><small>Привяжите хосты в карточке компонента, правилом или импортом</small><div><button className="button small" disabled={stack.length===1} onClick={()=>setStack(stack.slice(0,-1))}>← Назад</button><button className="button small" disabled={!page?.next_cursor} onClick={()=>setStack([...stack,page!.next_cursor])}>Далее →</button></div></div></div>;
+ const done=()=>{setSel([]);setN(x=>x+1);onChange()};
+ const byAsset=new Map((props?.items??[]).map(p=>[p.binding.asset_uid,p]));
+ const items=(page?.items??[]).filter(x=>!q||[x.name,x.ip,x.os??'',x.site].some(v=>v&&v.toLowerCase().includes(q.toLowerCase())));
+ const envs=detail?.environments??[],comps=envs.find(e=>e.environment_id===env)?.components??[];
+ const chosen=items.filter(x=>sel.includes(x.asset_uid));
+ const subnet=(()=>{const ips=chosen.map(x=>x.ip??'').filter(Boolean);if(!ips.length)return '';const n24=ips.map(ip=>ip.split('.').slice(0,3).join('.'));return n24.every(x=>x===n24[0])&&ips[0].split('.').length===4?n24[0]+'.0/24':''})();
+ const since=(v?:string)=>{if(!v)return '—';const d=Math.floor((Date.now()-Date.parse(v))/864e5);return d<1?'< 1 дня':d+' дн'};
+ const side=tab==='unassigned'?<>
+  <div><h2>Привязать выбранные ({sel.length})</h2><p className="sub">Хосты станут частью компонента; цвет системы пересчитается.</p></div>
+  {canWrite?<div className="form-grid">
+   <label>Система<select value={sys} onChange={e=>{setSys(e.target.value);setEnv('');setComp('')}}><option value="">выберите…</option>{(systems?.items??[]).map(x=><option key={x.service_uid} value={x.service_uid}>{x.name}</option>)}</select></label>
+   <label>Среда<select value={env} disabled={!envs.length} onChange={e=>{setEnv(e.target.value);setComp('')}}><option value="">выберите…</option>{envs.map(e=><option key={e.environment_id} value={e.environment_id}>{e.name}</option>)}</select></label>
+   <label>Компонент<select value={comp} disabled={!comps.length} onChange={e=>setComp(e.target.value)}><option value="">выберите…</option>{comps.map(c=><option key={c.component_id} value={c.component_id}>{c.name}</option>)}</select></label>
+   <label className="inline-check"><input type="checkbox" checked={rule} disabled={!subnet} onChange={e=>setRule(e.target.checked)}/> Создать правило «подсеть {subnet||'…'}» для будущих хостов (предлагать)</label>
+   <div className="form-row"><button className="button primary-sm" disabled={busy||!comp||!sel.length} onClick={()=>void act(async()=>{const r=await api.rsmBind(comp,csrf,sel);if(rule&&subnet)await api.rsmCreateRule(comp,csrf,{kind:'subnet',pattern:subnet,mode:'propose'});setNote('Привязано: '+r.bound+(r.existing?', уже были: '+r.existing:'')+(rule&&subnet?'; правило по подсети '+subnet+' создано':''));setRule(false)},done)}>Привязать</button>
+    {sel.some(u=>byAsset.has(u))?<button className="button" disabled={busy} onClick={()=>void act(async()=>{for(const u of sel){const p=byAsset.get(u);if(p)await api.rsmConfirm(p.binding.binding_id,csrf)}},done)}>Подтвердить предложения</button>:null}</div>
+   {!sel.length?<p className="muted">Отметьте хосты в таблице.</p>:null}</div>:<p className="muted">Привязка доступна оператору и администратору.</p>}
+  <hr className="sep"/><Import csrf={csrf} canWrite={canWrite} onExpired={onExpired} compact/>
+ </>:<>
+  <div><h2>Предложения правил</h2><p className="sub">Хосты, подошедшие под правила «предлагать», и конфликты правил «привязывать сразу».</p></div>
+  {canWrite&&sel.length?<div className="form-row"><button className="button primary-sm" disabled={busy} onClick={()=>void act(async()=>{for(const id of sel)await api.rsmConfirm(id,csrf)},done)}>Подтвердить ({sel.length})</button><button className="button" disabled={busy} onClick={()=>void act(async()=>{for(const id of sel)await api.rsmReject(id,csrf)},done)}>Отклонить</button></div>:<p className="muted">Отметьте предложения в таблице.</p>}
+  <p className="muted">Отклонённую пару правило больше не предлагает.</p>
+  <hr className="sep"/><Import csrf={csrf} canWrite={canWrite} onExpired={onExpired} compact/>
+ </>;
+ const allIds=tab==='unassigned'?items.map(x=>x.asset_uid):(props?.items??[]).map(p=>p.binding.binding_id);
+ return <>
+  <Strip label="Хосты вне систем" items={[{key:'u',n:page?page.total:null,label:'хостов вне систем',tone:'warn',active:tab==='unassigned',onClick:()=>{setTab('unassigned');setSel([])}},{key:'p',n:props?props.items.length:null,label:'предложений правил',active:tab==='proposals',onClick:()=>{setTab('proposals');setSel([])}}]}/>
+  <Split wide side={side}>
+   <Err e={error}/><Err e={perr}/><Err e={actError}/>{note?<div className="notice" role="status">{note}</div>:null}
+   {tab==='unassigned'?<>
+    <div className="systems-toolbar"><input className="toolbar-search" aria-label="Фильтр хостов" placeholder="Имя, IP, ОС, площадка" value={q} onChange={e=>setQ(e.target.value)}/></div>
+    {page&&page.items.length===0?<div className="empty"><span>✓</span><h3>Все хосты в системах</h3></div>:
+    <div className="panel table-scroll"><table className="panel-table"><thead><tr>{canWrite?<th><input type="checkbox" aria-label="Выбрать все" checked={!!allIds.length&&sel.length===allIds.length} onChange={e=>setSel(e.target.checked?allIds:[])}/></th>:null}<th>Хост</th><th>IP</th><th>ОС</th><th>Площадка</th><th>Предложено правилом</th><th className="num">Вне систем</th></tr></thead><tbody>
+     {items.map(x=>{const p=byAsset.get(x.asset_uid);return <tr key={x.asset_uid} className={sel.includes(x.asset_uid)?'selected':''}>{canWrite?<td><input type="checkbox" aria-label={'Выбрать '+(x.name||x.asset_uid)} checked={sel.includes(x.asset_uid)} onChange={e=>setSel(s=>e.target.checked?[...s,x.asset_uid]:s.filter(y=>y!==x.asset_uid))}/></td>:null}
+      <td><button className="link plain mono" onClick={()=>onOpenAsset(x.asset_uid)}>{x.name||x.asset_uid.slice(0,8)}</button></td><td className="mono">{x.ip||'—'}</td><td>{x.os??<span className="muted">—</span>}</td><td>{x.site||'—'}</td>
+      <td>{p?<span className="pill pill-blue">{p.component_name} · {p.system_name} / {p.environment_name.toLowerCase()}</span>:<span className="muted">нет предложения</span>}</td><td className="num">{since(x.since)}</td></tr>})}
+    </tbody></table></div>}
+    <div className="pager"><small className="muted">Предложения появляются, когда хост подходит под правило компонента в режиме «предлагать». Режим «автоматически» привязывает сам.</small><div><button className="button small" disabled={stack.length===1} onClick={()=>setStack(stack.slice(0,-1))}>← Назад</button><button className="button small" disabled={!page?.next_cursor} onClick={()=>setStack([...stack,page!.next_cursor])}>Далее →</button></div></div>
+   </>:<>
+    {props&&props.items.length===0?<div className="empty"><span>✓</span><h3>Разбирать нечего</h3><p>Хосты, попавшие под правила с режимом «предлагать», и конфликты правил появятся здесь.</p></div>:
+    <div className="panel table-scroll"><table className="panel-table"><thead><tr>{canWrite?<th><input type="checkbox" aria-label="Выбрать все" checked={!!allIds.length&&sel.length===allIds.length} onChange={e=>setSel(e.target.checked?allIds:[])}/></th>:null}<th>Хост</th><th>Куда</th><th>С</th>{canWrite?<th/>:null}</tr></thead><tbody>{(props?.items??[]).map(p=><tr key={p.binding.binding_id} className={sel.includes(p.binding.binding_id)?'selected':''}>
+     {canWrite?<td><input type="checkbox" aria-label={'Выбрать '+(p.asset_name||p.binding.asset_uid)} checked={sel.includes(p.binding.binding_id)} onChange={e=>setSel(s=>e.target.checked?[...s,p.binding.binding_id]:s.filter(y=>y!==p.binding.binding_id))}/></td>:null}
+     <td><button className="link plain mono" onClick={()=>onOpenAsset(p.binding.asset_uid)}>{p.asset_name||p.binding.asset_uid.slice(0,8)}</button></td><td>{p.system_name} / {p.environment_name} / <b>{p.component_name}</b></td><td>{time(p.binding.valid_from)}</td>
+     {canWrite?<td className="actions"><button className="button small" disabled={busy} onClick={()=>void act(()=>api.rsmConfirm(p.binding.binding_id,csrf),done)}>Подтвердить</button><button className="link" disabled={busy} onClick={()=>void act(()=>api.rsmReject(p.binding.binding_id,csrf),done)}>Отклонить</button></td>:null}</tr>)}</tbody></table></div>}
+   </>}
+  </Split></>;
 }
 
 const importStatus:Record<string,string>={bound:'привязан',existing:'уже был',will_bind:'будет привязан',system_not_found:'нет такой системы',host_not_found:'хост не найден',host_ambiguous:'имя у нескольких хостов',invalid:'ошибка в строке'};
-function Import({csrf,canWrite,onExpired}:{csrf:string;canWrite:boolean;onExpired:()=>void}){
+function Import({csrf,canWrite,onExpired,compact}:{csrf:string;canWrite:boolean;onExpired:()=>void;compact?:boolean}){
  const [text,setText]=useState(''),[result,setResult]=useState<RSMImportResult|null>(null);
  const [busy,error,act]=useAct(onExpired);
  const sample='surveyscan-rsm-bindings;1\nsystem;environment;component;host\n1С:ERP;Прод;Сервер приложений;msk1-app-*\n1С:ERP;Прод;СУБД;10.20.0.15';
  const run=(dry:boolean)=>void act(async()=>setResult(await api.rsmImport(csrf,text,dry)));
- return <div className="table-panel"><div className="table-toolbar"><h2>Импорт привязок CSV</h2></div>
+ return <div className={compact?'rsm-import compact':'table-panel'}><div className="table-toolbar"><h2>Импорт привязок CSV</h2></div>
   <p className="panel-note">Формат: первая строка <span className="mono">surveyscan-rsm-bindings;1</span>, затем заголовок <span className="mono">system;environment;component;host</span>. Хост — UID, IP, имя или маска имени (<span className="mono">*</span>, <span className="mono">?</span>). Система должна существовать; среда и компонент создаются. Excel — «Сохранить как CSV (разделитель — точка с запятой)». Сначала проверка — она ничего не меняет.</p>
   <Err e={error}/>
   <label className="rsm-file">Файл<input type="file" accept=".csv,text/csv" onChange={e=>{const f=e.target.files?.[0];if(f)void f.text().then(t=>{setText(t);setResult(null)})}}/></label>

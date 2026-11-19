@@ -57,7 +57,7 @@ export type RSMHostRow={asset_uid:string;name:string;color:RSMColor;reasons:RSMR
 export type RSMComponentDetail={component:RSMComponent;environment:RSMEnvironment;system_name:string;state:RSMNodeState|null;rules:RSMRule[];hosts:RSMHostRow[];offset:number;next_offset:number|null};
 export type RSMBindingPath={binding:RSMBinding;component_name:string;critical:boolean;environment_name:string;environment_kind:RSMEnvKind;service_uid:string;system_name:string};
 export type RSMProposal=RSMBindingPath&{asset_name:string};
-export type RSMUnassignedPage={total:number;items:{asset_uid:string;name:string}[];next_cursor:string|null};
+export type RSMUnassignedPage={total:number;items:{asset_uid:string;name:string;ip?:string;os?:string|null;site?:string;since?:string;last_inventory_at?:string|null}[];next_cursor:string|null};
 export type AssetRSM={asset_uid:string;state:{asset_uid:string;color:RSMColor;reasons:RSMReason[];last_inventory_at:string|null;computed_at:string}|null;bindings:RSMBindingPath[]};
 export type RSMCompHost={asset_uid:string;name:string;ip:string;color:RSMColor;reasons:RSMReason[]};
 export type RSMComposition={system:RSMSystem;state:RSMNodeState|null;sites:number;environments:{environment_id:string;name:string;kind:RSMEnvKind;state:RSMNodeState|null;components:{component_id:string;name:string;critical:boolean;state:RSMNodeState|null;hosts:RSMCompHost[];more:number}[]}[];depends_on:{service_uid:string;name:string}[];dependents:{service_uid:string;name:string}[]};
@@ -68,7 +68,7 @@ export type RSMDependency={service_uid:string;name:string;criticality:CIService[
 export type RSMComponentHost=RSMHostRow&{ip:string;site:string;values:Record<string,string>};
 export type RSMComponentCard=Omit<RSMComponentDetail,'hosts'>&{hosts:RSMComponentHost[];service_uid:string;it_subject_name:string|null;sites:{name:string;count:number}[];networks:{name:string;count:number}[];baseline_summary:{key:string;label:string;expected:string;values:{name:string;count:number}[];deviations:number;no_data:number}[];matched:number;tickets_open:number;tickets_total:number};
 export type RSMNav={systems:number;components:number;hosts:number;conflicts:number;my_tasks:number;tickets_open:number;sites:number};
-export type RSMComponentRow={component_id:string;name:string;role:string|null;critical:boolean;service_uid:string;system_name:string;environment_name:string;environment_kind:RSMEnvKind;state:RSMNodeState|null};
+export type RSMComponentRow={component_id:string;name:string;role:string|null;critical:boolean;service_uid:string;system_name:string;environment_name:string;environment_kind:RSMEnvKind;state:RSMNodeState|null;baseline:{os?:string;software?:Record<string,string>}};
 export type RSMCollectResult={hosts:number;requested:number;recent:number;agents:number;no_target:number};
 export type RSMSoftwarePage={hosts:number;products:{name:string;hosts:number;versions:{version:string;hosts:number}[]}[];truncated:boolean};
 export type RSMTicketList={items:{ticket_id:string;number:string;kind:TicketKind;title:string;state:string;priority:number;created_at:string;open:boolean}[];open:number};
@@ -233,7 +233,7 @@ export const api={
  rsmSystemCard:(uid:string)=>call<RSMSystemCard>('/api/v1/rsm/systems/'+encodeURIComponent(uid)+'/card','RSMSystemCard'),
  rsmComponentCard:(id:string,f:{q?:string;site?:string;color?:string;offset?:number})=>{const p=new URLSearchParams({limit:'100',offset:String(f.offset??0)});if(f.q)p.set('q',f.q);if(f.site)p.set('site',f.site);if(f.color)p.set('color',f.color);return call<RSMComponentCard>('/api/v1/rsm/components/'+encodeURIComponent(id)+'/card?'+p.toString(),'RSMComponentCard')},
  rsmNav:()=>call<RSMNav>('/api/v1/rsm/nav','RSMNav'),
- rsmComponents:(q:string,offset:number)=>call<{items:RSMComponentRow[];total:number;offset:number;next_offset:number|null}>('/api/v1/rsm/components?limit=100&offset='+offset+(q?'&q='+encodeURIComponent(q):''),'RSMComponentPage'),
+ rsmComponents:(q:string,offset:number,filter='')=>call<{items:RSMComponentRow[];total:number;offset:number;next_offset:number|null;counters:{total:number;critical:number;deviating:number;no_baseline:number;no_hosts:number}}>('/api/v1/rsm/components?limit=100&offset='+offset+(q?'&q='+encodeURIComponent(q):'')+(filter?'&filter='+filter:''),'RSMComponentPage'),
  rsmCollect:(kind:'systems'|'components',id:string,csrf:string)=>call<RSMCollectResult>('/api/v1/rsm/'+kind+'/'+encodeURIComponent(id)+'/collect','RSMCollectResult',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
  rsmSoftware:(kind:'systems'|'components',id:string,q:string)=>call<RSMSoftwarePage>('/api/v1/rsm/'+kind+'/'+encodeURIComponent(id)+'/software'+(q?'?q='+encodeURIComponent(q):''),'RSMSoftwarePage'),
  rsmTickets:(kind:'systems'|'components',id:string)=>call<RSMTicketList>('/api/v1/rsm/'+kind+'/'+encodeURIComponent(id)+'/tickets','RSMTicketList'),

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"net/http"
 	"sort"
 	"strings"
@@ -63,20 +64,32 @@ type RSMComponentRow struct {
 	Environment string          `json:"environment_name"`
 	EnvKind     string          `json:"environment_kind"`
 	State       *cmdb.NodeState `json:"state"`
+	// C53.07: эталон компонента (что должно быть на хостах) — для колонки «Эталон» реестра компонентов.
+	Baseline json.RawMessage `json:"baseline"`
+}
+
+// RSMComponentCounters — полоса счётчиков раздела «Компоненты» (по всем компонентам, без учёта фильтра).
+type RSMComponentCounters struct {
+	Total      int `json:"total"`
+	Critical   int `json:"critical"`
+	Deviating  int `json:"deviating"`
+	NoBaseline int `json:"no_baseline"`
+	NoHosts    int `json:"no_hosts"`
 }
 
 type RSMComponentPage struct {
-	Items      []RSMComponentRow `json:"items"`
-	Total      int               `json:"total"`
-	Offset     int               `json:"offset"`
-	NextOffset *int              `json:"next_offset"`
+	Items      []RSMComponentRow    `json:"items"`
+	Total      int                  `json:"total"`
+	Offset     int                  `json:"offset"`
+	NextOffset *int                 `json:"next_offset"`
+	Counters   RSMComponentCounters `json:"counters"`
 }
 
 // RSMComponents — компоненты всех систем: сначала проблемные, поиск по имени компонента/системы.
-func (r *Registry) RSMComponents(ctx context.Context, id accessport.Identity, q string, offset, limit int) (RSMComponentPage, error) {
+func (r *Registry) RSMComponents(ctx context.Context, id accessport.Identity, q, filter string, offset, limit int) (RSMComponentPage, error) {
 	out := RSMComponentPage{Items: []RSMComponentRow{}, Offset: offset}
 	q = strings.TrimSpace(q)
-	if len(q) > 128 {
+	if len(q) > 128 || (filter != "" && filter != "critical" && filter != "deviating" && filter != "no_baseline" && filter != "no_hosts") {
 		return out, domain.Invalid
 	}
 	like := "%" + strings.NewReplacer("\\", "\\\\", "%", "\\%", "_", "\\_").Replace(strings.ToLower(q)) + "%"
@@ -86,12 +99,13 @@ func (r *Registry) RSMComponents(ctx context.Context, id accessport.Identity, q 
 	}
 	defer tx.Rollback(ctx)
 	rows, e := tx.Query(ctx, `SELECT c.component_id::text,c.name,c.role,c.critical,s.service_uid::text,s.name,e.name,e.kind,ns.node_id IS NOT NULL,
-COALESCE(ns.color,'grey'),COALESCE(ns.hosts,0),COALESCE(ns.green,0),COALESCE(ns.yellow,0),COALESCE(ns.red,0),COALESCE(ns.grey,0),COALESCE(ns.reasons,'[]'::jsonb),COALESCE(ns.computed_at,'epoch'::timestamptz),COALESCE(ns.fresh,0),COALESCE(ns.problems,'{}'::jsonb),count(*) OVER ()
+COALESCE(ns.color,'grey'),COALESCE(ns.hosts,0),COALESCE(ns.green,0),COALESCE(ns.yellow,0),COALESCE(ns.red,0),COALESCE(ns.grey,0),COALESCE(ns.reasons,'[]'::jsonb),COALESCE(ns.computed_at,'epoch'::timestamptz),COALESCE(ns.fresh,0),COALESCE(ns.problems,'{}'::jsonb),c.baseline,count(*) OVER ()
 FROM cmdb.components c JOIN cmdb.environments e ON e.tenant_id=c.tenant_id AND e.environment_id=c.environment_id AND e.retired_at IS NULL
 JOIN cmdb.services s ON s.tenant_id=e.tenant_id AND s.service_uid=e.service_uid AND s.retired_at IS NULL
 LEFT JOIN cmdb.node_states ns ON ns.tenant_id=c.tenant_id AND ns.node_kind='component' AND ns.node_id=c.component_id
 WHERE c.tenant_id=$1 AND c.retired_at IS NULL AND ($2='' OR lower(c.name) LIKE $3 OR lower(s.name) LIKE $3 OR lower(COALESCE(c.role,'')) LIKE $3)
-ORDER BY CASE COALESCE(ns.color,'grey') WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'grey' THEN 2 ELSE 3 END,lower(s.name),lower(c.name) OFFSET $4 LIMIT $5`, id.TenantID, q, like, offset, limit+1)
+AND ($6='' OR ($6='critical' AND c.critical) OR ($6='deviating' AND COALESCE((ns.problems->>'baseline')::int,0)>0) OR ($6='no_baseline' AND c.baseline='{}'::jsonb) OR ($6='no_hosts' AND COALESCE(ns.hosts,0)=0))
+ORDER BY CASE COALESCE(ns.color,'grey') WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'grey' THEN 2 ELSE 3 END,lower(s.name),lower(c.name) OFFSET $4 LIMIT $5`, id.TenantID, q, like, offset, limit+1, filter)
 	if e != nil {
 		return out, e
 	}
@@ -100,7 +114,7 @@ ORDER BY CASE COALESCE(ns.color,'grey') WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 W
 		var x RSMComponentRow
 		var has bool
 		var st cmdb.NodeState
-		if e = rows.Scan(&x.ID, &x.Name, &x.Role, &x.Critical, &x.SystemUID, &x.System, &x.Environment, &x.EnvKind, &has, &st.Color, &st.Hosts, &st.Green, &st.Yellow, &st.Red, &st.Grey, &st.Reasons, &st.ComputedAt, &st.Fresh, &st.Problems, &out.Total); e != nil {
+		if e = rows.Scan(&x.ID, &x.Name, &x.Role, &x.Critical, &x.SystemUID, &x.System, &x.Environment, &x.EnvKind, &has, &st.Color, &st.Hosts, &st.Green, &st.Yellow, &st.Red, &st.Grey, &st.Reasons, &st.ComputedAt, &st.Fresh, &st.Problems, &x.Baseline, &out.Total); e != nil {
 			return out, e
 		}
 		if has {
@@ -116,6 +130,14 @@ ORDER BY CASE COALESCE(ns.color,'grey') WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 W
 		out.Items = out.Items[:limit]
 		next := offset + limit
 		out.NextOffset = &next
+	}
+	c := &out.Counters
+	if e = tx.QueryRow(ctx, `SELECT count(*),count(*) FILTER (WHERE c.critical),count(*) FILTER (WHERE COALESCE((ns.problems->>'baseline')::int,0)>0),count(*) FILTER (WHERE c.baseline='{}'::jsonb),count(*) FILTER (WHERE COALESCE(ns.hosts,0)=0)
+FROM cmdb.components c JOIN cmdb.environments e ON e.tenant_id=c.tenant_id AND e.environment_id=c.environment_id AND e.retired_at IS NULL
+JOIN cmdb.services s ON s.tenant_id=e.tenant_id AND s.service_uid=e.service_uid AND s.retired_at IS NULL
+LEFT JOIN cmdb.node_states ns ON ns.tenant_id=c.tenant_id AND ns.node_kind='component' AND ns.node_id=c.component_id
+WHERE c.tenant_id=$1 AND c.retired_at IS NULL`, id.TenantID).Scan(&c.Total, &c.Critical, &c.Deviating, &c.NoBaseline, &c.NoHosts); e != nil {
+		return out, e
 	}
 	return out, tx.Commit(ctx)
 }
@@ -440,7 +462,7 @@ func (r *Registry) rsmMoreHandlers(h map[string]rsmRoute) {
 		reply(w, req, out, e)
 	})
 	h["GET /api/v1/rsm/components"] = read(func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity) {
-		q, ok := queryOnly(w, req, "q", "offset", "limit")
+		q, ok := queryOnly(w, req, "q", "filter", "offset", "limit")
 		if !ok {
 			return
 		}
@@ -448,7 +470,7 @@ func (r *Registry) rsmMoreHandlers(h map[string]rsmRoute) {
 		if !ok {
 			return
 		}
-		out, e := r.RSMComponents(ctx, id, q.Get("q"), offset, limit)
+		out, e := r.RSMComponents(ctx, id, q.Get("q"), q.Get("filter"), offset, limit)
 		reply(w, req, out, e)
 	})
 	for _, kind := range []string{"system", "component"} {

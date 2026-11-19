@@ -1141,6 +1141,32 @@
      "type": "string",
      "minLength": 0,
      "maxLength": 256
+    },
+    "ip": {
+     "type": "string",
+     "maxLength": 64
+    },
+    "os": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "maxLength": 512
+    },
+    "site": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "since": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "last_inventory_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
     }
    },
    "required": [
@@ -2362,6 +2388,9 @@
        "type": "null"
       }
      ]
+    },
+    "baseline": {
+     "type": "object"
     }
    },
    "required": [
@@ -2373,7 +2402,8 @@
     "system_name",
     "environment_name",
     "environment_kind",
-    "state"
+    "state",
+    "baseline"
    ],
    "additionalProperties": false
   },
@@ -2401,13 +2431,47 @@
       "null"
      ],
      "minimum": 0
+    },
+    "counters": {
+     "type": "object",
+     "properties": {
+      "total": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "critical": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "deviating": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "no_baseline": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "no_hosts": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "total",
+      "critical",
+      "deviating",
+      "no_baseline",
+      "no_hosts"
+     ],
+     "additionalProperties": false
     }
    },
    "required": [
     "items",
     "total",
     "offset",
-    "next_offset"
+    "next_offset",
+    "counters"
    ],
    "additionalProperties": false
   },
