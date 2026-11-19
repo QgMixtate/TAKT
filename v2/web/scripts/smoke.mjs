@@ -58,6 +58,10 @@ try{
  await page.getByRole('navigation',{name:'Разделы'}).getByRole('button',{name:/^Здоровье/}).click();await expect(page.getByRole('heading',{name:/Компания:/})).toBeVisible();await page.getByRole('radio',{name:'все'}).click();await expect(page.locator('.health-table')).toContainText('CRM Web');
  await page.getByRole('radio',{name:/Площадка → система/}).click();await expect(page.locator('.health-table')).toContainText('площадка');await page.screenshot({path:'../.local/c53-health.png'});
  checks.push('C53.06 health tree: direction and site views down to hosts and reasons');
+ // C53.05: «Схема сети» — уровни, дерево подсетей, паспорт подсети с аномалиями
+ await page.getByRole('navigation',{name:'Разделы'}).getByRole('button',{name:/^Схема сети/}).click();await page.locator('.network .tree-item').first().click();await expect(page.locator('.net-side')).toContainText('Аномалии');
+ await page.getByRole('tab',{name:'L2 — коммутаторы'}).click();await expect(page.locator('.network')).toContainText('Связи L2');await page.getByRole('tab',{name:'Площадки'}).click();await expect(page.locator('.network')).toContainText('Площадки и сегменты');await page.getByRole('tab',{name:'L3 — подсети'}).click();
+ checks.push('C53.05 network levels: subnet tree with passport and anomalies, L2 and sites views');
  // C51: «Обследования сети» — вкладки, подсеть из боковой панели, запуск, результат настоящего collector
  await page.getByRole('button',{name:/Обследования сети/}).click();await expect(page.getByRole('heading',{name:'Обследования сети.'})).toBeVisible();
  await page.getByRole('button',{name:'+ Новая подсеть'}).click();let drawer=page.getByRole('dialog',{name:'Новая подсеть'});
