@@ -207,3 +207,35 @@ input::placeholder,textarea::placeholder{font-style:normal;color:#9AA4B2}
 @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.card-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.card-page{margin:-14px -16px 0}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.card-grid{padding:12px}.attention li{flex-wrap:wrap}.att-where{margin-left:0;padding-left:17px}.title-actions{margin-left:0}}
 .hdot{display:inline-block;vertical-align:middle}
+/* C53.03 — точно по макетам: кнопки, модальные окна, меню со счётчиками, крошки */
+.nav-label{flex:1}.nav-count{margin-left:auto;font-size:13px;color:#8F9BB0;font-weight:500}
+.sidebar nav button.active .nav-count{color:#F25AA6}
+.crumbs .slash{margin:0 10px}.crumb-link{border:0;background:none;padding:0;font:inherit;color:var(--text-2);cursor:pointer}.crumb-link:hover{color:var(--text)}
+a.button{text-decoration:none;display:inline-flex}
+.button.primary-sm{background:var(--magenta);border-color:var(--magenta);color:#fff;font-weight:600}
+.button.primary-sm:hover:not(:disabled){background:#BA0F69}
+.title-actions{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.title-actions .button{font-size:15px;padding:8px 16px}
+.card-pad{padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px}
+.card-pad>.panel.wide{margin:0}
+.panel>header .right,.panel>header .header-actions{margin-left:auto}
+.header-actions{display:flex;gap:8px;align-items:center}
+.manage-box{padding:4px 16px 12px;border-bottom:1px solid var(--line-2);background:#FAFBFD}
+.manage-box .rsm-card,.manage-box .table-panel{border:0;background:transparent}
+.modal-shade{position:fixed;inset:0;background:#0F1A2B66;display:flex;align-items:flex-start;justify-content:center;padding:8vh 16px;z-index:40}
+.modal{background:#fff;border-radius:10px;box-shadow:0 20px 60px #0F1A2B44;padding:20px 22px;width:min(560px,100%);display:flex;flex-direction:column;gap:12px}
+.modal h2{font-size:20px;margin:0}
+.modal label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--text-2)}
+.modal input,.modal select,.modal textarea{border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:inherit;font-size:14px;color:var(--text)}
+.modal fieldset{border:1px solid var(--line-2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px}.modal legend{font-size:13px;color:var(--text-2);padding:0 4px}
+.modal .check-row{flex-direction:row;align-items:center;gap:8px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.people-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 16px;padding:14px 16px}
+.people-form label{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--text-2)}
+.people-form input,.people-form select{border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--text)}
+.people-form>div:last-child{grid-column:1/-1}
+.toolbar-search{border:1px solid var(--line);border-radius:6px;padding:8px 12px;font-size:14px;min-width:320px;background:#fff}
+.systems-main.solo{margin:0 -24px;padding:16px 24px}
+@media(max-width:700px){.people-form{grid-template-columns:1fr}.toolbar-search{min-width:0;width:100%}.title-actions .button{font-size:13px;padding:6px 10px}}
+.sidebar nav button span{font-size:inherit;width:auto}.sidebar nav button .nav-count{font-size:13px}

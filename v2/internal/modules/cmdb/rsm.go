@@ -79,6 +79,8 @@ type SystemFields struct {
 	BusinessOwner     *string `json:"business_owner,omitempty"`
 	ITSubjectID       *string `json:"it_subject_id,omitempty"`
 	MaintenanceWindow *string `json:"maintenance_window,omitempty"`
+	OnCall            *string `json:"on_call,omitempty"`
+	BackupSubjectID   *string `json:"backup_subject_id,omitempty"`
 }
 
 type System struct {
@@ -87,6 +89,8 @@ type System struct {
 	BusinessOwner     *string `json:"business_owner"`
 	ITSubjectID       *string `json:"it_subject_id"`
 	MaintenanceWindow *string `json:"maintenance_window"`
+	OnCall            *string `json:"on_call"`
+	BackupSubjectID   *string `json:"backup_subject_id"`
 }
 
 func optionalRef(p *string) (set bool, value *string, ok bool) {
@@ -103,7 +107,8 @@ func optionalRef(p *string) (set bool, value *string, ok bool) {
 func (s Store) UpdateSystem(ctx context.Context, tx pgx.Tx, tenant, uid, revision, actor string, in SystemFields) (System, error) {
 	setDir, dir, okDir := optionalRef(in.DirectionUID)
 	setSubj, subj, okSubj := optionalRef(in.ITSubjectID)
-	if !okDir || !okSubj || (in.BusinessOwner != nil && len([]rune(*in.BusinessOwner)) > 512) || (in.MaintenanceWindow != nil && len([]rune(*in.MaintenanceWindow)) > 256) {
+	setBackup, backup, okBackup := optionalRef(in.BackupSubjectID)
+	if !okDir || !okSubj || !okBackup || (in.OnCall != nil && len([]rune(*in.OnCall)) > 256) || (in.BusinessOwner != nil && len([]rune(*in.BusinessOwner)) > 512) || (in.MaintenanceWindow != nil && len([]rune(*in.MaintenanceWindow)) > 256) {
 		return System{}, domain.Invalid
 	}
 	current, e := s.System(ctx, tx, tenant, uid)
@@ -116,8 +121,10 @@ func (s Store) UpdateSystem(ctx context.Context, tx pgx.Tx, tenant, uid, revisio
 	tag, e := tx.Exec(ctx, `UPDATE cmdb.services SET
 direction_uid=CASE WHEN $4 THEN $5::uuid ELSE direction_uid END,
 it_subject_id=CASE WHEN $6 THEN $7::uuid ELSE it_subject_id END,
-business_owner=COALESCE($8,business_owner), maintenance_window=COALESCE($9,maintenance_window), revision=revision+1
-WHERE tenant_id=$1 AND service_uid=$2 AND revision::text=$3`, tenant, uid, revision, setDir, dir, setSubj, subj, in.BusinessOwner, in.MaintenanceWindow)
+business_owner=CASE WHEN $8::text IS NULL THEN business_owner ELSE NULLIF(btrim($8),'') END,
+maintenance_window=CASE WHEN $9::text IS NULL THEN maintenance_window ELSE NULLIF(btrim($9),'') END,
+on_call=CASE WHEN $10::text IS NULL THEN on_call ELSE NULLIF(btrim($10),'') END, backup_subject_id=CASE WHEN $11 THEN $12::uuid ELSE backup_subject_id END, revision=revision+1
+WHERE tenant_id=$1 AND service_uid=$2 AND revision::text=$3`, tenant, uid, revision, setDir, dir, setSubj, subj, in.BusinessOwner, in.MaintenanceWindow, in.OnCall, setBackup, backup)
 	if e != nil {
 		return current, mapWrite(e)
 	}
@@ -136,9 +143,9 @@ func (Store) System(ctx context.Context, tx pgx.Tx, tenant, uid string) (System,
 		return out, domain.NotFound
 	}
 	e := tx.QueryRow(ctx, `SELECT service_uid::text,name,description,criticality,revision::text,created_at,retired_at,
-direction_uid::text,business_owner,it_subject_id::text,maintenance_window FROM cmdb.services WHERE tenant_id=$1 AND service_uid=$2`, tenant, uid).
+direction_uid::text,business_owner,it_subject_id::text,maintenance_window,on_call,backup_subject_id::text FROM cmdb.services WHERE tenant_id=$1 AND service_uid=$2`, tenant, uid).
 		Scan(&out.UID, &out.Name, &out.Description, &out.Criticality, &out.Revision, &out.CreatedAt, &out.RetiredAt,
-			&out.DirectionUID, &out.BusinessOwner, &out.ITSubjectID, &out.MaintenanceWindow)
+			&out.DirectionUID, &out.BusinessOwner, &out.ITSubjectID, &out.MaintenanceWindow, &out.OnCall, &out.BackupSubjectID)
 	if errors.Is(e, pgx.ErrNoRows) {
 		e = domain.NotFound
 	}
@@ -180,6 +187,7 @@ type Component struct {
 	Critical      bool            `json:"critical"`
 	Baseline      json.RawMessage `json:"baseline"`
 	Revision      string          `json:"revision"`
+	Role          *string         `json:"role"`
 }
 
 func validBaseline(raw json.RawMessage) bool {
@@ -413,4 +421,45 @@ SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9 WHERE NOT EXISTS(SELECT 1 FROM cmdb.bindings W
 		}
 	}
 	return moved, nil
+}
+
+// ComponentFields — правка компонента (nil — не менять): роль, критичность, эталон (объект; {} — снять).
+type ComponentFields struct {
+	Role     *string         `json:"role,omitempty"`
+	Critical *bool           `json:"critical,omitempty"`
+	Baseline json.RawMessage `json:"baseline,omitempty"`
+}
+
+func (s Store) UpdateComponent(ctx context.Context, tx pgx.Tx, tenant, id, revision, actor string, in ComponentFields) (Component, error) {
+	if !identifier.Valid(id) {
+		return Component{}, domain.NotFound
+	}
+	if (in.Role != nil && len([]rune(*in.Role)) > 256) || (len(in.Baseline) > 0 && !validBaseline(in.Baseline)) {
+		return Component{}, domain.Invalid
+	}
+	var baseline *string
+	if len(in.Baseline) > 0 {
+		b := string(in.Baseline)
+		baseline = &b
+	}
+	tag, e := tx.Exec(ctx, `UPDATE cmdb.components SET role=COALESCE(NULLIF($4,''),CASE WHEN $4='' THEN NULL ELSE role END),critical=COALESCE($5,critical),baseline=COALESCE($6::jsonb,baseline),revision=revision+1
+WHERE tenant_id=$1 AND component_id=$2 AND retired_at IS NULL AND revision::text=$3`, tenant, id, revision, in.Role, in.Critical, baseline)
+	if e != nil {
+		return Component{}, mapWrite(e)
+	}
+	if tag.RowsAffected() != 1 {
+		var exists bool
+		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM cmdb.components WHERE tenant_id=$1 AND component_id=$2 AND retired_at IS NULL)", tenant, id).Scan(&exists); e != nil {
+			return Component{}, e
+		}
+		if !exists {
+			return Component{}, domain.NotFound
+		}
+		return Component{}, domain.Revision
+	}
+	if e = s.change(ctx, tx, tenant, "component", id, "updated", actor, in); e != nil {
+		return Component{}, e
+	}
+	c, _, _, e := s.ComponentByID(ctx, tx, tenant, id)
+	return c, e
 }

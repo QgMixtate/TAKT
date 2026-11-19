@@ -49,7 +49,7 @@ func (Store) SystemEnvironments(ctx context.Context, tx pgx.Tx, tenant, system s
 	if e = rows.Err(); e != nil {
 		return nil, nil, e
 	}
-	rows, e = tx.Query(ctx, `SELECT c.component_id::text,c.environment_id::text,c.name,c.critical,c.baseline,c.revision::text FROM cmdb.components c JOIN cmdb.environments e ON e.tenant_id=c.tenant_id AND e.environment_id=c.environment_id
+	rows, e = tx.Query(ctx, `SELECT c.component_id::text,c.environment_id::text,c.name,c.critical,c.baseline,c.revision::text,c.role FROM cmdb.components c JOIN cmdb.environments e ON e.tenant_id=c.tenant_id AND e.environment_id=c.environment_id
 WHERE c.tenant_id=$1 AND e.service_uid=$2 AND c.retired_at IS NULL AND e.retired_at IS NULL ORDER BY lower(c.name)`, tenant, system)
 	if e != nil {
 		return nil, nil, e
@@ -70,7 +70,7 @@ func (Store) ComponentByID(ctx context.Context, tx pgx.Tx, tenant, id string) (C
 	if !identifier.Valid(id) {
 		return Component{}, Environment{}, "", domain.NotFound
 	}
-	c, e := scanComponent(tx.QueryRow(ctx, "SELECT c.component_id::text,c.environment_id::text,c.name,c.critical,c.baseline,c.revision::text FROM cmdb.components c WHERE c.tenant_id=$1 AND c.component_id=$2 AND c.retired_at IS NULL", tenant, id))
+	c, e := scanComponent(tx.QueryRow(ctx, "SELECT c.component_id::text,c.environment_id::text,c.name,c.critical,c.baseline,c.revision::text,c.role FROM cmdb.components c WHERE c.tenant_id=$1 AND c.component_id=$2 AND c.retired_at IS NULL", tenant, id))
 	if errors.Is(e, pgx.ErrNoRows) {
 		return c, Environment{}, "", domain.NotFound
 	}
@@ -209,6 +209,6 @@ func scanEnvironment(r pgx.Row) (Environment, error) {
 
 func scanComponent(r pgx.Row) (Component, error) {
 	var c Component
-	e := r.Scan(&c.ID, &c.EnvironmentID, &c.Name, &c.Critical, &c.Baseline, &c.Revision)
+	e := r.Scan(&c.ID, &c.EnvironmentID, &c.Name, &c.Critical, &c.Baseline, &c.Revision, &c.Role)
 	return c, e
 }

@@ -1,5 +1,5 @@
 import {useEffect,useState,type ReactNode} from 'react';
-import {SystemsScreen} from './systems';
+import {SystemsScreen,ComponentsScreen} from './systems';
 import {SystemCardPage,ComponentCardPage} from './cards';
 import {api,ApiError,errorMessage,type AssetRSM,type RSMColor,type RSMComponentDetail,type RSMEnvKind,type RSMImportResult,type RSMNodeState,type RSMOverview,type RSMProposal,type RSMReason,type RSMSystemDetail,type RSMUnassignedPage} from './api';
 
@@ -30,23 +30,29 @@ function useAct(onExpired:()=>void):[boolean,unknown,(fn:()=>Promise<unknown>,af
 }
 const Err=({e}:{e:unknown})=>e?<div className="error" role="alert">{errorMessage(e)}</div>:null;
 
-type Mode={kind:'list'}|{kind:'system';uid:string}|{kind:'component';id:string;from?:string}|{kind:'proposals'}|{kind:'unassigned'}|{kind:'import'};
-export function RSMView({csrf,canWrite,onOpenAsset,onExpired}:{csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
- const [mode,setMode]=useState<Mode>({kind:'list'}),[v,setV]=useState(0),[note,setNote]=useState(''),[dirName,setDirName]=useState('');
+type Mode={kind:'components'}|{kind:'list'}|{kind:'system';uid:string}|{kind:'component';id:string;from?:string}|{kind:'proposals'}|{kind:'unassigned'}|{kind:'import'};
+export function RSMView({start='list',csrf,canWrite,onOpenAsset,onNavigate,onCrumbs,onExpired}:{start?:'list'|'components';csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onNavigate:(view:string)=>void;onCrumbs:(c:string[])=>void;onExpired:()=>void}){
+ const home:Mode=start==='components'?{kind:'components'}:{kind:'list'};
+ const [mode,setMode0]=useState<Mode>(home),[v,setV]=useState(0),[note,setNote]=useState(''),[dirName,setDirName]=useState('');
+ const setMode=(m:Mode)=>{if(m.kind==='list'||m.kind==='components')onCrumbs([]);else if(m.kind==='proposals')onCrumbs(['Предложения правил']);else if(m.kind==='unassigned')onCrumbs(['Хосты вне систем']);else if(m.kind==='import')onCrumbs(['Импорт привязок']);setMode0(m)};
  const [overview,error]=useLoad<RSMOverview>(()=>api.rsmOverview(),[v],onExpired);
+ useEffect(()=>{if(!note)return;const t=setTimeout(()=>setNote(''),6000);return()=>clearTimeout(t)},[note]);
  const [busy,actError,act]=useAct(onExpired);
- const back=<button className="link back" onClick={()=>{setMode({kind:'list'});setV(x=>x+1)}}>← Все системы</button>;
+ const back=<button className="link back" onClick={()=>{setMode(home);setV(x=>x+1)}}>← {start==='components'?'Все компоненты':'Все системы'}</button>;
  const actions=canWrite?<details className="actions-menu"><summary>Действия</summary><div className="popover right">
   <button className="menu-item" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmRecompute(csrf);setNote(r.skipped?'Пересчёт уже идёт в другом процессе':'Пересчитано: хостов '+r.hosts+', узлов '+r.nodes)},()=>setV(x=>x+1))}>Пересчитать состояние сейчас</button>
   <button className="menu-item" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmApplyRules(csrf);setNote('Правила: хостов '+r.assets+', привязано '+r.bound+', предложено '+r.proposed+(r.conflicts?', конфликтов '+r.conflicts:''))},()=>setV(x=>x+1))}>Применить правила ко всем хостам</button>
+  <button className="menu-item" onClick={()=>onNavigate('services')}>Новая система, связи систем…</button>
   <button className="menu-item" onClick={()=>setMode({kind:'import'})}>Импорт привязок CSV…</button>
+  <button className="menu-item" onClick={()=>onNavigate('software')}>Поиск ПО по реестру</button>
   <form className="menu-form" onSubmit={e=>{e.preventDefault();if(!dirName.trim())return;void act(()=>api.rsmCreateDirection(csrf,dirName.trim()),()=>{setDirName('');setV(x=>x+1);setNote('Направление добавлено')})}}><label>Новое направление<input value={dirName} onChange={e=>setDirName(e.target.value)} placeholder="например, Финансы"/></label><button className="button small" disabled={busy||!dirName.trim()}>Добавить</button></form>
  </div></details>:null;
  return <section className="rsm">
   <Err e={error}/><Err e={actError}/>{note?<p className="rsm-note" role="status">{note} <button className="link" onClick={()=>setNote('')}>скрыть</button></p>:null}
+  {mode.kind==='components'?<ComponentsScreen onOpen={id=>setMode({kind:'component',id})} onExpired={onExpired}/>:null}
   {mode.kind==='list'?<SystemsScreen overview={overview} actions={actions} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenComponent={id=>setMode({kind:'component',id})} onOpenAsset={onOpenAsset} onUnassigned={()=>setMode({kind:'unassigned'})} onProposals={()=>setMode({kind:'proposals'})} onExpired={onExpired}/>:null}
-  {mode.kind==='system'?<SystemCardPage uid={mode.uid} csrf={csrf} canWrite={canWrite} directions={overview?.directions??[]} onBack={()=>{setMode({kind:'list'});setV(x=>x+1)}} onComponent={(id,from)=>setMode({kind:'component',id,from})} onOpenAsset={onOpenAsset} onOpenSystem={uid=>setMode({kind:'system',uid})} onExpired={onExpired} onChanged={()=>setV(x=>x+1)}/>:null}
-  {mode.kind==='component'?<ComponentCardPage key={mode.id} id={mode.id} csrf={csrf} canWrite={canWrite} backLabel={mode.from?'Карточка системы':'Все системы'} onBack={()=>mode.from?setMode({kind:'system',uid:mode.from}):setMode({kind:'list'})} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenAsset={onOpenAsset} onExpired={onExpired}/>:null}
+  {mode.kind==='system'?<SystemCardPage uid={mode.uid} csrf={csrf} canWrite={canWrite} directions={overview?.directions??[]} onBack={()=>{setMode(home);setV(x=>x+1)}} onComponent={(id,from)=>setMode({kind:'component',id,from})} onOpenAsset={onOpenAsset} onOpenSystem={uid=>setMode({kind:'system',uid})} onExpired={onExpired} onChanged={()=>setV(x=>x+1)} onCrumbs={onCrumbs}/>:null}
+  {mode.kind==='component'?<ComponentCardPage key={mode.id} id={mode.id} csrf={csrf} canWrite={canWrite} backLabel={mode.from?'Карточка системы':start==='components'?'Все компоненты':'Все системы'} onBack={()=>mode.from?setMode({kind:'system',uid:mode.from}):setMode(home)} onCrumbs={onCrumbs} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenAsset={onOpenAsset} onExpired={onExpired}/>:null}
   {mode.kind==='proposals'?<>{back}<Proposals csrf={csrf} canWrite={canWrite} onOpenAsset={onOpenAsset} onExpired={onExpired} onChange={()=>setV(x=>x+1)}/></>:null}
   {mode.kind==='unassigned'?<>{back}<Unassigned onOpenAsset={onOpenAsset} onExpired={onExpired}/></>:null}
   {mode.kind==='import'?<>{back}<Import csrf={csrf} canWrite={canWrite} onExpired={onExpired}/></>:null}

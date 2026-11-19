@@ -709,5 +709,6 @@ func (r *Registry) rsmHandlers() map[string]rsmRoute {
 		out, e := r.ImportRSMCSV(ctx, id, raw, dry == "true")
 		reply(w, req, out, e)
 	})}
+	r.rsmMoreHandlers(h)
 	return h
 }

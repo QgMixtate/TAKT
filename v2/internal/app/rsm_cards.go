@@ -68,6 +68,9 @@ type RSMSystemCard struct {
 	State         *cmdb.NodeState `json:"state"`
 	DirectionName *string         `json:"direction_name"`
 	ITSubjectName *string         `json:"it_subject_name"`
+	BackupName    *string         `json:"backup_subject_name"`
+	TicketsOpen   int             `json:"tickets_open"`
+	TicketsTotal  int             `json:"tickets_total"`
 	Sites         int             `json:"sites"`
 	EnvKinds      []string        `json:"env_kinds"`
 	Matrix        []RSMMatrixRow  `json:"matrix"`
@@ -103,6 +106,12 @@ func (r *Registry) RSMSystemCard(ctx context.Context, id accessport.Identity, ui
 		var n string
 		if tx.QueryRow(ctx, "SELECT name FROM responsibility.subjects WHERE tenant_id=$1 AND subject_id=$2", id.TenantID, *out.System.ITSubjectID).Scan(&n) == nil {
 			out.ITSubjectName = &n
+		}
+	}
+	if out.System.BackupSubjectID != nil {
+		var n string
+		if tx.QueryRow(ctx, "SELECT name FROM responsibility.subjects WHERE tenant_id=$1 AND subject_id=$2", id.TenantID, *out.System.BackupSubjectID).Scan(&n) == nil {
+			out.BackupName = &n
 		}
 	}
 	envs, comps, e := r.CMDB.SystemEnvironments(ctx, tx, id.TenantID, uid)
@@ -191,6 +200,9 @@ LEFT JOIN cmdb.node_states ns ON ns.tenant_id=s.tenant_id AND ns.node_kind='syst
 		}
 	}
 	if out.Changes, out.ChangesTotal, e = r.rsmChanges(ctx, tx, id.TenantID, uid, envIDs, compIDs, 7); e != nil {
+		return out, e
+	}
+	if out.TicketsOpen, out.TicketsTotal, e = rsmTicketCounts(ctx, tx, id.TenantID, "system", uid); e != nil {
 		return out, e
 	}
 	return out, tx.Commit(ctx)
@@ -351,6 +363,8 @@ type RSMComponentCard struct {
 	Networks      []RSMCount         `json:"networks"`
 	Baseline      []RSMBaselineItem  `json:"baseline_summary"`
 	Matched       int                `json:"matched"` // хостов под фильтром
+	TicketsOpen   int                `json:"tickets_open"`
+	TicketsTotal  int                `json:"tickets_total"`
 }
 
 type baselineSpec struct {
@@ -535,6 +549,9 @@ ORDER BY CASE COALESCE(h.color,'grey') WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WH
 		out.NextOffset = &next
 	}
 	out.RSMComponentDetail.Hosts = nil
+	if out.TicketsOpen, out.TicketsTotal, e = rsmTicketCounts(ctx, tx, id.TenantID, "component", component); e != nil {
+		return out, e
+	}
 	return out, tx.Commit(ctx)
 }
 
@@ -575,4 +592,20 @@ func topCounts(m map[string]int, n int) []RSMCount {
 		out = out[:n]
 	}
 	return out
+}
+
+// rsmTicketCounts — число обращений (открытых и всего), связанных с системой или хостами системы/компонента.
+func rsmTicketCounts(ctx context.Context, tx pgx.Tx, tenant, kind, scope string) (int, int, error) {
+	hosts, e := rsmScopeHosts(ctx, tx, tenant, kind, scope)
+	if e != nil {
+		return 0, 0, e
+	}
+	service := ""
+	if kind == "system" {
+		service = scope
+	}
+	var open, total int
+	e = tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE t.resolved_at IS NULL AND t.closed_at IS NULL),count(*) FROM itsm.tickets t WHERE t.tenant_id=$1 AND EXISTS(SELECT 1 FROM itsm.ticket_links l
+WHERE l.tenant_id=t.tenant_id AND l.ticket_id=t.ticket_id AND ((l.target_kind='service' AND l.target_id::text=$2) OR (l.target_kind='asset' AND l.target_id=ANY($3::uuid[]))))`, tenant, service, hosts).Scan(&open, &total)
+	return open, total, e
 }

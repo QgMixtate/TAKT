@@ -131,3 +131,22 @@ export function CompositionPanel({uid,onOpenSystem,onOpenComponent,onOpenAsset,o
  </aside>;
 }
 export type {RSMColor};
+
+// Раздел «Компоненты» (меню макета): компоненты всех систем, сначала проблемные, поиск по компоненту, роли, системе.
+export function ComponentsScreen({onOpen,onExpired}:{onOpen:(id:string)=>void;onExpired:()=>void}){
+ const [typed,setTyped]=useState(''),[q,setQ]=useState(''),[offset,setOffset]=useState(0);
+ useEffect(()=>{const t=setTimeout(()=>{setQ(typed.trim());setOffset(0)},300);return()=>clearTimeout(t)},[typed]);
+ const [page,error]=useLive(()=>api.rsmComponents(q,offset),[q,offset],onExpired);
+ return <div className="systems-screen">
+  <div className="count-strip"><span className="count active"><b>{page?fmt(page.total):'…'}</b> {plural(page?.total??0,'компонент','компонента','компонентов')}{q?' по запросу':''}</span></div>
+  <div className="systems-main solo">
+   <div className="systems-toolbar"><input className="toolbar-search" aria-label="Поиск компонентов" placeholder="Компонент, роль или система" value={typed} onChange={e=>setTyped(e.target.value)}/></div>
+   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
+   <div className="table-panel dense">{page&&page.items.length===0?<div className="empty"><h3>Компонентов нет</h3><p>Компоненты заводятся в карточке системы (вкладка «Состав») или импортом.</p></div>:
+    <div className="table-scroll"><table className="systems-table"><thead><tr><th>Компонент</th><th>Система</th><th>Среда</th><th>Роль</th><th className="num">Хостов</th><th>Данные актуальны</th><th>Проблемы</th></tr></thead><tbody>{page?.items.map(c=>{const st=c.state;const pt=problemsText(st);return <tr key={c.component_id} onClick={()=>onOpen(c.component_id)}>
+     <td><button className="row-title" onClick={e=>{e.stopPropagation();onOpen(c.component_id)}}>{c.name}</button>{c.critical?<small className="muted"> · критичный</small>:null}</td><td>{c.system_name}</td><td>{envTitle[c.environment_kind]}{c.environment_name.toLowerCase()!==envTitle[c.environment_kind].toLowerCase()?' · '+c.environment_name:''}</td><td>{c.role??<span className="muted">—</span>}</td>
+     <td className="num">{fmt(st?.hosts??0)}</td><td>{st?<Fresh s={st}/>:<span className="muted">—</span>}</td><td className={pt?'problem-text':'muted'}>{pt||'—'}</td></tr>})}</tbody></table></div>}</div>
+   <div className="systems-footer">Показаны {fmt(page?.items.length??0)} из {fmt(page?.total??0)}{page?.next_offset!=null?<> · <button className="link" onClick={()=>setOffset(page.next_offset!)}>следующие 100</button></>:null}{offset>0?<> · <button className="link" onClick={()=>setOffset(Math.max(0,offset-100))}>предыдущие</button></>:null}</div>
+  </div>
+ </div>;
+}

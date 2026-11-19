@@ -266,6 +266,58 @@ func TestC54RSMHTTP(t *testing.T) {
 		t.Fatalf("component card: %+v", cc)
 	}
 	_ = json.Unmarshal(get("/api/v1/rsm/components/"+comp.ID+"/card?q=crm-db", "ComponentCard"), &cc)
+	// C53.03: функции под элементы макетов
+	var nav struct {
+		Systems, Components, Hosts, Sites int
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/nav", "Nav"), &nav)
+	if nav.Systems < 1 || nav.Components < 1 || nav.Hosts < 3 || nav.Sites < 1 {
+		t.Fatalf("nav: %+v", nav)
+	}
+	var cl struct {
+		Items []struct {
+			System string `json:"system_name"`
+		} `json:"items"`
+		Total int `json:"total"`
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/components?q=crm", "ComponentPage"), &cl)
+	if cl.Total != 1 || cl.Items[0].System != "CRM" {
+		t.Fatalf("components list: %+v", cl)
+	}
+	var revComp struct {
+		Revision string `json:"revision"`
+	}
+	_ = json.Unmarshal(send("GET", "/api/v1/rsm/components/"+comp.ID+"/card", "", 200, ""), &struct{}{})
+	var cdet struct {
+		Component struct {
+			Revision string `json:"revision"`
+		} `json:"component"`
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/components/"+comp.ID+"/card", "ComponentCard"), &cdet)
+	_ = json.Unmarshal(send("PATCH", "/api/v1/rsm/components/"+comp.ID, `{"revision":"`+cdet.Component.Revision+`","role":"кластер серверов CRM","baseline":{"software":{"Sample":""},"os":"Windows"}}`, 200, "Component"), &revComp)
+	send("PATCH", "/api/v1/rsm/components/"+comp.ID, `{"revision":"`+cdet.Component.Revision+`","role":"x"}`, 412, "")
+	var sw struct {
+		Products []struct {
+			Name string `json:"name"`
+		} `json:"products"`
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/systems/"+service.UID+"/software", "SoftwarePage"), &sw)
+	if len(sw.Products) == 0 || sw.Products[0].Name != "Sample" {
+		t.Fatalf("software: %+v", sw)
+	}
+	get("/api/v1/rsm/components/"+comp.ID+"/software?q=samp", "SoftwarePage")
+	get("/api/v1/rsm/systems/"+service.UID+"/tickets", "TicketList")
+	get("/api/v1/rsm/components/"+comp.ID+"/changes", "ChangeList")
+	var coll struct {
+		Hosts int `json:"hosts"`
+	}
+	_ = json.Unmarshal(send("POST", "/api/v1/rsm/systems/"+service.UID+"/collect", `{}`, 200, "CollectResult"), &coll)
+	if coll.Hosts != 2 {
+		t.Fatalf("collect: %+v", coll)
+	}
+	if code, raw, _ := b.request(t, "GET", "/api/v1/rsm/components/"+comp.ID+"/hosts.csv", "", "", "", nil); code != 200 || !strings.Contains(string(raw), "crm-db-01") || !strings.Contains(string(raw), "host;asset_uid;ip") {
+		t.Fatalf("hosts csv: %d %s", code, raw)
+	}
 	if cc.Matched != 1 || cc.Hosts[0].Name != "crm-db-01" || cc.Hosts[0].Values["software:Sample"] == "" {
 		t.Fatalf("component card filter: %+v", cc)
 	}

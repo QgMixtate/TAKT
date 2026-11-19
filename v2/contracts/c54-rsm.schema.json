@@ -416,6 +416,21 @@
      ],
      "minLength": 0,
      "maxLength": 256
+    },
+    "on_call": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "minLength": 0,
+     "maxLength": 256
+    },
+    "backup_subject_id": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
     }
    },
    "required": [
@@ -429,7 +444,9 @@
     "direction_uid",
     "business_owner",
     "it_subject_id",
-    "maintenance_window"
+    "maintenance_window",
+    "on_call",
+    "backup_subject_id"
    ],
    "additionalProperties": false
   },
@@ -574,6 +591,14 @@
     },
     "revision": {
      "type": "string"
+    },
+    "role": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "minLength": 0,
+     "maxLength": 256
     }
    },
    "required": [
@@ -582,7 +607,8 @@
     "name",
     "critical",
     "baseline",
-    "revision"
+    "revision",
+    "role"
    ],
    "additionalProperties": false
   },
@@ -620,6 +646,14 @@
        "type": "null"
       }
      ]
+    },
+    "role": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "minLength": 0,
+     "maxLength": 256
     }
    },
    "required": [
@@ -629,7 +663,8 @@
     "critical",
     "baseline",
     "revision",
-    "state"
+    "state",
+    "role"
    ],
    "additionalProperties": false
   },
@@ -1930,6 +1965,22 @@
     "changes_total": {
      "type": "integer",
      "minimum": 0
+    },
+    "backup_subject_name": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "minLength": 1,
+     "maxLength": 512
+    },
+    "tickets_open": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "tickets_total": {
+     "type": "integer",
+     "minimum": 0
     }
    },
    "required": [
@@ -1944,7 +1995,10 @@
     "depends_on",
     "dependents",
     "changes",
-    "changes_total"
+    "changes_total",
+    "backup_subject_name",
+    "tickets_open",
+    "tickets_total"
    ],
    "additionalProperties": false
   },
@@ -2179,6 +2233,14 @@
     "matched": {
      "type": "integer",
      "minimum": 0
+    },
+    "tickets_open": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "tickets_total": {
+     "type": "integer",
+     "minimum": 0
     }
    },
    "required": [
@@ -2195,7 +2257,347 @@
     "sites",
     "networks",
     "baseline_summary",
-    "matched"
+    "matched",
+    "tickets_open",
+    "tickets_total"
+   ],
+   "additionalProperties": false
+  },
+  "Nav": {
+   "type": "object",
+   "properties": {
+    "systems": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "components": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "hosts": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "conflicts": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "my_tasks": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "tickets_open": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "sites": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "systems",
+    "components",
+    "hosts",
+    "conflicts",
+    "my_tasks",
+    "tickets_open",
+    "sites"
+   ],
+   "additionalProperties": false
+  },
+  "ComponentRow": {
+   "type": "object",
+   "properties": {
+    "component_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "role": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "minLength": 0,
+     "maxLength": 256
+    },
+    "critical": {
+     "type": "boolean"
+    },
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "system_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "environment_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "environment_kind": {
+     "enum": [
+      "prod",
+      "test",
+      "dev",
+      "stage",
+      "dr",
+      "other"
+     ]
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "component_id",
+    "name",
+    "role",
+    "critical",
+    "service_uid",
+    "system_name",
+    "environment_name",
+    "environment_kind",
+    "state"
+   ],
+   "additionalProperties": false
+  },
+  "ComponentPage": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ComponentRow"
+     },
+     "maxItems": 500
+    },
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "offset": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "next_offset": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0
+    }
+   },
+   "required": [
+    "items",
+    "total",
+    "offset",
+    "next_offset"
+   ],
+   "additionalProperties": false
+  },
+  "CollectResult": {
+   "type": "object",
+   "properties": {
+    "hosts": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "requested": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "recent": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "agents": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "no_target": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "hosts",
+    "requested",
+    "recent",
+    "agents",
+    "no_target"
+   ],
+   "additionalProperties": false
+  },
+  "SoftwarePage": {
+   "type": "object",
+   "properties": {
+    "hosts": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "products": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string",
+        "minLength": 0,
+        "maxLength": 1024
+       },
+       "hosts": {
+        "type": "integer",
+        "minimum": 0
+       },
+       "versions": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "version": {
+           "type": "string",
+           "minLength": 0,
+           "maxLength": 1024
+          },
+          "hosts": {
+           "type": "integer",
+           "minimum": 0
+          }
+         },
+         "required": [
+          "version",
+          "hosts"
+         ],
+         "additionalProperties": false
+        }
+       }
+      },
+      "required": [
+       "name",
+       "hosts",
+       "versions"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "truncated": {
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "hosts",
+    "products",
+    "truncated"
+   ],
+   "additionalProperties": false
+  },
+  "TicketList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "ticket_id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "number": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+       },
+       "kind": {
+        "enum": [
+         "incident",
+         "request",
+         "change",
+         "problem"
+        ]
+       },
+       "title": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+       },
+       "state": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 32
+       },
+       "priority": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 4
+       },
+       "created_at": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "open": {
+        "type": "boolean"
+       }
+      },
+      "required": [
+       "ticket_id",
+       "number",
+       "kind",
+       "title",
+       "state",
+       "priority",
+       "created_at",
+       "open"
+      ],
+      "additionalProperties": false
+     },
+     "maxItems": 200
+    },
+    "open": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "items",
+    "open"
+   ],
+   "additionalProperties": false
+  },
+  "ChangeList": {
+   "type": "object",
+   "properties": {
+    "changes": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Change"
+     },
+     "maxItems": 50
+    },
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "changes",
+    "total"
    ],
    "additionalProperties": false
   }
