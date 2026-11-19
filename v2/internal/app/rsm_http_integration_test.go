@@ -173,6 +173,61 @@ func TestC54RSMHTTP(t *testing.T) {
 		t.Fatalf("overview: %+v", overview)
 	}
 	get("/api/v1/rsm/directions", "DirectionList")
+	// C53.02: фильтры списка, счётчики сводки, состав системы для правой панели
+	var page struct {
+		Items []struct {
+			Owner *string `json:"business_owner"`
+			State struct {
+				Fresh    int            `json:"fresh"`
+				Problems map[string]int `json:"problems"`
+			} `json:"state"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/systems?criticality=high,critical&env=prod&direction="+dir.UID, "SystemPage"), &page)
+	if len(page.Items) != 1 || page.Items[0].Owner == nil || page.Items[0].State.Fresh != 2 {
+		t.Fatalf("filtered systems: %+v", page)
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/systems?no_owner=true&criticality=high", "SystemPage"), &page)
+	if len(page.Items) != 0 {
+		t.Fatalf("system with owner must not match no_owner: %+v", page)
+	}
+	if code, _, _ := b.request(t, "GET", "/api/v1/rsm/systems?criticality=huge", "", "", "", nil); code != 422 {
+		t.Fatalf("unknown criticality: %d", code)
+	}
+	var counters struct {
+		Counters struct {
+			Systems  int `json:"systems"`
+			Critical int `json:"critical"`
+		} `json:"counters"`
+		Unassigned int `json:"unassigned"`
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/overview", "Overview"), &counters)
+	if counters.Counters.Systems < 1 || counters.Counters.Critical < 1 || counters.Unassigned < 1 {
+		t.Fatalf("overview counters: %+v", counters)
+	}
+	var comp2 struct {
+		Sites        int `json:"sites"`
+		Environments []struct {
+			Components []struct {
+				Hosts []struct {
+					Name string `json:"name"`
+				} `json:"hosts"`
+				More int `json:"more"`
+			} `json:"components"`
+		} `json:"environments"`
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/systems/"+service.UID+"/composition", "Composition"), &comp2)
+	if comp2.Sites != 1 || len(comp2.Environments) != 1 || len(comp2.Environments[0].Components[0].Hosts) != 2 {
+		t.Fatalf("composition: %+v", comp2)
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/systems/"+service.UID+"/composition?q=crm-db", "Composition"), &comp2)
+	if len(comp2.Environments) != 1 || len(comp2.Environments[0].Components[0].Hosts) != 1 || comp2.Environments[0].Components[0].Hosts[0].Name != "crm-db-01" {
+		t.Fatalf("composition search: %+v", comp2)
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/systems/"+service.UID+"/composition?q=nothing-here", "Composition"), &comp2)
+	if len(comp2.Environments) != 0 {
+		t.Fatalf("composition search without hits: %+v", comp2)
+	}
 	get("/api/v1/rsm/systems?limit=10", "SystemPage")
 	get("/api/v1/rsm/systems?color=red", "SystemPage")
 	if code, _, _ := b.request(t, "GET", "/api/v1/rsm/systems?color=pink", "", "", "", nil); code != 422 {

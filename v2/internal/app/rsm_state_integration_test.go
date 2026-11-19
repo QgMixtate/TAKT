@@ -224,8 +224,11 @@ JOIN c ON c.k=a.r%(SELECT m FROM m) WHERE a.r%20<>0`,
 		}
 	}
 	measure("company node", func() error { _, e := store.Node(ctx, read, load, "tenant", load); return e })
-	measure("systems page (problems first)", func() error { _, e := store.SystemsByState(ctx, read, load, "", 0, 100); return e })
-	measure("systems page filtered", func() error { _, e := store.SystemsByState(ctx, read, load, "grey", 0, 100); return e })
+	measure("systems page (problems first)", func() error { _, e := store.SystemsByState(ctx, read, load, cmdb.SystemFilter{Limit: 100}); return e })
+	measure("systems page filtered", func() error {
+		_, e := store.SystemsByState(ctx, read, load, cmdb.SystemFilter{Color: "grey", Limit: 100})
+		return e
+	})
 	measure("component hosts page", func() error { _, e := store.ComponentHostStates(ctx, read, load, component, 0, 100); return e })
 	measure("unassigned hosts page", func() error { _, e := store.UnassignedHosts(ctx, read, load, "", 100); return e })
 }

@@ -110,7 +110,7 @@ func (Store) NodeStates(ctx context.Context, tx pgx.Tx, tenant, kind string, ids
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, e := tx.Query(ctx, "SELECT node_kind,node_id::text,color,hosts,green,yellow,red,grey,unassigned,reasons,computed_at FROM cmdb.node_states WHERE tenant_id=$1 AND node_kind=$2 AND node_id=ANY($3::uuid[])", tenant, kind, ids)
+	rows, e := tx.Query(ctx, "SELECT node_kind,node_id::text,color,hosts,green,yellow,red,grey,unassigned,reasons,computed_at,fresh,problems FROM cmdb.node_states WHERE tenant_id=$1 AND node_kind=$2 AND node_id=ANY($3::uuid[])", tenant, kind, ids)
 	if e != nil {
 		return nil, e
 	}

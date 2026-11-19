@@ -1,5 +1,6 @@
 import {useEffect,useState,type ReactNode} from 'react';
-import {api,ApiError,errorMessage,type AssetRSM,type RSMColor,type RSMComponentDetail,type RSMEnvKind,type RSMImportResult,type RSMNodeState,type RSMOverview,type RSMProposal,type RSMReason,type RSMSystemDetail,type RSMSystemPage,type RSMUnassignedPage} from './api';
+import {SystemsScreen} from './systems';
+import {api,ApiError,errorMessage,type AssetRSM,type RSMColor,type RSMComponentDetail,type RSMEnvKind,type RSMImportResult,type RSMNodeState,type RSMOverview,type RSMProposal,type RSMReason,type RSMSystemDetail,type RSMUnassignedPage} from './api';
 
 // C54.04 — РСМ в Web: системы со светофором (сначала проблемные), карточки системы и компонента, предложения правил,
 // хосты вне систем, импорт CSV; блок «Входит в системы» в карточке актива. Цвет считает центр раз в 5 минут.
@@ -28,48 +29,27 @@ function useAct(onExpired:()=>void):[boolean,unknown,(fn:()=>Promise<unknown>,af
 }
 const Err=({e}:{e:unknown})=>e?<div className="error" role="alert">{errorMessage(e)}</div>:null;
 
-type Tab='systems'|'proposals'|'unassigned'|'import';
+type Mode={kind:'list'}|{kind:'system';uid:string}|{kind:'component';id:string;from?:string}|{kind:'proposals'}|{kind:'unassigned'}|{kind:'import'};
 export function RSMView({csrf,canWrite,onOpenAsset,onExpired}:{csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
- const [tab,setTab]=useState<Tab>('systems'),[system,setSystem]=useState<string|null>(null),[component,setComponent]=useState<string|null>(null),[v,setV]=useState(0);
+ const [mode,setMode]=useState<Mode>({kind:'list'}),[v,setV]=useState(0),[note,setNote]=useState(''),[dirName,setDirName]=useState('');
  const [overview,error]=useLoad<RSMOverview>(()=>api.rsmOverview(),[v],onExpired);
  const [busy,actError,act]=useAct(onExpired);
- const [note,setNote]=useState('');
- const s=overview?.state??null;
- const tabs:[Tab,string][]=[['systems','Системы'],['proposals','Предложения'+(overview?.proposals?' · '+overview.proposals:'')],['unassigned','Вне систем'+(s?.unassigned?' · '+s.unassigned:'')],['import','Импорт']];
+ const back=<button className="link back" onClick={()=>{setMode({kind:'list'});setV(x=>x+1)}}>← Все системы</button>;
+ const actions=canWrite?<details className="actions-menu"><summary>Действия</summary><div className="popover right">
+  <button className="menu-item" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmRecompute(csrf);setNote(r.skipped?'Пересчёт уже идёт в другом процессе':'Пересчитано: хостов '+r.hosts+', узлов '+r.nodes)},()=>setV(x=>x+1))}>Пересчитать состояние сейчас</button>
+  <button className="menu-item" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmApplyRules(csrf);setNote('Правила: хостов '+r.assets+', привязано '+r.bound+', предложено '+r.proposed+(r.conflicts?', конфликтов '+r.conflicts:''))},()=>setV(x=>x+1))}>Применить правила ко всем хостам</button>
+  <button className="menu-item" onClick={()=>setMode({kind:'import'})}>Импорт привязок CSV…</button>
+  <form className="menu-form" onSubmit={e=>{e.preventDefault();if(!dirName.trim())return;void act(()=>api.rsmCreateDirection(csrf,dirName.trim()),()=>{setDirName('');setV(x=>x+1);setNote('Направление добавлено')})}}><label>Новое направление<input value={dirName} onChange={e=>setDirName(e.target.value)} placeholder="например, Финансы"/></label><button className="button small" disabled={busy||!dirName.trim()}>Добавить</button></form>
+ </div></details>:null;
  return <section className="rsm">
-  <Err e={error}/><Err e={actError}/>
-  <div className="rsm-summary table-panel">
-   <div><span className="muted">Компания</span>{s?<><Dot color={s.color} label/><Counts s={s}/><Reasons list={s.reasons} max={4}/></>:<span className="muted">состояние ещё не рассчитано — центр считает его раз в 5 минут</span>}</div>
-   {s?<small className="muted">Рассчитано {time(s.computed_at)}</small>:null}
-   {canWrite?<div className="rsm-actions"><button className="button small" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmRecompute(csrf);setNote(r.skipped?'Пересчёт уже идёт в другом процессе':'Пересчитано: хостов '+r.hosts+', узлов '+r.nodes)},()=>setV(x=>x+1))}>Пересчитать сейчас</button><button className="button small secondary" disabled={busy} onClick={()=>void act(async()=>{const r=await api.rsmApplyRules(csrf);setNote('Правила: хостов '+r.assets+', привязано '+r.bound+', предложено '+r.proposed+(r.conflicts?', конфликтов '+r.conflicts:''))},()=>setV(x=>x+1))}>Применить правила ко всем хостам</button></div>:null}
-   {note?<small className="panel-note" role="status">{note}</small>:null}
-  </div>
-  {overview?.directions.length?<div className="rsm-directions">{overview.directions.map(d=><span key={d.direction_uid} className="rsm-chip">{d.state?<Dot color={d.state.color}/>:null}{d.name}{d.state?<small> {d.state.hosts}</small>:null}</span>)}</div>:null}
-  <div className="seg-tabs rsm-tabs" role="tablist" aria-label="Разделы РСМ">{tabs.map(([k,label])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?'active':''} onClick={()=>{setTab(k);setSystem(null);setComponent(null)}}>{label}</button>)}</div>
-  {tab==='systems'?(component?<ComponentCard id={component} csrf={csrf} canWrite={canWrite} onBack={()=>setComponent(null)} onOpenAsset={onOpenAsset} onExpired={onExpired}/>:system?<SystemCard uid={system} csrf={csrf} canWrite={canWrite} directions={overview?.directions??[]} onBack={()=>setSystem(null)} onComponent={setComponent} onExpired={onExpired} onDirection={()=>setV(x=>x+1)}/>:<SystemList csrf={csrf} canWrite={canWrite} onOpen={setSystem} onExpired={onExpired} onDirection={()=>setV(x=>x+1)}/>):null}
-  {tab==='proposals'?<Proposals csrf={csrf} canWrite={canWrite} onOpenAsset={onOpenAsset} onExpired={onExpired} onChange={()=>setV(x=>x+1)}/>:null}
-  {tab==='unassigned'?<Unassigned onOpenAsset={onOpenAsset} onExpired={onExpired}/>:null}
-  {tab==='import'?<Import csrf={csrf} canWrite={canWrite} onExpired={onExpired}/>:null}
+  <Err e={error}/><Err e={actError}/>{note?<p className="rsm-note" role="status">{note} <button className="link" onClick={()=>setNote('')}>скрыть</button></p>:null}
+  {mode.kind==='list'?<SystemsScreen overview={overview} actions={actions} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenComponent={id=>setMode({kind:'component',id})} onOpenAsset={onOpenAsset} onUnassigned={()=>setMode({kind:'unassigned'})} onProposals={()=>setMode({kind:'proposals'})} onExpired={onExpired}/>:null}
+  {mode.kind==='system'?<SystemCard uid={mode.uid} csrf={csrf} canWrite={canWrite} directions={overview?.directions??[]} onBack={()=>{setMode({kind:'list'});setV(x=>x+1)}} onComponent={id=>setMode({kind:'component',id,from:mode.uid})} onExpired={onExpired} onDirection={()=>setV(x=>x+1)}/>:null}
+  {mode.kind==='component'?<ComponentCard id={mode.id} csrf={csrf} canWrite={canWrite} onBack={()=>mode.from?setMode({kind:'system',uid:mode.from}):setMode({kind:'list'})} onOpenAsset={onOpenAsset} onExpired={onExpired}/>:null}
+  {mode.kind==='proposals'?<>{back}<Proposals csrf={csrf} canWrite={canWrite} onOpenAsset={onOpenAsset} onExpired={onExpired} onChange={()=>setV(x=>x+1)}/></>:null}
+  {mode.kind==='unassigned'?<>{back}<Unassigned onOpenAsset={onOpenAsset} onExpired={onExpired}/></>:null}
+  {mode.kind==='import'?<>{back}<Import csrf={csrf} canWrite={canWrite} onExpired={onExpired}/></>:null}
  </section>;
-}
-
-function SystemList({csrf,canWrite,onOpen,onExpired,onDirection}:{csrf:string;canWrite:boolean;onOpen:(uid:string)=>void;onExpired:()=>void;onDirection:()=>void}){
- const [color,setColor]=useState(''),[offset,setOffset]=useState(0),[dirName,setDirName]=useState('');
- const [page,error]=useLoad<RSMSystemPage>(()=>api.rsmSystems(color,offset),[color,offset],onExpired);
- const [busy,actError,act]=useAct(onExpired);
- const filters:[string,string][]=[['','Все'],['red','Авария'],['yellow','Внимание'],['grey','Нет данных'],['green','Норма']];
- return <div className="table-panel">
-  <div className="table-toolbar"><h2>Системы <span>{page?page.items.length+(page.next_offset!==null?'+':''):''}</span></h2>
-   <div className="rsm-filters">{filters.map(([k,label])=><button key={k} className={'rsm-filter'+(color===k?' active':'')} onClick={()=>{setColor(k);setOffset(0)}}>{k?<Dot color={k as RSMColor}/>:null}{label}</button>)}</div></div>
-  <Err e={error}/><Err e={actError}/>
-  {page&&page.items.length===0?<div className="empty"><span>◇</span><h3>Систем нет</h3><p>Системы — это бизнес-сервисы (раздел «Сервисы»). Заведите сервис, затем добавьте ему среды и компоненты здесь — или загрузите структуру импортом CSV.</p></div>:null}
-  {page?.items.length?<div className="table-scroll"><table><thead><tr><th>Состояние</th><th>Система</th><th>Важность</th><th>Хосты</th><th>Почему</th></tr></thead><tbody>{page.items.map(s=><tr key={s.service_uid}>
-   <td><Dot color={s.state.color} label/></td>
-   <td><button className="asset-link" onClick={()=>onOpen(s.service_uid)}><strong>{s.name}</strong></button></td>
-   <td>{critNames[s.criticality]}</td><td><Counts s={s.state.computed_at.startsWith('1970')?null:s.state}/></td><td><Reasons list={s.state.reasons}/></td></tr>)}</tbody></table></div>:null}
-  <div className="pager"><small>Сначала проблемные, затем по имени</small><div><button className="button small" disabled={offset===0} onClick={()=>setOffset(Math.max(0,offset-100))}>← Назад</button><button className="button small" disabled={page?.next_offset==null} onClick={()=>setOffset(page!.next_offset!)}>Далее →</button></div></div>
-  {canWrite?<form className="rsm-inline" onSubmit={e=>{e.preventDefault();if(!dirName.trim())return;void act(()=>api.rsmCreateDirection(csrf,dirName.trim()),()=>{setDirName('');onDirection()})}}><label>Новое направление (группа систем)<input value={dirName} onChange={e=>setDirName(e.target.value)} placeholder="например, Финансы"/></label><button className="button small" disabled={busy||!dirName.trim()}>Добавить</button></form>:null}
- </div>;
 }
 
 function SystemCard({uid,csrf,canWrite,directions,onBack,onComponent,onExpired,onDirection}:{uid:string;csrf:string;canWrite:boolean;directions:RSMOverview['directions'];onBack:()=>void;onComponent:(id:string)=>void;onExpired:()=>void;onDirection:()=>void}){

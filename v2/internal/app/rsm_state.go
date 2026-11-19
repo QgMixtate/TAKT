@@ -347,6 +347,7 @@ func (r *Registry) RecomputeRSMState(ctx context.Context, tenant string) (RSMSta
 	now := time.Now().UTC()
 	states := make([]cmdb.HostState, 0, len(uids))
 	colors := make(map[string]string, len(uids))
+	flags := make(map[string]hostFlags, len(uids))
 	for i := 0; i < len(uids); i += rsmBatch {
 		batch := uids[i:min(i+rsmBatch, len(uids))]
 		list := make([]*contracts.Asset, len(batch))
@@ -385,6 +386,7 @@ func (r *Registry) RecomputeRSMState(ctx context.Context, tenant string) (RSMSta
 			}
 			color, reasons := hostColor(hostInput{LastInventory: a.LastInventory, Presence: p, Conflicts: conflicts[a.UID], Deviations: dev}, now)
 			colors[a.UID] = color
+			flags[a.UID] = hostFlagsOf(a.LastInventory, reasons, now)
 			states = append(states, cmdb.HostState{AssetUID: a.UID, Color: color, Reasons: raw(reasons), LastInventory: a.LastInventory})
 		}
 	}
@@ -396,6 +398,7 @@ func (r *Registry) RecomputeRSMState(ctx context.Context, tenant string) (RSMSta
 	phase("unassigned")
 	read.Rollback(ctx)
 	nodes := rollupRSM(topo, colors, unassigned)
+	applyProblems(nodes, topo, flags)
 	for k := range nodes {
 		if nodes[k].Kind == "tenant" {
 			nodes[k].ID = tenant
@@ -529,5 +532,82 @@ func (r *Registry) RSMStateMaintain(ctx context.Context, log func(string)) {
 			}
 		}
 		done()
+	}
+}
+
+// hostFlags — признаки хоста для полосы «данные актуальны» и разбивки проблем по видам.
+type hostFlags struct {
+	fresh bool
+	kinds []string
+}
+
+// problemKind — вид проблемы по коду причины хоста (для экрана «Системы»: «5 устарели · 2 не по эталону»).
+var problemKind = map[string]string{"INVENTORY_STALE": "stale", "INVENTORY_LOST": "stale", "NO_INVENTORY": "no_data", "HOST_MISSING": "missing",
+	"BASELINE_OS": "baseline", "BASELINE_SOFTWARE_MISSING": "baseline", "BASELINE_SOFTWARE_VERSION": "baseline", "RECONCILIATION_CONFLICT": "conflict"}
+
+func hostFlagsOf(last *time.Time, reasons []RSMReason, now time.Time) hostFlags {
+	f := hostFlags{fresh: last != nil && now.Sub(*last) <= rsmStaleAfter}
+	seen := map[string]bool{}
+	for _, r := range reasons {
+		if k := problemKind[r.Code]; k != "" && !seen[k] {
+			seen[k] = true
+			f.kinds = append(f.kinds, k)
+		}
+	}
+	return f
+}
+
+// applyProblems дописывает в узлы число хостов с актуальными данными и разбивку проблем (хост считается один раз
+// на узел, даже если входит в несколько его компонентов).
+func applyProblems(nodes []cmdb.NodeState, t cmdb.Topology, flags map[string]hostFlags) {
+	sets := map[string]map[string]bool{}
+	add := func(key string, hosts map[string]bool) {
+		if sets[key] == nil {
+			sets[key] = map[string]bool{}
+		}
+		for h := range hosts {
+			sets[key][h] = true
+		}
+	}
+	envOf, systemOf := map[string]string{}, map[string]string{}
+	for _, e := range t.Environments {
+		systemOf[e.ID] = e.Service
+	}
+	directionOf := map[string]string{}
+	for _, s := range t.Systems {
+		if s.Direction != nil {
+			directionOf[s.UID] = *s.Direction
+		}
+	}
+	for _, c := range t.Components {
+		envOf[c.ID] = c.Environment
+		hosts := map[string]bool{}
+		for _, h := range t.Bindings[c.ID] {
+			hosts[h] = true
+		}
+		add("component:"+c.ID, hosts)
+		add("environment:"+c.Environment, hosts)
+		sys := systemOf[c.Environment]
+		add("system:"+sys, hosts)
+		if d := directionOf[sys]; d != "" {
+			add("direction:"+d, hosts)
+		}
+		add("tenant", hosts)
+	}
+	for i := range nodes {
+		key := nodes[i].Kind + ":" + nodes[i].ID
+		if nodes[i].Kind == "tenant" {
+			key = "tenant"
+		}
+		nodes[i].Problems = map[string]int{}
+		for h := range sets[key] {
+			f := flags[h]
+			if f.fresh {
+				nodes[i].Fresh++
+			}
+			for _, k := range f.kinds {
+				nodes[i].Problems[k]++
+			}
+		}
 	}
 }

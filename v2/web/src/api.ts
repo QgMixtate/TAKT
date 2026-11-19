@@ -41,10 +41,10 @@ export type CIService={service_uid:string;name:string;description:string|null;cr
 // C54 — РСМ (contracts/c54-rsm.schema.json)
 export type RSMColor='green'|'yellow'|'red'|'grey';
 export type RSMReason={code:string;ref?:string;name?:string;count?:number;detail?:string};
-export type RSMNodeState={node_kind:string;node_id:string;color:RSMColor;hosts:number;green:number;yellow:number;red:number;grey:number;unassigned:number;reasons:RSMReason[];computed_at:string};
+export type RSMNodeState={node_kind:string;node_id:string;color:RSMColor;hosts:number;green:number;yellow:number;red:number;grey:number;unassigned:number;reasons:RSMReason[];computed_at:string;fresh:number;problems:Partial<Record<'stale'|'no_data'|'missing'|'baseline'|'conflict',number>>};
 export type RSMDirection={direction_uid:string;name:string;revision:string;created_at:string;retired_at:string|null;state?:RSMNodeState|null};
-export type RSMOverview={tenant_id:string;state:RSMNodeState|null;directions:RSMDirection[];proposals:number};
-export type RSMSystemState={service_uid:string;name:string;criticality:CIService['criticality'];direction_uid:string|null;state:RSMNodeState};
+export type RSMOverview={tenant_id:string;state:RSMNodeState|null;directions:RSMDirection[];proposals:number;counters:{systems:number;critical:number;with_problems:number;without_owner:number};unassigned:number};
+export type RSMSystemState={service_uid:string;name:string;criticality:CIService['criticality'];direction_uid:string|null;business_owner:string|null;state:RSMNodeState};
 export type RSMSystemPage={items:RSMSystemState[];offset:number;next_offset:number|null};
 export type RSMSystem=CIService&{direction_uid:string|null;business_owner:string|null;it_subject_id:string|null;maintenance_window:string|null};
 export type RSMEnvKind='prod'|'test'|'dev'|'stage'|'dr'|'other';
@@ -59,6 +59,9 @@ export type RSMBindingPath={binding:RSMBinding;component_name:string;critical:bo
 export type RSMProposal=RSMBindingPath&{asset_name:string};
 export type RSMUnassignedPage={total:number;items:{asset_uid:string;name:string}[];next_cursor:string|null};
 export type AssetRSM={asset_uid:string;state:{asset_uid:string;color:RSMColor;reasons:RSMReason[];last_inventory_at:string|null;computed_at:string}|null;bindings:RSMBindingPath[]};
+export type RSMCompHost={asset_uid:string;name:string;ip:string;color:RSMColor;reasons:RSMReason[]};
+export type RSMComposition={system:RSMSystem;state:RSMNodeState|null;sites:number;environments:{environment_id:string;name:string;kind:RSMEnvKind;state:RSMNodeState|null;components:{component_id:string;name:string;critical:boolean;state:RSMNodeState|null;hosts:RSMCompHost[];more:number}[]}[];depends_on:{service_uid:string;name:string}[];dependents:{service_uid:string;name:string}[]};
+export type RSMSystemQuery={color?:string;criticality?:string[];env?:string;direction?:string;problems?:boolean;no_owner?:boolean;offset?:number;limit?:number};
 export type RSMImportResult={dry_run:boolean;format:string;counts:Record<string,number>;rows:{line:number;system:string;environment:string;component:string;host:string;status:string;asset_uids:string[];creates:string[];detail?:string}[]};
 export type ServicePage={tenant_id:string;items:CIService[];next_cursor:string|null};
 export type ServiceDetail=CIService&{tenant_id:string;relations:Relation[]};
@@ -213,7 +216,8 @@ export const api={
  components:(uid:string)=>call<ComponentList>('/api/v1/assets/'+encodeURIComponent(uid)+'/components','ComponentList'),
  products:(q:string)=>call<ProductList>('/api/v1/software?q='+encodeURIComponent(q),'ProductList'),
  rsmOverview:()=>call<RSMOverview>('/api/v1/rsm/overview','RSMOverview'),
- rsmSystems:(color:string,offset:number)=>call<RSMSystemPage>('/api/v1/rsm/systems?limit=100&offset='+offset+(color?'&color='+color:''),'RSMSystemPage'),
+ rsmSystems:(f:RSMSystemQuery)=>{const q=new URLSearchParams({limit:String(f.limit??100),offset:String(f.offset??0)});if(f.color)q.set('color',f.color);if(f.criticality?.length)q.set('criticality',f.criticality.join(','));if(f.env)q.set('env',f.env);if(f.direction)q.set('direction',f.direction);if(f.problems)q.set('problems','true');if(f.no_owner)q.set('no_owner','true');return call<RSMSystemPage>('/api/v1/rsm/systems?'+q.toString(),'RSMSystemPage')},
+ rsmComposition:(uid:string,q:string,env:string,problems:boolean)=>{const p=new URLSearchParams();if(q)p.set('q',q);if(env)p.set('env',env);if(problems)p.set('problems','true');const s=p.toString();return call<RSMComposition>('/api/v1/rsm/systems/'+encodeURIComponent(uid)+'/composition'+(s?'?'+s:''),'RSMComposition')},
  rsmSystem:(uid:string)=>call<RSMSystemDetail>('/api/v1/rsm/systems/'+encodeURIComponent(uid),'RSMSystemDetail'),
  rsmPatchSystem:(uid:string,csrf:string,body:{revision:string;direction_uid?:string;business_owner?:string;maintenance_window?:string})=>call<RSMSystem>('/api/v1/rsm/systems/'+encodeURIComponent(uid),'RSMSystem',{method:'PATCH',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
  rsmCreateDirection:(csrf:string,name:string)=>call<RSMDirection>('/api/v1/rsm/directions','RSMDirectionCreated',{method:'POST',body:JSON.stringify({name}),headers:{'X-CSRF-Token':csrf}}),

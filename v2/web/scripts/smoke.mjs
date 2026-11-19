@@ -30,22 +30,23 @@ try{
  // карточка компонента с хостом, правило, вкладки «Предложения» и «Вне систем», блок «Входит в системы» в карточке
  const rsmHeaders={Origin:config.origin,'X-CSRF-Token':authSession.csrf_token};
  const created=await context.request.post(config.origin+'/api/v1/services',{headers:rsmHeaders,data:{name:'CRM Web',criticality:'high'}});if(created.status()!==201)throw new Error('service create failed '+created.status());const crm=await created.json();
- await page.setViewportSize({width:1440,height:1000});await page.getByRole('button',{name:/Системы/}).click();await expect(page.getByRole('heading',{name:'Системы и здоровье.'})).toBeVisible();
- await page.getByRole('button',{name:'Пересчитать сейчас'}).click();await expect(page.getByRole('status').filter({hasText:'Пересчитано'})).toBeVisible();
- await page.getByRole('button',{name:'CRM Web'}).click();await expect(page.getByText('Сред нет')).toBeVisible();
+ await page.setViewportSize({width:1440,height:1000});await page.getByRole('button',{name:'Системы',exact:true}).click();await expect(page.getByRole('heading',{name:'Системы и здоровье.'})).toBeVisible();
+ const recompute=async()=>{await page.locator('.actions-menu summary').click();const done=page.waitForResponse(r=>r.url().endsWith('/api/v1/rsm/recompute')&&r.status()===200);await page.getByRole('button',{name:'Пересчитать состояние сейчас'}).click();await done;await expect(page.getByRole('status').filter({hasText:'Пересчитано'})).toBeVisible();await page.locator('.actions-menu summary').click()};
+ await recompute();
+ await page.getByRole('button',{name:'CRM Web',exact:true}).click();await expect(page.getByRole('complementary',{name:/Состав системы CRM Web/})).toBeVisible();await page.getByRole('button',{name:'Карточка системы →'}).click();await expect(page.getByText('Сред нет')).toBeVisible();
  await page.getByLabel('Название').fill('Прод');await page.getByRole('button',{name:'Добавить среду'}).click();await expect(page.locator('.rsm-env h3')).toContainText('Прод');
  await page.getByRole('button',{name:'+ Компонент'}).click();await page.getByLabel('Компонент').fill('Сервер приложений');await page.getByLabel('критичный').check();await page.getByLabel(/Эталон/).fill('{"os":"Linux"}');await page.getByRole('button',{name:'Добавить',exact:true}).click();
  await page.getByRole('button',{name:'Сервер приложений'}).click();await expect(page.getByText('Хостов нет')).toBeVisible();
  await page.getByLabel(/Привязать хосты списком/).fill(config.asset);await page.getByRole('button',{name:/Привязать 1/}).click();await expect(page.getByRole('status').filter({hasText:'Привязано: 1'})).toBeVisible();
  await page.getByLabel('Образец').fill('web-smoke-*');await page.getByRole('button',{name:'Добавить правило'}).click();await expect(page.locator('td.mono').filter({hasText:'web-smoke-*'})).toBeVisible();
- await page.getByRole('button',{name:'Пересчитать сейчас'}).click();await expect(page.getByRole('status').filter({hasText:'Пересчитано'})).toBeVisible();
- await page.getByRole('tab',{name:/Системы/}).click();await page.getByRole('button',{name:'CRM Web'}).click();await page.getByRole('button',{name:'Сервер приложений'}).click();
- await expect(page.locator('.rsm-card tbody tr').first()).toContainText(config.asset);await page.screenshot({path:'../.local/c54-rsm-component.png',fullPage:true});
- await page.getByRole('tab',{name:/Системы/}).click();await expect(page.locator('tbody tr').filter({hasText:'CRM Web'})).toBeVisible();await page.screenshot({path:'../.local/c54-rsm-systems.png',fullPage:true});
- await page.getByRole('tab',{name:/Предложения/}).click();await expect(page.getByText('Разбирать нечего')).toBeVisible();
- await page.getByRole('tab',{name:/Вне систем/}).click();await expect(page.getByRole('heading',{name:/Хосты вне систем/})).toBeVisible();
+ await page.getByRole('button',{name:'← CRM Web'}).click();await page.getByRole('button',{name:'← Все системы'}).click();await recompute();
+ await page.getByRole('button',{name:'CRM Web',exact:true}).click();const panel=page.getByRole('complementary',{name:/Состав системы CRM Web/});await expect(panel).toContainText('Прод');await expect(panel).toContainText('Сервер приложений');await expect(panel).toContainText('1 · ок');await panel.getByRole('button',{name:/Сервер приложений/}).click();await expect(panel).toContainText('pipeline-host');
+ await expect(page.locator('.systems-table tbody tr.selected')).toContainText('высокая');await page.screenshot({path:'../.local/c53-02-systems.png',fullPage:true});
+ await panel.getByLabel('Фильтр состава').fill('no-such-host');await expect(panel).toContainText('По фильтру ничего не найдено');await panel.getByLabel('Фильтр состава').fill('');
+ await page.getByRole('button',{name:/хостов вне систем/}).click();await expect(page.getByRole('heading',{name:/Хосты вне систем/})).toBeVisible();await page.getByRole('button',{name:'← Все системы'}).click();
+ await page.getByRole('button',{name:/критичных/}).click();await expect(page.getByRole('button',{name:/Убрать фильтр Критичность/})).toBeVisible();
  const tree=await (await context.request.get(config.origin+'/api/v1/rsm/systems/'+crm.service_uid)).json();if(tree.environments[0]?.components[0]?.state?.hosts!==1)throw new Error('rsm tree state missing: '+JSON.stringify(tree));
- checks.push('C54.04 systems: environment and component with baseline created from Web, host bound by list, rule added, state recomputed, component card shows the host, tabs proposals/unassigned');
+ checks.push('C53.02/C54.04 systems screen: counters strip filters, composition panel with environment/component/host, filter in the panel, system card: environment and component with baseline, host bound by list, rule, recompute, unassigned queue');
  // C51: «Обследования сети» — вкладки, подсеть из боковой панели, запуск, результат настоящего collector
  await page.getByRole('button',{name:/Обследования сети/}).click();await expect(page.getByRole('heading',{name:'Обследования сети.'})).toBeVisible();
  await page.getByRole('button',{name:'+ Новая подсеть'}).click();let drawer=page.getByRole('dialog',{name:'Новая подсеть'});

@@ -27,10 +27,12 @@ type RSMDirection struct {
 }
 
 type RSMOverview struct {
-	Tenant     string          `json:"tenant_id"`
-	State      *cmdb.NodeState `json:"state"`
-	Directions []RSMDirection  `json:"directions"`
-	Proposals  int             `json:"proposals"`
+	Tenant     string              `json:"tenant_id"`
+	State      *cmdb.NodeState     `json:"state"`
+	Directions []RSMDirection      `json:"directions"`
+	Proposals  int                 `json:"proposals"`
+	Counters   cmdb.SystemCounters `json:"counters"`
+	Unassigned int                 `json:"unassigned"` // считается сразу, не ждёт пересчёта
 }
 
 type RSMSystemPage struct {
@@ -165,17 +167,25 @@ func (r *Registry) RSMOverview(ctx context.Context, id accessport.Identity) (RSM
 	if e = tx.QueryRow(ctx, "SELECT count(*) FROM cmdb.bindings WHERE tenant_id=$1 AND status='proposed' AND valid_to IS NULL", id.TenantID).Scan(&out.Proposals); e != nil {
 		return out, e
 	}
+	if out.Counters, e = r.CMDB.SystemCounters(ctx, tx, id.TenantID); e != nil {
+		return out, e
+	}
+	if out.Unassigned, e = r.CMDB.UnassignedCount(ctx, tx, id.TenantID); e != nil {
+		return out, e
+	}
 	return out, tx.Commit(ctx)
 }
 
-func (r *Registry) RSMSystems(ctx context.Context, id accessport.Identity, color string, offset, limit int) (RSMSystemPage, error) {
+func (r *Registry) RSMSystems(ctx context.Context, id accessport.Identity, f cmdb.SystemFilter) (RSMSystemPage, error) {
+	offset, limit := f.Offset, f.Limit
 	out := RSMSystemPage{Offset: offset, Items: []cmdb.SystemState{}}
 	tx, e := r.readTx(ctx, id)
 	if e != nil {
 		return out, e
 	}
 	defer tx.Rollback(ctx)
-	items, e := r.CMDB.SystemsByState(ctx, tx, id.TenantID, color, offset, limit+1)
+	f.Limit = limit + 1
+	items, e := r.CMDB.SystemsByState(ctx, tx, id.TenantID, f)
 	if e != nil {
 		return out, e
 	}
@@ -449,7 +459,7 @@ func (r *Registry) rsmHandlers() map[string]rsmRoute {
 		reply(w, req, out, e)
 	})
 	h["GET /api/v1/rsm/systems"] = read(func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity) {
-		q, ok := queryOnly(w, req, "color", "offset", "limit")
+		q, ok := queryOnly(w, req, "color", "criticality", "env", "direction", "problems", "no_owner", "offset", "limit")
 		if !ok {
 			return
 		}
@@ -457,7 +467,11 @@ func (r *Registry) rsmHandlers() map[string]rsmRoute {
 		if !ok {
 			return
 		}
-		out, e := r.RSMSystems(ctx, id, q.Get("color"), offset, limit)
+		f := cmdb.SystemFilter{Color: q.Get("color"), EnvKind: q.Get("env"), Direction: q.Get("direction"), Problems: q.Get("problems") == "true", NoOwner: q.Get("no_owner") == "true", Offset: offset, Limit: limit}
+		if v := q.Get("criticality"); v != "" {
+			f.Criticality = strings.Split(v, ",")
+		}
+		out, e := r.RSMSystems(ctx, id, f)
 		reply(w, req, out, e)
 	})
 	h["GET /api/v1/rsm/systems/{service_uid}"] = read(func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity) {
@@ -471,6 +485,14 @@ func (r *Registry) rsmHandlers() map[string]rsmRoute {
 		Revision string `json:"revision"`
 		cmdb.SystemFields
 	}
+	h["GET /api/v1/rsm/systems/{service_uid}/composition"] = read(func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity) {
+		q, ok := queryOnly(w, req, "q", "env", "problems")
+		if !ok {
+			return
+		}
+		out, e := r.RSMComposition(ctx, id, req.PathValue("service_uid"), q.Get("q"), q.Get("env"), q.Get("problems") == "true")
+		reply(w, req, out, e)
+	})
 	h["PATCH /api/v1/rsm/systems/{service_uid}"] = write(func() any { return &systemPatch{} }, func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity, body any) {
 		p := body.(*systemPatch)
 		var out cmdb.System

@@ -93,6 +93,26 @@
     "computed_at": {
      "type": "string",
      "format": "date-time"
+    },
+    "fresh": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "problems": {
+     "type": "object",
+     "propertyNames": {
+      "enum": [
+       "stale",
+       "no_data",
+       "missing",
+       "baseline",
+       "conflict"
+      ]
+     },
+     "additionalProperties": {
+      "type": "integer",
+      "minimum": 0
+     }
     }
    },
    "required": [
@@ -106,7 +126,9 @@
     "grey",
     "unassigned",
     "reasons",
-    "computed_at"
+    "computed_at",
+    "fresh",
+    "problems"
    ],
    "additionalProperties": false
   },
@@ -277,13 +299,47 @@
     "proposals": {
      "type": "integer",
      "minimum": 0
+    },
+    "counters": {
+     "type": "object",
+     "properties": {
+      "systems": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "critical": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "with_problems": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "without_owner": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "systems",
+      "critical",
+      "with_problems",
+      "without_owner"
+     ],
+     "additionalProperties": false
+    },
+    "unassigned": {
+     "type": "integer",
+     "minimum": 0
     }
    },
    "required": [
     "tenant_id",
     "state",
     "directions",
-    "proposals"
+    "proposals",
+    "counters",
+    "unassigned"
    ],
    "additionalProperties": false
   },
@@ -407,6 +463,13 @@
     },
     "state": {
      "$ref": "#/$defs/NodeState"
+    },
+    "business_owner": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "maxLength": 512
     }
    },
    "required": [
@@ -414,7 +477,8 @@
     "name",
     "criticality",
     "direction_uid",
-    "state"
+    "state",
+    "business_owner"
    ],
    "additionalProperties": false
   },
@@ -1324,6 +1388,209 @@
    },
    "required": [
     "rule_id"
+   ],
+   "additionalProperties": false
+  },
+  "CompHost": {
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "ip": {
+     "type": "string",
+     "maxLength": 64
+    },
+    "color": {
+     "enum": [
+      "green",
+      "yellow",
+      "red",
+      "grey"
+     ]
+    },
+    "reasons": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Reason"
+     },
+     "maxItems": 256
+    }
+   },
+   "required": [
+    "asset_uid",
+    "name",
+    "ip",
+    "color",
+    "reasons"
+   ],
+   "additionalProperties": false
+  },
+  "CompComponent": {
+   "type": "object",
+   "properties": {
+    "component_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "critical": {
+     "type": "boolean"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "hosts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/CompHost"
+     },
+     "maxItems": 3
+    },
+    "more": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "component_id",
+    "name",
+    "critical",
+    "state",
+    "hosts",
+    "more"
+   ],
+   "additionalProperties": false
+  },
+  "CompEnvironment": {
+   "type": "object",
+   "properties": {
+    "environment_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "kind": {
+     "enum": [
+      "prod",
+      "test",
+      "dev",
+      "stage",
+      "dr",
+      "other"
+     ]
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "components": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/CompComponent"
+     }
+    }
+   },
+   "required": [
+    "environment_id",
+    "name",
+    "kind",
+    "state",
+    "components"
+   ],
+   "additionalProperties": false
+  },
+  "SystemRef": {
+   "type": "object",
+   "properties": {
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "service_uid",
+    "name"
+   ],
+   "additionalProperties": false
+  },
+  "Composition": {
+   "type": "object",
+   "properties": {
+    "system": {
+     "$ref": "#/$defs/System"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "sites": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "environments": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/CompEnvironment"
+     }
+    },
+    "depends_on": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/SystemRef"
+     }
+    },
+    "dependents": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/SystemRef"
+     }
+    }
+   },
+   "required": [
+    "system",
+    "state",
+    "sites",
+    "environments",
+    "depends_on",
+    "dependents"
    ],
    "additionalProperties": false
   }
