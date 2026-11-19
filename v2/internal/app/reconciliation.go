@@ -27,6 +27,13 @@ type ConflictItem struct {
 	assets.Conflict
 	PendingObservations int    `json:"pending_observations"`
 	ObservedHostname    string `json:"observed_hostname,omitempty"`
+	// C53.07: признаки записи из последнего ожидающего наблюдения — для сравнения с кандидатами в Web.
+	Identifiers []ConflictIdentifier `json:"identifiers,omitempty"`
+}
+
+type ConflictIdentifier struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
 }
 
 type ConflictPage struct {
@@ -79,6 +86,11 @@ func (r *Registry) Conflicts(ctx context.Context, id accessport.Identity, state,
 		item.PendingObservations = len(pending)
 		if n := len(pending); n > 0 {
 			item.ObservedHostname = hostnameOf(pending[n-1].Observation.Candidates)
+			for _, c := range pending[n-1].Observation.Candidates {
+				if len(item.Identifiers) < 32 && len(c.Value) <= 512 {
+					item.Identifiers = append(item.Identifiers, ConflictIdentifier{Kind: c.Kind, Value: c.Value})
+				}
+			}
 		}
 		out.Items = append(out.Items, item)
 	}

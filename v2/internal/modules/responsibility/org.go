@@ -447,3 +447,39 @@ func (Store) LinkPortalUser(ctx context.Context, tx pgx.Tx, tenant, subject, use
 	}
 	return nil
 }
+
+// OrgStats — для экрана «Оргструктура» (C53.07): действующие составы команд и число активов, где субъект — подотчётный
+// ответственный (accountable) сейчас.
+func (Store) OrgStats(ctx context.Context, tx pgx.Tx, tenant string) (map[string][]string, map[string]int, error) {
+	members, assets := map[string][]string{}, map[string]int{}
+	rows, e := tx.Query(ctx, `SELECT team_id::text,person_id::text FROM responsibility.team_members WHERE tenant_id=$1 AND valid_to IS NULL ORDER BY team_id,person_id`, tenant)
+	if e != nil {
+		return nil, nil, e
+	}
+	for rows.Next() {
+		var t, p string
+		if e = rows.Scan(&t, &p); e != nil {
+			rows.Close()
+			return nil, nil, e
+		}
+		members[t] = append(members[t], p)
+	}
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return nil, nil, e
+	}
+	rows, e = tx.Query(ctx, `SELECT subject_id::text,count(DISTINCT asset_uid) FROM responsibility.responsibility_assignments WHERE tenant_id=$1 AND valid_to IS NULL AND role='accountable' GROUP BY subject_id`, tenant)
+	if e != nil {
+		return nil, nil, e
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var s string
+		var n int
+		if e = rows.Scan(&s, &n); e != nil {
+			return nil, nil, e
+		}
+		assets[s] = n
+	}
+	return members, assets, rows.Err()
+}

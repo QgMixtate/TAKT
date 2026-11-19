@@ -30,7 +30,8 @@
         "asset_uid": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
         "candidate_asset_uids": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/uuid"}},
         "pending_observations": {"type": "integer", "minimum": 0},
-        "observed_hostname": {"type": "string", "maxLength": 255}
+        "observed_hostname": {"type": "string", "maxLength": 255},
+        "identifiers": {"type": "array", "maxItems": 32, "items": {"type": "object", "properties": {"kind": {"type": "string", "maxLength": 64}, "value": {"type": "string", "maxLength": 512}}, "required": ["kind", "value"], "additionalProperties": false}}
       },
       "required": ["conflict_id", "reason_code", "state", "revision", "source_record_key", "source_id", "namespace", "source_local_id", "resolution_state", "asset_uid", "candidate_asset_uids", "pending_observations"],
       "additionalProperties": false

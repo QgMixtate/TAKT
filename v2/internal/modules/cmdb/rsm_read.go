@@ -212,3 +212,24 @@ func scanComponent(r pgx.Row) (Component, error) {
 	e := r.Scan(&c.ID, &c.EnvironmentID, &c.Name, &c.Critical, &c.Baseline, &c.Revision, &c.Role)
 	return c, e
 }
+
+// SystemsBySubject — число действующих систем, где субъект — ответственный ИТ или резерв (экран «Оргструктура»).
+func (Store) SystemsBySubject(ctx context.Context, tx pgx.Tx, tenant string) (map[string]int, error) {
+	out := map[string]int{}
+	rows, e := tx.Query(ctx, `SELECT x.subject::text,count(DISTINCT x.service_uid) FROM (
+SELECT service_uid,it_subject_id AS subject FROM cmdb.services WHERE tenant_id=$1 AND retired_at IS NULL AND it_subject_id IS NOT NULL
+UNION ALL SELECT service_uid,backup_subject_id FROM cmdb.services WHERE tenant_id=$1 AND retired_at IS NULL AND backup_subject_id IS NOT NULL) x GROUP BY x.subject`, tenant)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var s string
+		var n int
+		if e = rows.Scan(&s, &n); e != nil {
+			return nil, e
+		}
+		out[s] = n
+	}
+	return out, rows.Err()
+}

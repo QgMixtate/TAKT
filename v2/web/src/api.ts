@@ -18,7 +18,7 @@ export type LinkKind='copper'|'fiber'|'wireless'|'trunk'|'vpn'|'virtual'|'logica
 export type MapDocument={positions:Record<string,MapPoint>;devices:{id:string;type:DeviceType;label:string;note?:string;address?:string;at:MapPoint}[];links:{id:string;a:string;b:string;kind:LinkKind;port_a?:string;port_b?:string;label?:string}[];groups:{id:string;label:string;color:'green'|'blue'|'amber'|'red'|'gray'|'violet';at:MapPoint;width:number;height:number}[];notes:{id:string;text:string;at:MapPoint}[];overrides:Record<string,{type?:DeviceType;label?:string;hidden?:boolean}>};
 export type NetworkMap={revision:string;updated_at:string|null;updated_by:string|null;document:MapDocument};
 export type TopologyLink={a:string;b:string;role?:'gateway';layer:'L2'|'L3';confidence:'confirmed'|'probable'|'weak';evidence:{source:string;detail:string;origin?:string}[];conflicts?:string[]};
-export type Conflict={conflict_id:string;reason_code:string;state:'open'|'resolved'|'dismissed';revision:string;source_record_key:string;source_id:string;namespace:string;source_local_id:string;resolution_state:string;asset_uid:string|null;candidate_asset_uids:string[];pending_observations:number;observed_hostname?:string};
+export type Conflict={conflict_id:string;reason_code:string;state:'open'|'resolved'|'dismissed';revision:string;source_record_key:string;source_id:string;namespace:string;source_local_id:string;resolution_state:string;asset_uid:string|null;candidate_asset_uids:string[];pending_observations:number;observed_hostname?:string;identifiers?:{kind:string;value:string}[]};
 export type ConflictPage={tenant_id:string;state:string;items:Conflict[];next_cursor:string|null};
 export type ConflictResult={conflict_id:string;action:string;asset_uid:string|null;replayed_observations:number};
 export type SourceRecord={source_record_key:string;source_id:string;namespace:string;source_local_id:string;observations:number};
@@ -73,12 +73,13 @@ export type RSMCollectResult={hosts:number;requested:number;recent:number;agents
 export type RSMSoftwarePage={hosts:number;products:{name:string;hosts:number;versions:{version:string;hosts:number}[]}[];truncated:boolean};
 export type RSMTicketList={items:{ticket_id:string;number:string;kind:TicketKind;title:string;state:string;priority:number;created_at:string;open:boolean}[];open:number};
 export type HostOverview={asset_uid:string;name:string;state:{asset_uid:string;color:RSMColor;reasons:RSMReason[];last_inventory_at:string|null;computed_at:string}|null;bindings:RSMBindingPath[];os:string|null;ip:string;mac:string;domain:string;site:string;hardware:string;sections:{name:string;source_id:string|null;source_kind:'agent'|'collector'|'portable'|null;acquisition:string|null;collected_at:string|null;status:string}[];presence:{state:'present'|'missing';network_name:string;ip:string;ports:number[];last_seen:string}[];targets:{target_id:string;kind:'ssh'|'winrm'|'snmp';address:string;state:string;last_collected_at:string|null;last_error:string|null}[];software_count:number;tickets_open:number;tickets_total:number};
-export type RSMSystemQuery={color?:string;criticality?:string[];env?:string;direction?:string;problems?:boolean;no_owner?:boolean;offset?:number;limit?:number};
+export type RSMSystemQuery={color?:string;criticality?:string[];env?:string;direction?:string;problems?:boolean;no_owner?:boolean;q?:string;offset?:number;limit?:number};
 export type RSMImportResult={dry_run:boolean;format:string;counts:Record<string,number>;rows:{line:number;system:string;environment:string;component:string;host:string;status:string;asset_uids:string[];creates:string[];detail?:string}[]};
 export type ServicePage={tenant_id:string;items:CIService[];next_cursor:string|null};
 export type ServiceDetail=CIService&{tenant_id:string;relations:Relation[]};
 export type RoleName='accountable'|'business_owner'|'technical'|'custodian';
 export type Subject={subject_id:string;kind:'person'|'team';name:string;contact:string;active:boolean;username:string|null;revision:string;site_fallback:boolean;members:number;origin:'local'|'ldap';synced_at:string|null;directory_login?:string};
+export type OrgOverview={tenant_id:string;members:Record<string,string[]>;assets:Record<string,number>;systems:Record<string,number>};
 export type SubjectPage={tenant_id:string;items:Subject[];next_cursor:string|null};
 export type SubjectResult={subject:Subject;reassigned_assignments:number};
 export type Assignment={role:RoleName;subject_id:string;subject_name:string;subject_kind:'person'|'team';valid_from:string;valid_to:string|null;reason_code:string;note:string|null;actor_ref:string};
@@ -228,7 +229,7 @@ export const api={
  components:(uid:string)=>call<ComponentList>('/api/v1/assets/'+encodeURIComponent(uid)+'/components','ComponentList'),
  products:(q:string)=>call<ProductList>('/api/v1/software?q='+encodeURIComponent(q),'ProductList'),
  rsmOverview:()=>call<RSMOverview>('/api/v1/rsm/overview','RSMOverview'),
- rsmSystems:(f:RSMSystemQuery)=>{const q=new URLSearchParams({limit:String(f.limit??100),offset:String(f.offset??0)});if(f.color)q.set('color',f.color);if(f.criticality?.length)q.set('criticality',f.criticality.join(','));if(f.env)q.set('env',f.env);if(f.direction)q.set('direction',f.direction);if(f.problems)q.set('problems','true');if(f.no_owner)q.set('no_owner','true');return call<RSMSystemPage>('/api/v1/rsm/systems?'+q.toString(),'RSMSystemPage')},
+ rsmSystems:(f:RSMSystemQuery)=>{const q=new URLSearchParams({limit:String(f.limit??100),offset:String(f.offset??0)});if(f.color)q.set('color',f.color);if(f.criticality?.length)q.set('criticality',f.criticality.join(','));if(f.env)q.set('env',f.env);if(f.direction)q.set('direction',f.direction);if(f.problems)q.set('problems','true');if(f.no_owner)q.set('no_owner','true');if(f.q)q.set('q',f.q);return call<RSMSystemPage>('/api/v1/rsm/systems?'+q.toString(),'RSMSystemPage')},
  rsmSystemCard:(uid:string)=>call<RSMSystemCard>('/api/v1/rsm/systems/'+encodeURIComponent(uid)+'/card','RSMSystemCard'),
  rsmComponentCard:(id:string,f:{q?:string;site?:string;color?:string;offset?:number})=>{const p=new URLSearchParams({limit:'100',offset:String(f.offset??0)});if(f.q)p.set('q',f.q);if(f.site)p.set('site',f.site);if(f.color)p.set('color',f.color);return call<RSMComponentCard>('/api/v1/rsm/components/'+encodeURIComponent(id)+'/card?'+p.toString(),'RSMComponentCard')},
  rsmNav:()=>call<RSMNav>('/api/v1/rsm/nav','RSMNav'),
@@ -304,6 +305,7 @@ export const api={
  assignments:(uid:string)=>call<AssetAssignments>('/api/v1/assets/'+encodeURIComponent(uid)+'/assignments','AssetAssignments'),
  assign:(uid:string,csrf:string,body:{role:RoleName;subject_id:string|null;note?:string;expected_version:string})=>call<AssetAssignments>('/api/v1/assets/'+encodeURIComponent(uid)+'/assignments','AssetAssignments',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
  bulkAssign:(csrf:string,body:{role:RoleName;subject_id:string;note?:string;items:{asset_uid:string;expected_version:string}[]})=>call<BulkAssignResult>('/api/v1/assignments/bulk','BulkAssignResult',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ orgOverview:()=>call<OrgOverview>('/api/v1/org/overview','OrgOverview'),
  worklist:(scope:string,cursor:string|null=null)=>call<WorklistPage>('/api/v1/worklist?limit=100&scope='+encodeURIComponent(scope)+(cursor?'&cursor='+encodeURIComponent(cursor):''),'WorklistPage'),
  search:(q:string,filters:{os?:string;class?:string},cursor:string|null)=>call<SearchPage>('/api/v1/search?limit=20&q='+encodeURIComponent(q)+(filters.os?'&os='+encodeURIComponent(filters.os):'')+(filters.class?'&class='+encodeURIComponent(filters.class):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),'SearchPage'),
  topology:()=>call<Topology>('/api/v1/topology','Topology'),

@@ -459,7 +459,7 @@ func (r *Registry) rsmHandlers() map[string]rsmRoute {
 		reply(w, req, out, e)
 	})
 	h["GET /api/v1/rsm/systems"] = read(func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity) {
-		q, ok := queryOnly(w, req, "color", "criticality", "env", "direction", "problems", "no_owner", "offset", "limit")
+		q, ok := queryOnly(w, req, "color", "criticality", "env", "direction", "problems", "no_owner", "q", "offset", "limit")
 		if !ok {
 			return
 		}
@@ -467,7 +467,7 @@ func (r *Registry) rsmHandlers() map[string]rsmRoute {
 		if !ok {
 			return
 		}
-		f := cmdb.SystemFilter{Color: q.Get("color"), EnvKind: q.Get("env"), Direction: q.Get("direction"), Problems: q.Get("problems") == "true", NoOwner: q.Get("no_owner") == "true", Offset: offset, Limit: limit}
+		f := cmdb.SystemFilter{Color: q.Get("color"), EnvKind: q.Get("env"), Direction: q.Get("direction"), Problems: q.Get("problems") == "true", NoOwner: q.Get("no_owner") == "true", Query: strings.TrimSpace(q.Get("q")), Offset: offset, Limit: limit}
 		if v := q.Get("criticality"); v != "" {
 			f.Criticality = strings.Split(v, ",")
 		}

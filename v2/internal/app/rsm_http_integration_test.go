@@ -191,6 +191,17 @@ func TestC54RSMHTTP(t *testing.T) {
 	if len(page.Items) != 0 {
 		t.Fatalf("system with owner must not match no_owner: %+v", page)
 	}
+	// C53.07: поиск систем по имени/владельцу
+	_ = json.Unmarshal(get("/api/v1/rsm/systems?q=no-such-system-zz", "SystemPage"), &page)
+	if len(page.Items) != 0 {
+		t.Fatalf("q must filter systems: %+v", page)
+	}
+	if code, _, _ := b.request(t, "GET", "/api/v1/rsm/systems?q="+strings.Repeat("x", 201), "", "", "", nil); code != 422 {
+		t.Fatalf("long q: %d", code)
+	}
+	if code, raw, _ := b.request(t, "GET", "/api/v1/org/overview", "", "", "", nil); code != 200 || !strings.Contains(string(raw), `"members"`) {
+		t.Fatalf("org overview: %d %s", code, raw)
+	}
 	if code, _, _ := b.request(t, "GET", "/api/v1/rsm/systems?criticality=huge", "", "", "", nil); code != 422 {
 		t.Fatalf("unknown criticality: %d", code)
 	}

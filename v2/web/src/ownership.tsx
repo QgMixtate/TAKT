@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {DirectorySyncPanel} from './integrations';
-import {api,ApiError,errorMessage,type AssetAssignments,type RoleName,type Subject,type WorklistItem} from './api';
+import {Panel,Pill,Split,StateDot} from './ui';
+import {api,ApiError,errorMessage,type AssetAssignments,type OrgOverview,type RoleName,type Subject,type WorklistItem,type WorklistPage,type Ticket} from './api';
 
 // C27 — ответственность в Web: роли актива и история передач, рабочие списки и массовое назначение, оргструктура.
 export const roleNames:Record<RoleName,string>={accountable:'Ответственный',business_owner:'Бизнес-владелец',technical:'Технический ответственный',custodian:'Пользователь (хранитель)'};
@@ -39,10 +40,13 @@ export function AssignmentsTab({asset,csrf,onExpired}:{asset:string;csrf:string;
  </div>;
 }
 
-export function WorklistView({csrf,canWrite,onOpenAsset,onExpired}:{csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
+export function WorklistView({csrf,canWrite,onOpenAsset,onNavigate,onExpired}:{csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onNavigate?:(view:string)=>void;onExpired:()=>void}){
+ // C53.07 (макет «Мои задачи»): показатели по спискам, обращения на мне и требующее передачи, затем список с массовым назначением.
  const [scope,setScope]=useState('mine'),[items,setItems]=useState<WorklistItem[]>([]),[next,setNext]=useState<string|null>(null),[error,setError]=useState<unknown>(null),[notice,setNotice]=useState(''),[loading,setLoading]=useState(false),[n,setN]=useState(0);
  const [selected,setSelected]=useState<string[]>([]),[role,setRole]=useState<RoleName>('accountable'),[subject,setSubject]=useState(''),[busy,setBusy]=useState(false);
  const [subjects]=useSubjects(onExpired);
+ const [sum,setSum]=useState<Record<string,WorklistPage|null>>({}),[tickets,setTickets]=useState<Ticket[]|null>(null);
+ useEffect(()=>{for(const [k] of scopes)api.worklist(k).then(p=>setSum(x=>({...x,[k]:p}))).catch(e=>{setSum(x=>({...x,[k]:null}));expired(e,onExpired)});api.tickets({mine:true}).then(p=>setTickets(p.items.filter(t=>t.state!=='closed'&&t.state!=='resolved'))).catch(e=>expired(e,onExpired))},[n]);
  async function load(cursor:string|null){setLoading(true);setError(null);try{const p=await api.worklist(scope,cursor);setItems(x=>cursor?[...x,...p.items]:p.items);setNext(p.next_cursor)}catch(e){setError(e);expired(e,onExpired)}finally{setLoading(false)}}
  useEffect(()=>{setSelected([]);void load(null)},[scope,n]);
  async function bulk(){
@@ -53,35 +57,78 @@ export function WorklistView({csrf,canWrite,onOpenAsset,onExpired}:{csrf:string;
   finally{setBusy(false)}
  }
  const accountable=(i:WorklistItem)=>i.assignments.find(a=>a.role==='accountable');
- return <div className="table-panel"><div className="table-toolbar"><div className="scope-tabs" role="tablist">{scopes.map(([k,v])=><button key={k} role="tab" aria-selected={scope===k} className={scope===k?'active':''} onClick={()=>setScope(k)}>{v}</button>)}</div></div>
+ const count=(k:string)=>sum[k]===undefined?'…':sum[k]===null?'—':sum[k]!.items.length+(sum[k]!.next_cursor?'+':'');
+ const kpiNote:Record<string,string>={mine:'вы — ответственный',team:'на ваших командах',unassigned:'без ответственного',attention:'ответственный выбыл'};
+ const name=(i:WorklistItem)=>i.display_name??i.observed_hostname??'Без имени';
+ return <>
+  <div className="kpi-cards">{scopes.map(([k,v])=><button key={k} className={(k==='attention'?'amber':'')+(scope===k?' active':'')} aria-pressed={scope===k} onClick={()=>setScope(k)}><small>{v}</small><b>{count(k)}</b><span>{kpiNote[k]}</span></button>)}
+   <button className={tickets?.length?'warn':''} onClick={()=>onNavigate?.('tickets')}><small>Обращения на мне</small><b>{tickets?tickets.length:'…'}</b><span>открытые</span></button></div>
+  <div className="two-col">
+   <Panel title={'Обращения на мне · '+(tickets?.length??'…')} right={<button className="link" onClick={()=>onNavigate?.('tickets')}>все →</button>} flush>{tickets&&tickets.length?<ul className="task-list">{tickets.slice(0,5).map(t=><li key={t.ticket_id}><StateDot tone={t.priority<=2?'red':t.priority===3?'amber':'grey'}/><b>{t.number}</b><span className="muted">{t.title}</span><span className="right"><button className="link" onClick={()=>onNavigate?.('tickets')}>Открыть</button></span></li>)}</ul>:<p className="muted pad">{tickets?'Открытых обращений на вас нет.':'Загрузка…'}</p>}</Panel>
+   <Panel title={'Требует передачи · '+count('attention')} right={<button className="link" onClick={()=>setScope('attention')}>все →</button>} flush>{sum.attention&&sum.attention.items.length?<ul className="task-list">{sum.attention.items.slice(0,5).map(i=><li key={i.asset_uid}><StateDot tone="amber"/><b>{name(i)}</b><span className="muted">{accountable(i)?.subject_name??'нет ответственного'}{reasonNames[accountable(i)?.reason_code??'']?' · '+reasonNames[accountable(i)!.reason_code]:''}</span><span className="right"><button className="link" onClick={()=>onOpenAsset(i.asset_uid)}>Карточка</button></span></li>)}</ul>:<p className="muted pad">{sum.attention===undefined?'Загрузка…':'Передавать нечего.'}</p>}</Panel>
+  </div>
+  <Panel title={(scopes.find(s=>s[0]===scope)?.[1]??'')+' · '+count(scope)} right={<div className="scope-tabs" role="tablist">{scopes.map(([k,v])=><button key={k} role="tab" aria-selected={scope===k} className={scope===k?'active':''} onClick={()=>setScope(k)}>{v}</button>)}</div>} flush>
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   {notice?<div className="notice" role="status">{notice}</div>:null}
   {canWrite&&items.length?<div className="bulk-bar"><span>Выбрано: {selected.length}</span><select aria-label="Роль для назначения" value={role} onChange={e=>{setRole(e.target.value as RoleName);setSubject('')}}>{(Object.keys(roleNames) as RoleName[]).map(r=><option key={r} value={r}>{roleNames[r]}</option>)}</select><SubjectSelect subjects={subjects} role={role} value={subject} onChange={setSubject} label="Назначить на"/><button className="button small primary-lite" disabled={busy||!selected.length||!subject} onClick={()=>void bulk()}>Назначить выбранным</button></div>:null}
   {!items.length&&!loading?<div className="empty"><span>✓</span><h3>Список пуст</h3><p>{scope==='mine'?'На вас не назначено активов — или ваш вход ещё не связан с человеком в оргструктуре.':'Здесь пока ничего нет.'}</p></div>:null}
-  {items.length?<div className="table-scroll"><table><thead><tr>{canWrite?<th><input type="checkbox" aria-label="Выбрать все" checked={selected.length===items.length} onChange={e=>setSelected(e.target.checked?items.map(i=>i.asset_uid):[])}/></th>:null}<th>Актив</th><th>Ответственный</th><th>Другие роли</th></tr></thead><tbody>{items.map(i=><tr key={i.asset_uid}>{canWrite?<td><input type="checkbox" aria-label={'Выбрать '+(i.display_name??i.observed_hostname??i.asset_uid)} checked={selected.includes(i.asset_uid)} onChange={e=>setSelected(s=>e.target.checked?[...s,i.asset_uid]:s.filter(x=>x!==i.asset_uid))}/></td>:null}<td><button className="asset-link" onClick={()=>onOpenAsset(i.asset_uid)}><span><strong>{i.display_name??i.observed_hostname??'Без имени'}</strong><small className="mono">{i.asset_uid}</small></span></button></td><td>{accountable(i)?.subject_name??'—'}<small>{reasonNames[accountable(i)?.reason_code??'']??''}</small></td><td>{i.assignments.filter(a=>a.role!=='accountable').map(a=>roleNames[a.role]+': '+a.subject_name).join('; ')||'—'}</td></tr>)}</tbody></table></div>:null}
+  {items.length?<div className="table-scroll"><table className="panel-table"><thead><tr>{canWrite?<th><input type="checkbox" aria-label="Выбрать все" checked={selected.length===items.length} onChange={e=>setSelected(e.target.checked?items.map(i=>i.asset_uid):[])}/></th>:null}<th>Актив</th><th>Ответственный</th><th>Другие роли</th></tr></thead><tbody>{items.map(i=><tr key={i.asset_uid}>{canWrite?<td><input type="checkbox" aria-label={'Выбрать '+(i.display_name??i.observed_hostname??i.asset_uid)} checked={selected.includes(i.asset_uid)} onChange={e=>setSelected(s=>e.target.checked?[...s,i.asset_uid]:s.filter(x=>x!==i.asset_uid))}/></td>:null}<td><button className="link plain" onClick={()=>onOpenAsset(i.asset_uid)}><b>{name(i)}</b></button></td><td>{accountable(i)?.subject_name??'—'}<small className="muted"> {reasonNames[accountable(i)?.reason_code??'']??''}</small></td><td>{i.assignments.filter(a=>a.role!=='accountable').map(a=>roleNames[a.role]+': '+a.subject_name).join('; ')||'—'}</td></tr>)}</tbody></table></div>:null}
   {next?<div className="pager"><button className="button small" disabled={loading} onClick={()=>void load(next)}>Показать ещё</button></div>:null}
- </div>;
+  </Panel>
+ </>;
 }
 
 export function OrgView({csrf,onExpired}:{csrf:string;onExpired:()=>void}){
+ // C53.07 (макет «Оргструктура»): команды слева, состав и нагрузка в центре, карточка сотрудника справа.
  const [inactive,setInactive]=useState(false);
  const [subjects,reload]=useSubjects(onExpired,inactive);
- const [kind,setKind]=useState<'person'|'team'>('person'),[name,setName]=useState(''),[contact,setContact]=useState(''),[username,setUsername]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState<unknown>(null),[notice,setNotice]=useState('');
- const [team,setTeam]=useState(''),[person,setPerson]=useState('');
- async function act(fn:()=>Promise<unknown>,what:string,done?:(r:unknown)=>void){if(!confirmAction(what))return;setBusy(true);setError(null);setNotice('');try{const r=await fn();done?.(r);reload()}catch(e){setError(e);expired(e,onExpired)}finally{setBusy(false)}}
- const people=subjects.filter(s=>s.kind==='person'&&s.active),teams=subjects.filter(s=>s.kind==='team'&&s.active&&s.origin==='local');
- return <div className="table-panel"><div className="table-toolbar"><h2>Люди и команды <span>{subjects.length}</span></h2><label className="inline-check"><input type="checkbox" checked={inactive} onChange={e=>setInactive(e.target.checked)}/> показывать выбывших</label></div>
-  <DirectorySyncPanel csrf={csrf} onExpired={onExpired} onSynced={reload}/>
-  {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
-  {notice?<div className="notice" role="status">{notice}</div>:null}
-  <form className="org-form" onSubmit={e=>{e.preventDefault();void act(()=>api.createSubject(csrf,{kind,name:name.trim(),contact:contact.trim(),username:kind==='person'&&username.trim()?username.trim():undefined}),'добавить '+(kind==='team'?'команду':'человека')+' «'+name.trim()+'»',()=>{setName('');setContact('');setUsername('')})}}>
-   <select aria-label="Вид" value={kind} onChange={e=>setKind(e.target.value as 'person'|'team')}><option value="person">Человек</option><option value="team">Команда</option></select>
-   <input aria-label="Имя" placeholder="ФИО или название команды" value={name} onChange={e=>setName(e.target.value)}/>
-   <input aria-label="Контакт" placeholder="Почта или телефон" value={contact} onChange={e=>setContact(e.target.value)}/>
-   {kind==='person'?<input aria-label="Логин" placeholder="Логин входа (необязательно)" value={username} onChange={e=>setUsername(e.target.value)}/>:null}
-   <button className="button small" disabled={busy||!name.trim()||!contact.trim()}>Добавить</button></form>
-  <div className="org-form"><span>Состав команды:</span><select aria-label="Команда" value={team} onChange={e=>setTeam(e.target.value)}><option value="">Команда…</option>{teams.map(s=><option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}</select><select aria-label="Человек" value={person} onChange={e=>setPerson(e.target.value)}><option value="">Человек…</option>{people.map(s=><option key={s.subject_id} value={s.subject_id}>{s.name}</option>)}</select>
-   <button className="button small" disabled={busy||!team||!person} onClick={()=>void act(()=>api.member(team,person,csrf,true),'включить в команду')}>Включить</button><button className="button small" disabled={busy||!team||!person} onClick={()=>void act(()=>api.member(team,person,csrf,false),'исключить из команды')}>Исключить</button></div>
-  <div className="table-scroll"><table><thead><tr><th>Имя</th><th>Вид</th><th>Контакт</th><th>Логин AD</th><th>Вход в ТАКТ</th><th>Состояние</th><th/></tr></thead><tbody>{subjects.map(s=><tr key={s.subject_id}><td>{s.name}{s.origin==='ldap'?<span className="tag" title={'Из Active Directory'+(s.synced_at?', синхронизировано '+time(s.synced_at):'')}> AD</span>:null}</td><td>{s.kind==='team'?'Команда ('+s.members+')':'Человек'}</td><td>{s.contact}</td><td className="mono">{s.directory_login??'—'}</td><td className="mono">{s.username??'—'}</td><td>{s.active?(s.site_fallback?'Резервная команда площадки':'Действует'):'Выбыл'}</td><td>{s.active&&!s.site_fallback&&s.origin==='local'?<button className="text-link" disabled={busy} onClick={()=>void act(()=>api.patchSubject(s.subject_id,csrf,{revision:s.revision,deactivate:true}),'отметить «'+s.name+'» выбывшим: его активы перейдут резервной команде площадки',r=>setNotice('Переназначено ролей: '+(r as {reassigned_assignments:number}).reassigned_assignments+'.'))}>Выбыл</button>:!s.active&&s.origin==='local'?<button className="text-link" disabled={busy} onClick={()=>void act(()=>api.patchSubject(s.subject_id,csrf,{revision:s.revision,reactivate:true}),'вернуть «'+s.name+'» в работу (прежние назначения не восстанавливаются)')}>Вернуть</button>:null}</td></tr>)}</tbody></table></div>
- </div>;
+ const [org,setOrg]=useState<OrgOverview|null>(null),[n,setN]=useState(0);
+ useEffect(()=>{api.orgOverview().then(setOrg).catch(e=>expired(e,onExpired))},[n]);
+ const refresh=()=>{reload();setN(x=>x+1)};
+ const [group,setGroup]=useState<string>('all'),[sel,setSel]=useState<string|null>(null),[q,setQ]=useState('');
+ const [kind,setKind]=useState<'person'|'team'>('person'),[name,setName]=useState(''),[contact,setContact]=useState(''),[username,setUsername]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState<unknown>(null),[notice,setNotice]=useState(''),[addTo,setAddTo]=useState('');
+ async function act(fn:()=>Promise<unknown>,what:string,done?:(r:unknown)=>void){if(!confirmAction(what))return;setBusy(true);setError(null);setNotice('');try{const r=await fn();done?.(r);refresh()}catch(e){setError(e);expired(e,onExpired)}finally{setBusy(false)}}
+ const teams=subjects.filter(s=>s.kind==='team'),people=subjects.filter(s=>s.kind==='person');
+ const members=org?.members??{},inTeam=new Set(Object.values(members).flat());
+ const team=teams.find(t=>t.subject_id===group);
+ const list=(group==='all'?people:group==='teams'?teams:group==='none'?people.filter(p=>!inTeam.has(p.subject_id)):people.filter(p=>(members[group]??[]).includes(p.subject_id))).filter(s=>!q||s.name.toLowerCase().includes(q.toLowerCase())||(s.directory_login??s.username??'').toLowerCase().includes(q.toLowerCase()));
+ const person=subjects.find(s=>s.subject_id===sel)??null;
+ const teamsOf=(id:string)=>teams.filter(t=>(members[t.subject_id]??[]).includes(id));
+ const cnt=(m:Record<string,number>|undefined,id:string)=>m?.[id]??0;
+ const item=(key:string,label:string,count:number,indent=0)=><button key={key} className={'tree-item'+(group===key?' active':'')} style={{paddingLeft:8+indent*16}} onClick={()=>{setGroup(key);setSel(null)}}><span>{label}</span><span className="muted">{count}</span></button>;
+ const side=person?<>
+  <div><h2>{person.name}</h2><p className="sub">{person.kind==='team'?'Команда · '+person.members+' сотрудн.':'Сотрудник'}{person.origin==='ldap'?' · AD'+(person.directory_login?': '+person.directory_login:''):''}</p></div>
+  <dl className="kv"><dt>Контакт</dt><dd>{person.contact||'—'}</dd><dt>Вход в ТАКТ</dt><dd className="mono">{person.username??'—'}</dd><dt>Отвечает за</dt><dd>{cnt(org?.assets,person.subject_id)} активов · {cnt(org?.systems,person.subject_id)} систем</dd>
+   {person.kind==='person'?<><dt>Команды</dt><dd>{teamsOf(person.subject_id).map(t=>t.name).join(', ')||'не состоит'}</dd></>:null}
+   <dt>Состояние</dt><dd>{person.active?(person.site_fallback?<Pill tone="blue">резервная команда площадки</Pill>:<Pill tone="green">действует</Pill>):<Pill>выбыл</Pill>}</dd></dl>
+  {person.kind==='person'&&person.active?<Panel title="Состав команд"><div className="form-row"><select aria-label="Команда" value={addTo} onChange={e=>setAddTo(e.target.value)}><option value="">Команда…</option>{teams.filter(t=>t.active&&t.origin==='local').map(t=><option key={t.subject_id} value={t.subject_id}>{t.name}</option>)}</select>
+   <button className="button small" disabled={busy||!addTo||(members[addTo]??[]).includes(person.subject_id)} onClick={()=>void act(()=>api.member(addTo,person.subject_id,csrf,true),'включить в команду')}>Включить</button><button className="button small" disabled={busy||!addTo||!(members[addTo]??[]).includes(person.subject_id)} onClick={()=>void act(()=>api.member(addTo,person.subject_id,csrf,false),'исключить из команды')}>Исключить</button></div></Panel>:null}
+  {person.active&&!person.site_fallback&&person.origin==='local'?<Panel title="Выбытие"><p className="muted">Его активы ({cnt(org?.assets,person.subject_id)}) перейдут резервной команде площадки; история передач сохраняется.</p><button className="button primary-sm" disabled={busy} onClick={()=>void act(()=>api.patchSubject(person.subject_id,csrf,{revision:person.revision,deactivate:true}),'отметить «'+person.name+'» выбывшим: его активы перейдут резервной команде площадки',r=>setNotice('Переназначено ролей: '+(r as {reassigned_assignments:number}).reassigned_assignments+'.'))}>Отметить выбывшим</button></Panel>
+   :!person.active&&person.origin==='local'?<button className="button" disabled={busy} onClick={()=>void act(()=>api.patchSubject(person.subject_id,csrf,{revision:person.revision,reactivate:true}),'вернуть «'+person.name+'» в работу (прежние назначения не восстанавливаются)')}>Вернуть в работу</button>
+   :person.origin==='ldap'?<p className="muted">Ведётся каталогом AD: переименование и выбытие — там.</p>:null}
+ </>:<>
+  <div><h2>Добавить</h2><p className="sub">Человека или команду, которые отвечают за активы</p></div>
+  <form className="form-grid" onSubmit={e=>{e.preventDefault();void act(()=>api.createSubject(csrf,{kind,name:name.trim(),contact:contact.trim(),username:kind==='person'&&username.trim()?username.trim():undefined}),'добавить '+(kind==='team'?'команду':'человека')+' «'+name.trim()+'»',()=>{setName('');setContact('');setUsername('')})}}>
+   <label>Вид<select aria-label="Вид" value={kind} onChange={e=>setKind(e.target.value as 'person'|'team')}><option value="person">Человек</option><option value="team">Команда</option></select></label>
+   <label>Имя<input aria-label="Имя" placeholder="ФИО или название команды" value={name} onChange={e=>setName(e.target.value)}/></label>
+   <label>Контакт<input aria-label="Контакт" placeholder="Почта или телефон" value={contact} onChange={e=>setContact(e.target.value)}/></label>
+   {kind==='person'?<label>Логин входа<input aria-label="Логин" placeholder="необязательно" value={username} onChange={e=>setUsername(e.target.value)}/></label>:null}
+   <div className="form-row"><button className="button primary-sm" disabled={busy||!name.trim()||!contact.trim()}>Добавить</button></div></form>
+  <p className="muted">Выберите сотрудника в списке — здесь появится его карточка: нагрузка, команды, выбытие.</p>
+ </>;
+ return <Split side={side}>
+  <div className="org-cols">
+   <Panel title="Подразделения и команды" flush><div className="tree">{item('all','Все сотрудники',people.length)}{item('teams','Все команды',teams.length)}{teams.filter(t=>t.active).map(t=>item(t.subject_id,t.name+(t.site_fallback?' — резерв площадки':''),(members[t.subject_id]??[]).length,1))}{item('none','Без команды',people.filter(p=>!inTeam.has(p.subject_id)).length)}</div>
+    <label className="inline-check pad"><input type="checkbox" checked={inactive} onChange={e=>setInactive(e.target.checked)}/> показывать выбывших</label></Panel>
+   <div className="col">
+    <div><h2 className="h2">{team?team.name:group==='teams'?'Команды':group==='none'?'Без команды':'Все сотрудники'}</h2><p className="muted">{team?'Команда · '+(members[team.subject_id]??[]).length+' сотрудн.'+(team.origin==='ldap'?' · из AD':''):list.length+' в списке'}</p></div>
+    {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}{notice?<div className="notice" role="status">{notice}</div>:null}
+    <input className="toolbar-search" aria-label="Фильтр сотрудников" placeholder="Имя или логин" value={q} onChange={e=>setQ(e.target.value)}/>
+    <div className="panel table-scroll"><table className="panel-table"><thead><tr><th>{group==='teams'?'Команда':'Сотрудник'}</th><th>Логин</th><th className="num">Активов</th><th className="num">Систем</th><th>Состояние</th></tr></thead><tbody>
+     {list.map(s=><tr key={s.subject_id} className={s.subject_id===sel?'selected':''}><td><button className="link plain" onClick={()=>setSel(s.subject_id)}>{s.name}</button>{s.origin==='ldap'?<small className="muted"> AD</small>:null}</td><td className="mono">{s.directory_login??s.username??'—'}</td><td className="num">{cnt(org?.assets,s.subject_id)}</td><td className="num">{cnt(org?.systems,s.subject_id)}</td><td>{s.active?(s.site_fallback?<StateDot tone="blue">резерв площадки</StateDot>:<StateDot tone="green">действует</StateDot>):<StateDot tone="grey">выбыл</StateDot>}</td></tr>)}
+    </tbody></table>{!list.length?<p className="muted pad">Никого нет.</p>:null}</div>
+    <Panel title="Синхронизация с AD"><DirectorySyncPanel csrf={csrf} onExpired={onExpired} onSynced={refresh}/></Panel>
+   </div>
+  </div>
+ </Split>;
 }

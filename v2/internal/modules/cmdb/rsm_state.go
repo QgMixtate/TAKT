@@ -263,6 +263,7 @@ type SystemFilter struct {
 	Direction   string
 	Problems    bool
 	NoOwner     bool
+	Query       string
 	Offset      int
 	Limit       int
 }
@@ -273,7 +274,7 @@ func (f SystemFilter) valid() bool {
 			return false
 		}
 	}
-	return f.Offset >= 0 && f.Offset <= 10000 && (f.Color == "" || f.Color == "red" || f.Color == "yellow" || f.Color == "green" || f.Color == "grey") &&
+	return len(f.Query) <= 200 && f.Offset >= 0 && f.Offset <= 10000 && (f.Color == "" || f.Color == "red" || f.Color == "yellow" || f.Color == "green" || f.Color == "grey") &&
 		(f.EnvKind == "" || environmentKinds[f.EnvKind]) && (f.Direction == "" || f.Direction == "none" || identifier.Valid(f.Direction))
 }
 
@@ -296,8 +297,9 @@ WHERE s.tenant_id=$1 AND s.retired_at IS NULL AND ($2='' OR COALESCE(ns.color,'g
 AND ($4='' OR EXISTS(SELECT 1 FROM cmdb.environments e WHERE e.tenant_id=s.tenant_id AND e.service_uid=s.service_uid AND e.kind=$4 AND e.retired_at IS NULL))
 AND ($5='' OR ($5='none' AND s.direction_uid IS NULL) OR s.direction_uid::text=$5)
 AND (NOT $6 OR COALESCE(ns.color,'grey') IN ('red','yellow')) AND (NOT $7 OR s.business_owner IS NULL)
+AND ($10='' OR strpos(lower(s.name),lower($10))>0 OR strpos(lower(COALESCE(s.business_owner,'')),lower($10))>0)
 ORDER BY CASE COALESCE(ns.color,'grey') WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 WHEN 'grey' THEN 2 ELSE 3 END,lower(s.name),s.service_uid OFFSET $8 LIMIT $9`,
-		tenant, f.Color, f.Criticality, f.EnvKind, f.Direction, f.Problems, f.NoOwner, f.Offset, f.Limit)
+		tenant, f.Color, f.Criticality, f.EnvKind, f.Direction, f.Problems, f.NoOwner, f.Offset, f.Limit, f.Query)
 	if e != nil {
 		return nil, e
 	}

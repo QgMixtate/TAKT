@@ -164,6 +164,17 @@
    ],
    "additionalProperties": false
   },
+  "OrgOverview": {
+   "type": "object",
+   "properties": {
+    "tenant_id": {"type": "string", "format": "uuid"},
+    "members": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string", "format": "uuid"}}},
+    "assets": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "systems": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
+   },
+   "required": ["tenant_id", "members", "assets", "systems"],
+   "additionalProperties": false
+  },
   "SubjectPage": {
    "type": "object",
    "properties": {

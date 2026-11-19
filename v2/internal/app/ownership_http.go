@@ -451,6 +451,19 @@ func (r *Registry) ownershipHandlers() map[string]struct {
 			registryJSON(w, out)
 		})
 	}
+	h["GET /api/v1/org/overview"] = route{"assets:read", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if _, ok := queryOnly(w, req); !ok {
+			return
+		}
+		ctx, cancel, id := cmdbContext(req)
+		defer cancel()
+		out, e := r.OrgOverview(ctx, id)
+		if e != nil {
+			cmdbError(w, req, e)
+			return
+		}
+		registryJSON(w, out)
+	})}
 	h["PUT /api/v1/subjects/{subject_id}/members/{person_id}"] = route{"sources:admin", member(true)}
 	h["DELETE /api/v1/subjects/{subject_id}/members/{person_id}"] = route{"sources:admin", member(false)}
 	h["GET /api/v1/assets/{asset_uid}/assignments"] = route{"assets:read", http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -523,4 +536,28 @@ func (r *Registry) ownershipHandlers() map[string]struct {
 		registryJSON(w, out)
 	})}
 	return h
+}
+
+// OrgOverview — C53.07, экран «Оргструктура»: составы команд и нагрузка (активы, системы) по субъектам.
+type OrgOverview struct {
+	Tenant  string              `json:"tenant_id"`
+	Members map[string][]string `json:"members"`
+	Assets  map[string]int      `json:"assets"`
+	Systems map[string]int      `json:"systems"`
+}
+
+func (r *Registry) OrgOverview(ctx context.Context, id accessport.Identity) (OrgOverview, error) {
+	out := OrgOverview{Tenant: id.TenantID}
+	tx, e := r.readTx(ctx, id)
+	if e != nil {
+		return out, e
+	}
+	defer tx.Rollback(ctx)
+	if out.Members, out.Assets, e = r.Owners.OrgStats(ctx, tx, id.TenantID); e != nil {
+		return out, e
+	}
+	if out.Systems, e = r.CMDB.SystemsBySubject(ctx, tx, id.TenantID); e != nil {
+		return out, e
+	}
+	return out, tx.Commit(ctx)
 }
