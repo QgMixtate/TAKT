@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {PageTabs,Panel,Split,Strip} from './ui';
 import {api,ApiError,errorMessage,type CollectCredential,type CollectKind,type CollectSecret,type DiscoveryHost,type DiscoveryHostEvent,type DiscoveryNetwork,type DiscoveryNetworkPage,type DiscoveryProbe,type DiscoveryRun,type RemoteTarget,type Source,type WinRMTrust} from './api';
 
 // C51 — «Обследования сети» (ADR D13): вкладки «Подсети», «Учётки сбора», «Цели сбора». Подсети и учётки заводит
@@ -19,7 +20,7 @@ export function DiscoveryView({csrf,isAdmin,canRun,onExpired,onOpenAsset}:{csrf:
  const [tab,setTab]=useState<Tab>('networks'),[version,setVersion]=useState(0);
  const tabs:[Tab,string][]=[['networks','Подсети'],...(isAdmin?[['credentials','Учётки сбора'] as [Tab,string]]:[]),['targets','Цели сбора']];
  return <div className="discovery">
-  <div className="seg-tabs" role="tablist" aria-label="Разделы обследований">{tabs.map(([k,n])=><button key={k} role="tab" aria-selected={tab===k} className={tab===k?'active':''} onClick={()=>setTab(k)}>{n}</button>)}</div>
+  <PageTabs label="Разделы обследований" tabs={tabs} value={tab} onChange={setTab}/>
   {tab==='networks'?<NetworksTab csrf={csrf} isAdmin={isAdmin} canRun={canRun} onExpired={onExpired} onOpenAsset={onOpenAsset} onTargetCreated={()=>{setVersion(v=>v+1);setTab('targets')}}/>:null}
   {tab==='credentials'&&isAdmin?<CredentialsTab csrf={csrf} onExpired={onExpired}/>:null}
   {tab==='targets'?<TargetsTab csrf={csrf} isAdmin={isAdmin} canRun={canRun} version={version} onExpired={onExpired}/>:null}
@@ -51,7 +52,19 @@ function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated,onOpenAsset}
  async function act(fn:()=>Promise<unknown>){setBusy(true);setError(null);try{await fn();load();if(open)loadOne(open)}catch(e){setError(e);expired(e,onExpired)}finally{setBusy(false)}}
  if(!page)return error?<div className="error" role="alert">{errorMessage(error)}</div>:<p className="muted">Загрузка…</p>;
  const l=page.limits,net=page.items.find(n=>n.network_id===open);
- return <div className="stack">
+ // C53.07 (макет «Обследования сети»): сводка, подсети и узлы слева; справа — последний запуск выбранной подсети, новые и пропавшие узлы, история.
+ const sumHosts=page.items.reduce((x,n)=>x+n.present_hosts,0),sumMissing=page.items.reduce((x,n)=>x+n.missing_hosts,0),failed=page.items.filter(n=>n.last_run?.state==='failed'||(n.last_run?.errors.length??0)>0).length;
+ const lr=net?.last_run;
+ const appeared=events.filter(v=>v.kind!=='missing'),gone=events.filter(v=>v.kind==='missing');
+ const side=net?<>
+  <div><h2>{net.name} · <span className="mono">{net.cidr}</span></h2><p className="sub">{lr?runState[lr.state][0]+' · '+time(lr.finished_at??lr.requested_at)+(lr.found!==null?' · найдено узлов: '+lr.found:''):'Обследований ещё не было'}</p></div>
+  {lr?.errors.length?<div className="error" role="alert">{lr.errors.join('; ')}</div>:null}
+  <Panel title={'Новые и вернувшиеся · '+appeared.length} flush>{appeared.length?<table className="panel-table"><tbody>{appeared.slice(0,12).map(v=><tr key={v.ip+v.run_id+v.kind}><td className="mono">{v.ip}</td><td><span className={'badge '+eventKind[v.kind][1]}><i/>{eventKind[v.kind][0]}</span></td><td className="muted">{time(v.at)}</td></tr>)}</tbody></table>:<p className="muted pad">Новых узлов нет.</p>}</Panel>
+  <Panel title={'Пропали из сети · '+gone.length} flush>{gone.length?<table className="panel-table"><tbody>{gone.slice(0,12).map(v=><tr key={v.ip+v.run_id+v.kind}><td className="mono">{v.ip}</td><td className="muted">{time(v.at)}</td></tr>)}</tbody></table>:<p className="muted pad">Пропавших нет.</p>}</Panel>
+  {runs.length?<Panel title="История обследований" flush><ul className="task-list">{runs.slice(0,8).map(r=><li key={r.run_id}><span className={'badge '+runState[r.state][1]}><i/>{runState[r.state][0]}</span><span className="muted">{time(r.requested_at)} · {r.trigger==='manual'?'вручную':'по расписанию'}{r.found!==null?' · найдено '+r.found+', новых '+r.new_hosts+', пропало '+r.missing:''}</span></li>)}</ul></Panel>:null}
+ </>:<div className="empty"><span>⌖</span><h3>Выберите подсеть</h3></div>;
+ return <><Strip label="Сводка обследований" items={[{key:'n',n:page.items.length,label:'подсети',active:true},{key:'h',n:sumHosts,label:'узлов в сети'},{key:'m',n:sumMissing,label:'пропали',tone:sumMissing?'warn':'muted'},{key:'f',n:failed,label:'запусков с ошибкой',tone:failed?'warn':'muted'}]}/>
+ <Split wide side={side}>
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   <div className="table-panel"><div className="table-toolbar"><h2>Подсети <span>{page.items.length}</span></h2>
    {isAdmin?<button className="button small" onClick={()=>setCreating(true)}>+ Новая подсеть</button>:null}</div>
@@ -72,12 +85,10 @@ function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated,onOpenAsset}
      <td><span className={'badge '+(h.state==='present'?(h.misses?'state-partial':'state-ok'):'state-unavailable')}><i/>{h.state==='present'?(h.misses?'не найден '+h.misses+' из '+l.miss_after:'на месте'):'пропал'}</span>{h.state==='missing'&&h.missing_since?<small>с {time(h.missing_since)}</small>:null}</td><td>{h.asset_uid?(onOpenAsset?<button className="text-link" onClick={()=>onOpenAsset(h.asset_uid!)}>карточка ↗</button>:'да'):<span className="muted" title="Данных с узла нет: присутствие видно только здесь">нет</span>}</td>
      {isAdmin?<td className="actions"><button className="button small" onClick={()=>setCollect(h)}>Собирать…</button></td>:null}</tr>)}
    </tbody></table></div>}
-   {events.length?<div className="history"><h3>Изменения присутствия</h3><ul>{events.slice(0,30).map(v=><li key={v.ip+v.run_id+v.kind}><span className={'badge '+eventKind[v.kind][1]}><i/>{eventKind[v.kind][0]}</span> <span className="mono">{v.ip}</span> · {time(v.at)}</li>)}</ul></div>:null}
-   {runs.length?<div className="history"><h3>История обследований</h3><ul>{runs.map(r=><li key={r.run_id}><span className={'badge '+runState[r.state][1]}><i/>{runState[r.state][0]}</span> {time(r.requested_at)} · {r.trigger==='manual'?'вручную':'по расписанию'}{r.found!==null?' · найдено '+r.found+' из '+r.addresses+' адресов':''}{r.errors.length?' · '+r.errors.map(errName).join('; '):''}</li>)}</ul></div>:null}
   </div>:null}
   {creating?<Drawer eyebrow="Обследования сети" title="Новая подсеть" onClose={()=>setCreating(false)}><NetworkForm busy={busy} onExpired={onExpired} onCreate={b=>void act(async()=>{const n=await api.createDiscoveryNetwork(csrf,b);setCreating(false);setOpen(n.network_id)})}/>{error?<div className="error" role="alert">{errorMessage(error)}</div>:null}</Drawer>:null}
   {collect&&net?<Drawer eyebrow="Сбор данных с узла" title={'Собирать '+collect.ip} onClose={()=>setCollect(null)}><CollectForm host={collect} network={net} busy={busy} onExpired={onExpired} onCreate={b=>void act(async()=>{await api.createRemoteTarget(csrf,b);setCollect(null);onTargetCreated()})}/>{error?<div className="error" role="alert">{errorMessage(error)}</div>:null}</Drawer>:null}
- </div>;
+ </Split></>;
 }
 
 function NetworkForm({busy,onCreate,onExpired}:{busy:boolean;onExpired:()=>void;onCreate:(b:Parameters<typeof api.createDiscoveryNetwork>[1])=>void}){

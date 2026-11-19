@@ -325,3 +325,5 @@ dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;f
 .week-grid .ev{display:flex;flex-direction:column;text-align:left;border:0;border-left:3px solid var(--blue);background:#F3F5F9;padding:3px 6px;font:inherit;font-size:12px;cursor:pointer;min-width:0}
 .week-grid .ev span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.week-grid .ev.risk-medium{border-left-color:var(--warn)}.week-grid .ev.risk-high{border-left-color:var(--magenta)}
 @media(max-width:800px){.week-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.warehouse>.table-panel,.warehouse>.stack,.warehouse>section:not(.panel),.warehouse>div:not(.count-strip):not(.page-tabs):not(.systems-grid){margin-top:16px}
+.discovery>.stack{margin-top:16px}

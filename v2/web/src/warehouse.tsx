@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import {PageTabs,Split,Strip} from './ui';
 import {createPortal} from 'react-dom';
 import {api,ApiError,UserError,errorMessage,type Subject,type WLocation,type WItem,type WUnit,type WStock,type WMovement,type WOperation,type WReservation,type WInventory,type WInventoryDetail} from './api';
 
@@ -15,13 +16,18 @@ type Ref={locations:WLocation[];items:WItem[];subjects:Subject[]};
 export function WarehouseView({csrf,canWrite,isAdmin,onOpenAsset,onExpired}:{csrf:string;canWrite:boolean;isAdmin:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
  const [tab,setTab]=useState<Tab>('units'),[ref,setRef]=useState<Ref|null>(null),[error,setError]=useState<unknown>(null),[act,setAct]=useState<WMovement|null>(null),[version,setVersion]=useState(0);
  const fail=(e:unknown)=>{setError(e);if(e instanceof ApiError&&e.status===401)onExpired()};
+ const [all,setAll]=useState<WUnit[]|null>(null),[unitState,setUnitState]=useState('');
+ useEffect(()=>{api.wUnits({}).then(p=>setAll(p.items)).catch(fail)},[version]);
  useEffect(()=>{Promise.all([api.wLocations(),api.wItems(),api.subjects()]).then(([l,i,s])=>setRef({locations:l.items,items:i.items,subjects:s.items})).catch(fail)},[version]);
  if(!ref)return error?<div className="error" role="alert">{errorMessage(error)}</div>:<p className="muted">Загрузка…</p>;
  const openAct=(id:string)=>api.wMovement(id).then(setAct).catch(fail);
- return <div className="stack warehouse">
+ // C53.07 (макет «Склад»): вкладки раздела, сводка экземпляров по состояниям; на «Экземплярах» справа — операция.
+ const tabs=([['units','Экземпляры'],['stock','Остатки'],['reservations','Резервы'],['inventory','Инвентаризация'],['operation','Операция'],['journal','Журнал и акты'],['catalog','Справочники']] as [Tab,string][]).filter(([t])=>t!=='operation'||canWrite);
+ return <div className="warehouse">
+  <PageTabs label="Разделы склада" tabs={tabs} value={tab} onChange={setTab}/>
+  {tab==='units'?<Strip label="Сводка склада" items={[{key:'all',n:all?all.length:null,label:'экземпляров',active:!unitState,onClick:()=>setUnitState('')},...(Object.keys(stateName) as WUnit['state'][]).filter(k=>k!=='written_off').map(k=>({key:k,n:all?all.filter(u=>u.state===k).length:null,label:stateName[k][0],tone:(k==='in_repair'?'amber':undefined) as 'amber'|undefined,active:unitState===k,onClick:()=>setUnitState(k)}))]}/>:null}
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
-  <div className="tabs" role="tablist">{([['units','Экземпляры'],['stock','Остатки'],['reservations','Резервы'],['inventory','Инвентаризация'],['operation','Операция'],['journal','Журнал и акты'],['catalog','Справочники']] as [Tab,string][]).filter(([t])=>t!=='operation'||canWrite).map(([t,n])=><button key={t} role="tab" aria-selected={tab===t} className={tab===t?'active':''} onClick={()=>setTab(t)}>{n}</button>)}</div>
-  {tab==='units'?<Units ref_={ref} onOpenAsset={onOpenAsset} onFail={fail}/>:tab==='stock'?<Stock ref_={ref} onFail={fail}/>:tab==='reservations'?<Reservations ref_={ref} csrf={csrf} canWrite={canWrite} onFail={fail}/>:tab==='inventory'?<InventoryTab ref_={ref} csrf={csrf} canWrite={canWrite} isAdmin={isAdmin} onAct={id=>void openAct(id)} onFail={fail}/>:tab==='operation'?<OperationForm ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onDone={m=>{setAct(m);setVersion(v=>v+1)}}/>:tab==='journal'?<Journal ref_={ref} csrf={csrf} canWrite={canWrite} onOpen={id=>void openAct(id)} onReversed={m=>setAct(m)} onFail={fail}/>:<Catalog ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onChanged={()=>setVersion(v=>v+1)}/>}
+  {tab==='units'?<Split wide={canWrite} side={canWrite?<><div><h2>Операция</h2><p className="sub">Приход, выдача, возврат, ремонт, списание — с актом</p></div><OperationForm ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onDone={m=>{setAct(m);setVersion(v=>v+1)}}/></>:undefined}><Units key={unitState+version} state0={unitState} ref_={ref} onOpenAsset={onOpenAsset} onFail={fail}/></Split>:tab==='stock'?<Stock ref_={ref} onFail={fail}/>:tab==='reservations'?<Reservations ref_={ref} csrf={csrf} canWrite={canWrite} onFail={fail}/>:tab==='inventory'?<InventoryTab ref_={ref} csrf={csrf} canWrite={canWrite} isAdmin={isAdmin} onAct={id=>void openAct(id)} onFail={fail}/>:tab==='operation'?<OperationForm ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onDone={m=>{setAct(m);setVersion(v=>v+1)}}/>:tab==='journal'?<Journal ref_={ref} csrf={csrf} canWrite={canWrite} onOpen={id=>void openAct(id)} onReversed={m=>setAct(m)} onFail={fail}/>:<Catalog ref_={ref} csrf={csrf} isAdmin={isAdmin} onFail={fail} onChanged={()=>setVersion(v=>v+1)}/>}
   {act?<ActView act={act} ref_={ref} onClose={()=>setAct(null)}/>:null}
  </div>;
 }
@@ -29,8 +35,8 @@ export function WarehouseView({csrf,canWrite,isAdmin,onOpenAsset,onExpired}:{csr
 const locName=(r:Ref,id:string|null)=>{if(!id)return '—';const l=r.locations.find(x=>x.location_id===id);if(!l)return id.slice(0,8);const p=l.parent_id?r.locations.find(x=>x.location_id===l.parent_id):null;return (p?p.name+' / ':'')+l.name};
 const subjName=(r:Ref,id:string|null)=>id?(r.subjects.find(s=>s.subject_id===id)?.name??id.slice(0,8)):'—';
 
-function Units({ref_:r,onOpenAsset,onFail}:{ref_:Ref;onOpenAsset:(uid:string)=>void;onFail:(e:unknown)=>void}){
- const [state,setState]=useState(''),[q,setQ]=useState(''),[holder,setHolder]=useState(''),[items,setItems]=useState<WUnit[]|null>(null);
+function Units({ref_:r,onOpenAsset,onFail,state0=''}:{ref_:Ref;onOpenAsset:(uid:string)=>void;onFail:(e:unknown)=>void;state0?:string}){
+ const [state,setState]=useState(state0),[q,setQ]=useState(''),[holder,setHolder]=useState(''),[items,setItems]=useState<WUnit[]|null>(null);
  useEffect(()=>{const t=setTimeout(()=>api.wUnits({state,q,holder}).then(p=>setItems(p.items)).catch(onFail),250);return()=>clearTimeout(t)},[state,q,holder]);
  // отчёт C45.02: текущая выборка в CSV (Excel открывает UTF-8 с BOM; разделитель «;»)
  function csv(){const cell=(v:string)=>'"'+v.replace(/"/g,'""')+'"';const rows=[['Модель','Серийный','Инв. №','Состояние','Где / у кого','Актив'],...(items??[]).map(u=>[u.item_name,u.serial,u.inventory_no??'',stateName[u.state][0],u.location_id?locName(r,u.location_id):u.holder_id?subjName(r,u.holder_id):u.installed_on?'на активе '+u.installed_on:'',u.asset_uid??''])];
