@@ -122,6 +122,9 @@ func (r *Registry) MergeAssets(ctx context.Context, id accessport.Identity, req 
 	if _, e = r.CMDB.RetargetAsset(ctx, tx, tenant, absorbed.UID, target.UID, actor); e != nil {
 		return out, e
 	}
+	if _, e = r.CMDB.RetargetBindings(ctx, tx, tenant, absorbed.UID, target.UID, actor); e != nil {
+		return out, e
+	}
 	// конфликты, возникшие, пока активы были раздельными, закрываются, ожидавшие наблюдения привязываются к целевому
 	// активу (проекция пересобирается ниже по всем активным связям)
 	settled, e := r.Assets.SettleRecords(ctx, tx, tenant, target.UID)
