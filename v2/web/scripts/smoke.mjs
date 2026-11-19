@@ -1,6 +1,6 @@
 import {readFileSync,writeFileSync} from 'node:fs';
 import {chromium,expect} from '@playwright/test';
-const config=JSON.parse(readFileSync(process.argv[2]));const browser=await chromium.launch({headless:true});const checks=[],errors=[],external=[];
+const config=JSON.parse(readFileSync(process.argv[2]));const browser=await chromium.launch({headless:true,executablePath:process.env.SURVEYSCAN_CHROMIUM||undefined});const checks=[],errors=[],external=[];
 try{
  const context=await browser.newContext({viewport:{width:1440,height:1000}});const page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{if(!r.url().startsWith(config.origin))external.push(new URL(r.url()).origin)});
  await page.goto(config.origin);await expect(page.getByRole('heading',{name:'Вход в систему'})).toBeVisible();await expect(page.getByRole('button',{name:'Войти в рабочее пространство'})).toBeVisible();checks.push('production static bundle renders with strict CSP and no Node/CDN');
@@ -26,6 +26,26 @@ try{
  await page.getByRole('button',{name:'Профиль',exact:true}).first().click();const profile=page.getByRole('region',{name:'Профиль источника'});await expect(profile).toBeVisible();await expect(profile).toContainText('Локальные настройки');await expect(profile).toContainText('Нет подтверждения');checks.push('source profile shows unmanaged/applied revision and separates configuration contact from successful inventory');await page.getByRole('button',{name:'Закрыть профиль'}).click();await expect(profile).toHaveCount(0);
  const sourceRow=page.locator('tbody tr').first();const sourceID=await sourceRow.locator('.mono').textContent();const published=await context.request.patch(config.origin+'/api/v1/sources/'+sourceID+'/profile',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token,'If-Match':'"profile:'+sourceID+':1"'},data:{heartbeat_seconds:30,inventory_seconds:900,jitter_percent:0,spool_limit_bytes:1048576}});if(published.status()!==200)throw new Error('real browser profile publication failed: HTTP '+published.status());await sourceRow.getByRole('button',{name:'Профиль',exact:true}).click();await expect(profile).toContainText('Центральный профиль');await expect(profile.locator('dd').nth(1)).toHaveText('2');await page.getByRole('button',{name:'Закрыть профиль'}).click();checks.push('real published central profile revision is visible in source UI without changing inventory freshness');
 
+ // C54.04: «Системы» — система (сервис C26), среда и компонент из Web, привязка хоста списком, пересчёт светофора,
+ // карточка компонента с хостом, правило, вкладки «Предложения» и «Вне систем», блок «Входит в системы» в карточке
+ const rsmHeaders={Origin:config.origin,'X-CSRF-Token':authSession.csrf_token};
+ const created=await context.request.post(config.origin+'/api/v1/services',{headers:rsmHeaders,data:{name:'CRM Web',criticality:'high'}});if(created.status()!==201)throw new Error('service create failed '+created.status());const crm=await created.json();
+ await page.setViewportSize({width:1440,height:1000});await page.getByRole('button',{name:/Системы/}).click();await expect(page.getByRole('heading',{name:'Системы и здоровье.'})).toBeVisible();
+ await page.getByRole('button',{name:'Пересчитать сейчас'}).click();await expect(page.getByRole('status').filter({hasText:'Пересчитано'})).toBeVisible();
+ await page.getByRole('button',{name:'CRM Web'}).click();await expect(page.getByText('Сред нет')).toBeVisible();
+ await page.getByLabel('Название').fill('Прод');await page.getByRole('button',{name:'Добавить среду'}).click();await expect(page.locator('.rsm-env h3')).toContainText('Прод');
+ await page.getByRole('button',{name:'+ Компонент'}).click();await page.getByLabel('Компонент').fill('Сервер приложений');await page.getByLabel('критичный').check();await page.getByLabel(/Эталон/).fill('{"os":"Linux"}');await page.getByRole('button',{name:'Добавить',exact:true}).click();
+ await page.getByRole('button',{name:'Сервер приложений'}).click();await expect(page.getByText('Хостов нет')).toBeVisible();
+ await page.getByLabel(/Привязать хосты списком/).fill(config.asset);await page.getByRole('button',{name:/Привязать 1/}).click();await expect(page.getByRole('status').filter({hasText:'Привязано: 1'})).toBeVisible();
+ await page.getByLabel('Образец').fill('web-smoke-*');await page.getByRole('button',{name:'Добавить правило'}).click();await expect(page.locator('td.mono').filter({hasText:'web-smoke-*'})).toBeVisible();
+ await page.getByRole('button',{name:'Пересчитать сейчас'}).click();await expect(page.getByRole('status').filter({hasText:'Пересчитано'})).toBeVisible();
+ await page.getByRole('tab',{name:/Системы/}).click();await page.getByRole('button',{name:'CRM Web'}).click();await page.getByRole('button',{name:'Сервер приложений'}).click();
+ await expect(page.locator('.rsm-card tbody tr').first()).toContainText(config.asset);await page.screenshot({path:'../.local/c54-rsm-component.png',fullPage:true});
+ await page.getByRole('tab',{name:/Системы/}).click();await expect(page.locator('tbody tr').filter({hasText:'CRM Web'})).toBeVisible();await page.screenshot({path:'../.local/c54-rsm-systems.png',fullPage:true});
+ await page.getByRole('tab',{name:/Предложения/}).click();await expect(page.getByText('Разбирать нечего')).toBeVisible();
+ await page.getByRole('tab',{name:/Вне систем/}).click();await expect(page.getByRole('heading',{name:/Хосты вне систем/})).toBeVisible();
+ const tree=await (await context.request.get(config.origin+'/api/v1/rsm/systems/'+crm.service_uid)).json();if(tree.environments[0]?.components[0]?.state?.hosts!==1)throw new Error('rsm tree state missing: '+JSON.stringify(tree));
+ checks.push('C54.04 systems: environment and component with baseline created from Web, host bound by list, rule added, state recomputed, component card shows the host, tabs proposals/unassigned');
  // C51: «Обследования сети» — вкладки, подсеть из боковой панели, запуск, результат настоящего collector
  await page.getByRole('button',{name:/Обследования сети/}).click();await expect(page.getByRole('heading',{name:'Обследования сети.'})).toBeVisible();
  await page.getByRole('button',{name:'+ Новая подсеть'}).click();let drawer=page.getByRole('dialog',{name:'Новая подсеть'});

@@ -76,3 +76,42 @@ input::placeholder,textarea::placeholder{color:#b3bcb0;font-style:italic}
 .inline-form{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
 .inline-form input{padding:2px 6px}
 .asset-history summary{cursor:pointer}.asset-history summary h3{display:inline}
+/* C54.04 — РСМ: светофор и карточки */
+.rsm-dot{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;white-space:nowrap}
+.rsm-dot::before{content:"";width:10px;height:10px;border-radius:50%;flex:none;background:#98a2b0}
+.rsm-red::before{background:#d92d20}.rsm-yellow::before{background:#f0a800}.rsm-green::before{background:#12a150}.rsm-grey::before{background:#b4bcc7}
+.rsm-t-red{color:#d92d20}.rsm-t-yellow{color:#b07b00}.rsm-t-grey{color:#7a8594}
+.rsm-counts{white-space:nowrap}.rsm-reasons{display:block;color:#5d6875;max-width:520px}
+.rsm-summary{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:14px 18px}
+.rsm-summary>div:first-child{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}
+.rsm-actions{display:flex;gap:8px;flex-wrap:wrap}
+.rsm-directions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}
+.rsm-chip{display:inline-flex;align-items:center;gap:6px;border:1px solid #dfe3e8;border-radius:999px;padding:3px 10px;font-size:13px;background:#fff}
+.rsm-filters{display:flex;flex-wrap:wrap;gap:6px}
+.rsm-filter{display:inline-flex;align-items:center;gap:4px;border:1px solid #dfe3e8;border-radius:999px;padding:3px 10px;background:#fff;cursor:pointer;font:inherit;font-size:13px}
+.rsm-filter.active{border-color:#1f2a37;background:#1f2a37;color:#fff}
+.rsm-card h3{margin:18px 0 8px}
+.rsm-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:8px 0}
+.rsm-fields>div{display:flex;flex-direction:column;gap:4px}
+.rsm-env{border-top:1px solid #eef0f3;padding:10px 0}
+.rsm-env h3{display:flex;align-items:center;gap:8px;margin:6px 0}
+.rsm-inline{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;margin:12px 0}
+.rsm-inline label{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.rsm-inline textarea{min-width:min(520px,100%)}
+.rsm-check{flex-direction:row!important;align-items:center}
+.rsm-row-bad td{background:#fff4f2}
+.rsm-file{display:flex;gap:8px;align-items:center;margin:8px 0}
+.rsm-asset ul{margin:4px 0 0;padding-left:18px}
+@media (max-width:640px){.rsm-summary{padding:12px}.rsm-reasons{max-width:none}}
+.rsm-tabs{margin:16px 0}
+.rsm-summary{margin-bottom:0}
+.rsm-filter.active{border-color:#214d3b;background:#214d3b}
+.rsm-card>h3,.rsm-card>.rsm-inline,.rsm-card>.rsm-fields,.rsm-card>.rsm-env,.rsm-card>table,.rsm-card>p.muted,.table-panel>.rsm-inline,.table-panel>textarea,.table-panel>.rsm-actions,.table-panel>.rsm-file{margin-left:22px;margin-right:22px}
+.rsm-card>h3{font-size:13px;font-weight:600}
+.rsm-inline input,.rsm-inline select,.rsm-inline textarea,.rsm-fields input,.rsm-fields select,.table-panel>textarea{font-size:12px;border:1px solid #d9e1da;border-radius:5px;padding:7px 9px;background:#fff;color:#344b3e}
+.table-panel>textarea{display:block;width:calc(100% - 44px);margin-top:8px}
+.rsm-fields form{display:flex;gap:6px;flex-wrap:wrap}
+.rsm-env{padding:10px 0 4px}
+.rsm-env table{margin:4px 0}
+.rsm-summary .panel-note{border:0;padding:0;width:100%}
+.button.secondary{background:#f5f8f4}

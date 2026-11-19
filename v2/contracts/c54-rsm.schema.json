@@ -1,0 +1,1331 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:surveyscan:c54:rsm:1:0",
+ "title": "РСМ: направления, системы, среды, компоненты, привязки хостов, правила и состояние (C54, ADR decisions/C54-rsm.md)",
+ "$defs": {
+  "Reason": {
+   "type": "object",
+   "properties": {
+    "code": {
+     "type": "string",
+     "pattern": "^[A-Z][A-Z0-9_]{1,63}$"
+    },
+    "ref": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 64
+    },
+    "name": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 256
+    },
+    "count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "detail": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 1024
+    }
+   },
+   "required": [
+    "code"
+   ],
+   "additionalProperties": false
+  },
+  "NodeState": {
+   "type": "object",
+   "properties": {
+    "node_kind": {
+     "enum": [
+      "component",
+      "environment",
+      "system",
+      "direction",
+      "tenant"
+     ]
+    },
+    "node_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "color": {
+     "enum": [
+      "green",
+      "yellow",
+      "red",
+      "grey"
+     ]
+    },
+    "hosts": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "green": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "yellow": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "red": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "grey": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "unassigned": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "reasons": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Reason"
+     },
+     "maxItems": 64
+    },
+    "computed_at": {
+     "type": "string",
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "node_kind",
+    "node_id",
+    "color",
+    "hosts",
+    "green",
+    "yellow",
+    "red",
+    "grey",
+    "unassigned",
+    "reasons",
+    "computed_at"
+   ],
+   "additionalProperties": false
+  },
+  "HostState": {
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "color": {
+     "enum": [
+      "green",
+      "yellow",
+      "red",
+      "grey"
+     ]
+    },
+    "reasons": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Reason"
+     },
+     "maxItems": 256
+    },
+    "last_inventory_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    },
+    "computed_at": {
+     "type": "string",
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "asset_uid",
+    "color",
+    "reasons",
+    "last_inventory_at",
+    "computed_at"
+   ],
+   "additionalProperties": false
+  },
+  "Direction": {
+   "type": "object",
+   "properties": {
+    "direction_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "revision": {
+     "type": "string",
+     "pattern": "^[0-9]+$"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "retired_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "direction_uid",
+    "name",
+    "revision",
+    "created_at",
+    "retired_at"
+   ],
+   "additionalProperties": false
+  },
+  "DirectionCreated": {
+   "type": "object",
+   "properties": {
+    "direction_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "revision": {
+     "type": "string"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "retired_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "direction_uid",
+    "name",
+    "revision",
+    "created_at",
+    "retired_at"
+   ],
+   "additionalProperties": false
+  },
+  "DirectionList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Direction"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "Overview": {
+   "type": "object",
+   "properties": {
+    "tenant_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "directions": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Direction"
+     }
+    },
+    "proposals": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "tenant_id",
+    "state",
+    "directions",
+    "proposals"
+   ],
+   "additionalProperties": false
+  },
+  "System": {
+   "type": "object",
+   "properties": {
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "description": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "minLength": 0,
+     "maxLength": 4096
+    },
+    "criticality": {
+     "enum": [
+      "unknown",
+      "low",
+      "medium",
+      "high",
+      "critical"
+     ]
+    },
+    "revision": {
+     "type": "string",
+     "pattern": "^[0-9]+$"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "retired_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    },
+    "direction_uid": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    },
+    "business_owner": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "minLength": 0,
+     "maxLength": 512
+    },
+    "it_subject_id": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    },
+    "maintenance_window": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "minLength": 0,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "service_uid",
+    "name",
+    "description",
+    "criticality",
+    "revision",
+    "created_at",
+    "retired_at",
+    "direction_uid",
+    "business_owner",
+    "it_subject_id",
+    "maintenance_window"
+   ],
+   "additionalProperties": false
+  },
+  "SystemState": {
+   "type": "object",
+   "properties": {
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "criticality": {
+     "enum": [
+      "unknown",
+      "low",
+      "medium",
+      "high",
+      "critical"
+     ]
+    },
+    "direction_uid": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    },
+    "state": {
+     "$ref": "#/$defs/NodeState"
+    }
+   },
+   "required": [
+    "service_uid",
+    "name",
+    "criticality",
+    "direction_uid",
+    "state"
+   ],
+   "additionalProperties": false
+  },
+  "SystemPage": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/SystemState"
+     },
+     "maxItems": 500
+    },
+    "offset": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "next_offset": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0
+    }
+   },
+   "required": [
+    "items",
+    "offset",
+    "next_offset"
+   ],
+   "additionalProperties": false
+  },
+  "Environment": {
+   "type": "object",
+   "properties": {
+    "environment_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "kind": {
+     "enum": [
+      "prod",
+      "test",
+      "dev",
+      "stage",
+      "dr",
+      "other"
+     ]
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "revision": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "environment_id",
+    "service_uid",
+    "kind",
+    "name",
+    "revision"
+   ],
+   "additionalProperties": false
+  },
+  "Component": {
+   "type": "object",
+   "properties": {
+    "component_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "environment_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "critical": {
+     "type": "boolean"
+    },
+    "baseline": {
+     "type": "object"
+    },
+    "revision": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "component_id",
+    "environment_id",
+    "name",
+    "critical",
+    "baseline",
+    "revision"
+   ],
+   "additionalProperties": false
+  },
+  "ComponentNode": {
+   "type": "object",
+   "properties": {
+    "component_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "environment_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "critical": {
+     "type": "boolean"
+    },
+    "baseline": {
+     "type": "object"
+    },
+    "revision": {
+     "type": "string"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "component_id",
+    "environment_id",
+    "name",
+    "critical",
+    "baseline",
+    "revision",
+    "state"
+   ],
+   "additionalProperties": false
+  },
+  "EnvironmentNode": {
+   "type": "object",
+   "properties": {
+    "environment_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "kind": {
+     "enum": [
+      "prod",
+      "test",
+      "dev",
+      "stage",
+      "dr",
+      "other"
+     ]
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "revision": {
+     "type": "string"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "components": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ComponentNode"
+     }
+    }
+   },
+   "required": [
+    "environment_id",
+    "service_uid",
+    "kind",
+    "name",
+    "revision",
+    "state",
+    "components"
+   ],
+   "additionalProperties": false
+  },
+  "SystemDetail": {
+   "type": "object",
+   "properties": {
+    "system": {
+     "$ref": "#/$defs/System"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "environments": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/EnvironmentNode"
+     }
+    }
+   },
+   "required": [
+    "system",
+    "state",
+    "environments"
+   ],
+   "additionalProperties": false
+  },
+  "Rule": {
+   "type": "object",
+   "properties": {
+    "rule_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "component_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "kind": {
+     "enum": [
+      "subnet",
+      "hostname_glob",
+      "ad_ou",
+      "software",
+      "asset_class"
+     ]
+    },
+    "pattern": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 512
+    },
+    "mode": {
+     "enum": [
+      "propose",
+      "auto"
+     ]
+    },
+    "enabled": {
+     "type": "boolean"
+    },
+    "revision": {
+     "type": "string"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "retired_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "rule_id",
+    "component_id",
+    "kind",
+    "pattern",
+    "mode",
+    "enabled",
+    "revision",
+    "created_at",
+    "retired_at"
+   ],
+   "additionalProperties": false
+  },
+  "Binding": {
+   "type": "object",
+   "properties": {
+    "binding_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "component_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "status": {
+     "enum": [
+      "active",
+      "proposed",
+      "rejected"
+     ]
+    },
+    "is_primary": {
+     "type": "boolean"
+    },
+    "origin": {
+     "enum": [
+      "manual",
+      "import",
+      "rule"
+     ]
+    },
+    "rule_id": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    },
+    "valid_from": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "valid_to": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    },
+    "actor_ref": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "binding_id",
+    "component_id",
+    "asset_uid",
+    "status",
+    "is_primary",
+    "origin",
+    "rule_id",
+    "valid_from",
+    "valid_to",
+    "actor_ref"
+   ],
+   "additionalProperties": false
+  },
+  "HostRow": {
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 256
+    },
+    "color": {
+     "enum": [
+      "green",
+      "yellow",
+      "red",
+      "grey"
+     ]
+    },
+    "reasons": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Reason"
+     },
+     "maxItems": 256
+    },
+    "last_inventory_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    },
+    "binding_id": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 64
+    },
+    "is_primary": {
+     "type": "boolean"
+    },
+    "origin": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 16
+    }
+   },
+   "required": [
+    "asset_uid",
+    "name",
+    "color",
+    "reasons",
+    "last_inventory_at",
+    "binding_id",
+    "is_primary",
+    "origin"
+   ],
+   "additionalProperties": false
+  },
+  "ComponentDetail": {
+   "type": "object",
+   "properties": {
+    "component": {
+     "$ref": "#/$defs/Component"
+    },
+    "environment": {
+     "$ref": "#/$defs/Environment"
+    },
+    "system_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "rules": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Rule"
+     }
+    },
+    "hosts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/HostRow"
+     },
+     "maxItems": 500
+    },
+    "offset": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "next_offset": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0
+    }
+   },
+   "required": [
+    "component",
+    "environment",
+    "system_name",
+    "state",
+    "rules",
+    "hosts",
+    "offset",
+    "next_offset"
+   ],
+   "additionalProperties": false
+  },
+  "BindingPath": {
+   "type": "object",
+   "properties": {
+    "binding": {
+     "$ref": "#/$defs/Binding"
+    },
+    "component_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "critical": {
+     "type": "boolean"
+    },
+    "environment_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "environment_kind": {
+     "enum": [
+      "prod",
+      "test",
+      "dev",
+      "stage",
+      "dr",
+      "other"
+     ]
+    },
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "system_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "binding",
+    "component_name",
+    "critical",
+    "environment_name",
+    "environment_kind",
+    "service_uid",
+    "system_name"
+   ],
+   "additionalProperties": false
+  },
+  "Proposal": {
+   "type": "object",
+   "properties": {
+    "binding": {
+     "$ref": "#/$defs/Binding"
+    },
+    "component_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "critical": {
+     "type": "boolean"
+    },
+    "environment_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "environment_kind": {
+     "enum": [
+      "prod",
+      "test",
+      "dev",
+      "stage",
+      "dr",
+      "other"
+     ]
+    },
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "system_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "asset_name": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "binding",
+    "component_name",
+    "critical",
+    "environment_name",
+    "environment_kind",
+    "service_uid",
+    "system_name",
+    "asset_name"
+   ],
+   "additionalProperties": false
+  },
+  "ProposalList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Proposal"
+     },
+     "maxItems": 500
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "AssetRef": {
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "asset_uid",
+    "name"
+   ],
+   "additionalProperties": false
+  },
+  "UnassignedPage": {
+   "type": "object",
+   "properties": {
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/AssetRef"
+     },
+     "maxItems": 500
+    },
+    "next_cursor": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    }
+   },
+   "required": [
+    "total",
+    "items",
+    "next_cursor"
+   ],
+   "additionalProperties": false
+  },
+  "AssetRSM": {
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/HostState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "bindings": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/BindingPath"
+     },
+     "maxItems": 200
+    }
+   },
+   "required": [
+    "asset_uid",
+    "state",
+    "bindings"
+   ],
+   "additionalProperties": false
+  },
+  "BindResult": {
+   "type": "object",
+   "properties": {
+    "bound": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "existing": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "missing": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "bound",
+    "existing",
+    "missing"
+   ],
+   "additionalProperties": false
+  },
+  "RuleRunResult": {
+   "type": "object",
+   "properties": {
+    "assets": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "bound": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "proposed": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "conflicts": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "assets",
+    "bound",
+    "proposed",
+    "conflicts"
+   ],
+   "additionalProperties": false
+  },
+  "ImportRow": {
+   "type": "object",
+   "properties": {
+    "line": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "system": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 1024
+    },
+    "environment": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 1024
+    },
+    "component": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 1024
+    },
+    "host": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 1024
+    },
+    "status": {
+     "enum": [
+      "bound",
+      "existing",
+      "will_bind",
+      "system_not_found",
+      "host_not_found",
+      "host_ambiguous",
+      "invalid"
+     ]
+    },
+    "asset_uids": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "format": "uuid"
+     }
+    },
+    "creates": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "environment",
+       "component"
+      ]
+     }
+    },
+    "detail": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "line",
+    "system",
+    "environment",
+    "component",
+    "host",
+    "status",
+    "asset_uids",
+    "creates"
+   ],
+   "additionalProperties": false
+  },
+  "ImportResult": {
+   "type": "object",
+   "properties": {
+    "dry_run": {
+     "type": "boolean"
+    },
+    "format": {
+     "const": "surveyscan-rsm-bindings;1"
+    },
+    "counts": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
+    "rows": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ImportRow"
+     },
+     "maxItems": 10000
+    }
+   },
+   "required": [
+    "dry_run",
+    "format",
+    "counts",
+    "rows"
+   ],
+   "additionalProperties": false
+  },
+  "StateResult": {
+   "type": "object",
+   "properties": {
+    "hosts": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "nodes": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "skipped": {
+     "type": "boolean"
+    },
+    "duration_ns": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "phases_ns": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer",
+      "minimum": 0
+     }
+    }
+   },
+   "required": [
+    "hosts",
+    "nodes",
+    "skipped",
+    "duration_ns",
+    "phases_ns"
+   ],
+   "additionalProperties": false
+  },
+  "Done": {
+   "type": "object",
+   "properties": {
+    "binding_id": {
+     "type": "string",
+     "format": "uuid"
+    }
+   },
+   "required": [
+    "binding_id"
+   ],
+   "additionalProperties": false
+  },
+  "RuleRetired": {
+   "type": "object",
+   "properties": {
+    "rule_id": {
+     "type": "string",
+     "format": "uuid"
+    }
+   },
+   "required": [
+    "rule_id"
+   ],
+   "additionalProperties": false
+  }
+ }
+}

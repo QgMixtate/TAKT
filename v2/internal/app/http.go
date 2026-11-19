@@ -96,6 +96,9 @@ func NewHTTP(auth *access.HTTP, health http.Handler, registry ...*Registry) (htt
 		for route, r := range registry[0].ownershipHandlers() {
 			mux.Handle(route, auth.Wrap(r.permission, false, r.handler))
 		}
+		for route, d := range registry[0].rsmHandlers() { // C54: РСМ — отдельный модуль (лицензирование C56)
+			mux.Handle(route, auth.Wrap(d.permission, false, d.handler))
+		}
 		for route, handler := range registry[0].cmdbHandlers() {
 			permission := "assets:write"
 			if route[:4] == "GET " {

@@ -37,6 +37,29 @@ export type ComponentList={tenant_id:string;asset_uid:string;items:Component[]};
 export type Product={name:string;publisher:string|null;installations:number;assets:number;versions:string[];asset_uids:string[]};
 export type ProductList={tenant_id:string;query:string;items:Product[]};
 export type CIService={service_uid:string;name:string;description:string|null;criticality:'unknown'|'low'|'medium'|'high'|'critical';revision:string;created_at:string;retired_at:string|null};
+
+// C54 — РСМ (contracts/c54-rsm.schema.json)
+export type RSMColor='green'|'yellow'|'red'|'grey';
+export type RSMReason={code:string;ref?:string;name?:string;count?:number;detail?:string};
+export type RSMNodeState={node_kind:string;node_id:string;color:RSMColor;hosts:number;green:number;yellow:number;red:number;grey:number;unassigned:number;reasons:RSMReason[];computed_at:string};
+export type RSMDirection={direction_uid:string;name:string;revision:string;created_at:string;retired_at:string|null;state?:RSMNodeState|null};
+export type RSMOverview={tenant_id:string;state:RSMNodeState|null;directions:RSMDirection[];proposals:number};
+export type RSMSystemState={service_uid:string;name:string;criticality:CIService['criticality'];direction_uid:string|null;state:RSMNodeState};
+export type RSMSystemPage={items:RSMSystemState[];offset:number;next_offset:number|null};
+export type RSMSystem=CIService&{direction_uid:string|null;business_owner:string|null;it_subject_id:string|null;maintenance_window:string|null};
+export type RSMEnvKind='prod'|'test'|'dev'|'stage'|'dr'|'other';
+export type RSMEnvironment={environment_id:string;service_uid:string;kind:RSMEnvKind;name:string;revision:string};
+export type RSMComponent={component_id:string;environment_id:string;name:string;critical:boolean;baseline:Record<string,unknown>;revision:string};
+export type RSMSystemDetail={system:RSMSystem;state:RSMNodeState|null;environments:(RSMEnvironment&{state:RSMNodeState|null;components:(RSMComponent&{state:RSMNodeState|null})[]})[]};
+export type RSMRule={rule_id:string;component_id:string;kind:'subnet'|'hostname_glob'|'ad_ou'|'software'|'asset_class';pattern:string;mode:'propose'|'auto';enabled:boolean;revision:string;created_at:string;retired_at:string|null};
+export type RSMBinding={binding_id:string;component_id:string;asset_uid:string;status:'active'|'proposed'|'rejected';is_primary:boolean;origin:'manual'|'import'|'rule';rule_id:string|null;valid_from:string;valid_to:string|null;actor_ref:string};
+export type RSMHostRow={asset_uid:string;name:string;color:RSMColor;reasons:RSMReason[];last_inventory_at:string|null;binding_id:string;is_primary:boolean;origin:string};
+export type RSMComponentDetail={component:RSMComponent;environment:RSMEnvironment;system_name:string;state:RSMNodeState|null;rules:RSMRule[];hosts:RSMHostRow[];offset:number;next_offset:number|null};
+export type RSMBindingPath={binding:RSMBinding;component_name:string;critical:boolean;environment_name:string;environment_kind:RSMEnvKind;service_uid:string;system_name:string};
+export type RSMProposal=RSMBindingPath&{asset_name:string};
+export type RSMUnassignedPage={total:number;items:{asset_uid:string;name:string}[];next_cursor:string|null};
+export type AssetRSM={asset_uid:string;state:{asset_uid:string;color:RSMColor;reasons:RSMReason[];last_inventory_at:string|null;computed_at:string}|null;bindings:RSMBindingPath[]};
+export type RSMImportResult={dry_run:boolean;format:string;counts:Record<string,number>;rows:{line:number;system:string;environment:string;component:string;host:string;status:string;asset_uids:string[];creates:string[];detail?:string}[]};
 export type ServicePage={tenant_id:string;items:CIService[];next_cursor:string|null};
 export type ServiceDetail=CIService&{tenant_id:string;relations:Relation[]};
 export type RoleName='accountable'|'business_owner'|'technical'|'custodian';
@@ -189,6 +212,27 @@ export const api={
  software:(uid:string,filter:string,cursor:string|null)=>call<SoftwarePage>('/api/v1/assets/'+encodeURIComponent(uid)+'/software?limit=100'+(filter?'&filter='+encodeURIComponent(filter):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),'SoftwarePage'),
  components:(uid:string)=>call<ComponentList>('/api/v1/assets/'+encodeURIComponent(uid)+'/components','ComponentList'),
  products:(q:string)=>call<ProductList>('/api/v1/software?q='+encodeURIComponent(q),'ProductList'),
+ rsmOverview:()=>call<RSMOverview>('/api/v1/rsm/overview','RSMOverview'),
+ rsmSystems:(color:string,offset:number)=>call<RSMSystemPage>('/api/v1/rsm/systems?limit=100&offset='+offset+(color?'&color='+color:''),'RSMSystemPage'),
+ rsmSystem:(uid:string)=>call<RSMSystemDetail>('/api/v1/rsm/systems/'+encodeURIComponent(uid),'RSMSystemDetail'),
+ rsmPatchSystem:(uid:string,csrf:string,body:{revision:string;direction_uid?:string;business_owner?:string;maintenance_window?:string})=>call<RSMSystem>('/api/v1/rsm/systems/'+encodeURIComponent(uid),'RSMSystem',{method:'PATCH',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ rsmCreateDirection:(csrf:string,name:string)=>call<RSMDirection>('/api/v1/rsm/directions','RSMDirectionCreated',{method:'POST',body:JSON.stringify({name}),headers:{'X-CSRF-Token':csrf}}),
+ rsmCreateEnvironment:(uid:string,csrf:string,body:{kind:RSMEnvKind;name:string})=>call<RSMEnvironment>('/api/v1/rsm/systems/'+encodeURIComponent(uid)+'/environments','RSMEnvironment',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ rsmCreateComponent:(env:string,csrf:string,body:{name:string;critical:boolean;baseline?:Record<string,unknown>})=>call<RSMComponent>('/api/v1/rsm/environments/'+encodeURIComponent(env)+'/components','RSMComponent',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ rsmComponent:(id:string,offset:number)=>call<RSMComponentDetail>('/api/v1/rsm/components/'+encodeURIComponent(id)+'?limit=100&offset='+offset,'RSMComponentDetail'),
+ rsmBind:(id:string,csrf:string,asset_uids:string[])=>call<{bound:number;existing:number;missing:number}>('/api/v1/rsm/components/'+encodeURIComponent(id)+'/bindings','RSMBindResult',{method:'POST',body:JSON.stringify({asset_uids}),headers:{'X-CSRF-Token':csrf}}),
+ rsmUnbind:(id:string,csrf:string)=>call<{binding_id:string}>('/api/v1/rsm/bindings/'+encodeURIComponent(id)+'/unbind','RSMDone',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
+ rsmPrimary:(id:string,csrf:string)=>call<RSMBinding>('/api/v1/rsm/bindings/'+encodeURIComponent(id)+'/primary','RSMBinding',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
+ rsmCreateRule:(id:string,csrf:string,body:{kind:string;pattern:string;mode:string})=>call<RSMRule>('/api/v1/rsm/components/'+encodeURIComponent(id)+'/rules','RSMRule',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
+ rsmRetireRule:(id:string,csrf:string)=>call<{rule_id:string}>('/api/v1/rsm/rules/'+encodeURIComponent(id)+'/retire','RSMRuleRetired',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
+ rsmApplyRules:(csrf:string)=>call<{assets:number;bound:number;proposed:number;conflicts:number}>('/api/v1/rsm/rules/apply','RSMRuleRunResult',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf},signal:AbortSignal.timeout(600000)}),
+ rsmProposals:()=>call<{items:RSMProposal[]}>('/api/v1/rsm/proposals','RSMProposalList'),
+ rsmConfirm:(id:string,csrf:string)=>call<RSMBinding>('/api/v1/rsm/proposals/'+encodeURIComponent(id)+'/confirm','RSMBinding',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
+ rsmReject:(id:string,csrf:string)=>call<{binding_id:string}>('/api/v1/rsm/proposals/'+encodeURIComponent(id)+'/reject','RSMDone',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
+ rsmUnassigned:(cursor:string|null)=>call<RSMUnassignedPage>('/api/v1/rsm/unassigned?limit=100'+(cursor?'&cursor='+encodeURIComponent(cursor):''),'RSMUnassignedPage'),
+ assetRSM:(uid:string)=>call<AssetRSM>('/api/v1/assets/'+encodeURIComponent(uid)+'/rsm','RSMAssetRSM'),
+ rsmRecompute:(csrf:string)=>call<{hosts:number;nodes:number;skipped:boolean}>('/api/v1/rsm/recompute','RSMStateResult',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf},signal:AbortSignal.timeout(300000)}),
+ rsmImport:(csrf:string,text:string,dry:boolean)=>call<RSMImportResult>('/api/v1/rsm/import.csv?dry_run='+dry,'RSMImportResult',{method:'POST',body:text,headers:{'X-CSRF-Token':csrf,'Content-Type':'text/csv; charset=utf-8'},signal:AbortSignal.timeout(300000)}),
  services:(cursor:string|null=null)=>call<ServicePage>('/api/v1/services?limit=50'+(cursor?'&cursor='+encodeURIComponent(cursor):''),'ServicePage'),
  service:(uid:string)=>call<ServiceDetail>('/api/v1/services/'+encodeURIComponent(uid),'ServiceDetail'),
  createService:(csrf:string,body:{name:string;description?:string;criticality?:string})=>call<ServiceDetail>('/api/v1/services','ServiceDetail',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),

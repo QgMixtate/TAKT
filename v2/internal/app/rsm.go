@@ -459,6 +459,9 @@ func (r *Registry) ImportRSMCSV(ctx context.Context, id accessport.Identity, raw
 			row.Detail = "маска даёт больше 10 000 хостов"
 		default:
 			row.Assets, row.Creates = uids, creates
+			if row.Creates == nil {
+				row.Creates = []string{}
+			}
 			row.Status = "existing"
 			for _, uid := range uids {
 				exists := false
