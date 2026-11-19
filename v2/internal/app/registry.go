@@ -210,6 +210,9 @@ func (r *Registry) IngestAuthorized(ctx context.Context, tenant, source string, 
 	if e = tx.Commit(ctx); e != nil {
 		return result, e
 	}
+	if result.AssetID != nil {
+		r.applyRSMRulesAfterIngest(ctx, tenant, *result.AssetID) // C54.02: правила автопривязки к хосту
+	}
 	return result, nil
 }
 func (r *Registry) readAsset(ctx context.Context, tx pgx.Tx, tenant, uid string) (contracts.Asset, error) {

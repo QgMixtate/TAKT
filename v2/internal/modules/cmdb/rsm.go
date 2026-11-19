@@ -235,7 +235,14 @@ func scanBinding(r pgx.Row) (Binding, error) {
 // Bind привязывает хост к компоненту. Первая действующая привязка хоста становится основной; primary=true переносит
 // «основную» на эту привязку. Повторная привязка той же пары — Conflict. Хост может входить в несколько компонентов.
 func (s Store) Bind(ctx context.Context, tx pgx.Tx, tenant, actor, component, asset, origin string, primary bool) (Binding, error) {
-	if !identifier.Valid(component) || !identifier.Valid(asset) || (origin != "manual" && origin != "import") {
+	if origin != "manual" && origin != "import" {
+		return Binding{}, domain.Invalid
+	}
+	return s.bind(ctx, tx, tenant, actor, component, asset, origin, nil, primary)
+}
+
+func (s Store) bind(ctx context.Context, tx pgx.Tx, tenant, actor, component, asset, origin string, rule *string, primary bool) (Binding, error) {
+	if !identifier.Valid(component) || !identifier.Valid(asset) {
 		return Binding{}, domain.Invalid
 	}
 	var alive bool
@@ -256,8 +263,8 @@ func (s Store) Bind(ctx context.Context, tx pgx.Tx, tenant, actor, component, as
 		}
 	}
 	id := identifier.New()
-	if _, e := tx.Exec(ctx, "INSERT INTO cmdb.bindings(tenant_id,binding_id,component_id,asset_uid,status,is_primary,origin,actor_ref) VALUES($1,$2,$3,$4,'active',$5,$6,$7)",
-		tenant, id, component, asset, primary || open == 0, origin, actor); e != nil {
+	if _, e := tx.Exec(ctx, "INSERT INTO cmdb.bindings(tenant_id,binding_id,component_id,asset_uid,status,is_primary,origin,rule_id,actor_ref) VALUES($1,$2,$3,$4,'active',$5,$6,$7,$8)",
+		tenant, id, component, asset, primary || open == 0, origin, rule, actor); e != nil {
 		return Binding{}, mapWrite(e)
 	}
 	if e := s.change(ctx, tx, tenant, "binding", id, "created", actor, map[string]any{"component_id": component, "asset_uid": asset, "origin": origin, "primary": primary || open == 0}); e != nil {
