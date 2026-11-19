@@ -70,11 +70,11 @@ function nodeDevice(n:TopologyNode):DeviceType|'subnet'|'gateway'{
  return n.router?'router':'other';
 }
 
-export function TopologyView({csrf,canWrite,onOpenAsset,onExpired}:{csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
+export function TopologyView({csrf,canWrite,onOpenAsset,onExpired,focus=''}:{csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onExpired:()=>void;focus?:string}){
  const [data,setData]=useState<Topology|null>(null),[error,setError]=useState<unknown>(null),[loading,setLoading]=useState(true),[refresh,setRefresh]=useState(0);
  const [doc,setDoc]=useState<MapDocument>(emptyDoc()),[revision,setRevision]=useState('0'),[savedAt,setSavedAt]=useState<string|null>(null),[dirty,setDirty]=useState(false),[saving,setSaving]=useState(false),[notice,setNotice]=useState<string|null>(null);
  const [edit,setEdit]=useState(false),[linking,setLinking]=useState<string|null|false>(false),[linkKind,setLinkKind]=useState<LinkKind>('copper'),[showHidden,setShowHidden]=useState(false);
- const [selected,setSelected]=useState<Selection>(null),[search,setSearch]=useState(''),[view,setView]=useState({x:0,y:0,k:1}),[pointer,setPointer]=useState<Point|null>(null),[animating,setAnimating]=useState(false);
+ const [selected,setSelected]=useState<Selection>(null),[search,setSearch]=useState(focus),[view,setView]=useState({x:0,y:0,k:1}),[pointer,setPointer]=useState<Point|null>(null),[animating,setAnimating]=useState(false);
  const history=useRef<MapDocument[]>([]),drag=useRef<Drag|null>(null),svg=useRef<SVGSVGElement>(null),fitted=useRef(false),anim=useRef(0);
 
  useEffect(()=>{let active=true;setLoading(true);setError(null);

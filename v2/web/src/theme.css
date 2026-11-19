@@ -239,3 +239,19 @@ a.button{text-decoration:none;display:inline-flex}
 .systems-main.solo{margin:0 -24px;padding:16px 24px}
 @media(max-width:700px){.people-form{grid-template-columns:1fr}.toolbar-search{min-width:0;width:100%}.title-actions .button{font-size:13px;padding:6px 10px}}
 .sidebar nav button span{font-size:inherit;width:auto}.sidebar nav button .nav-count{font-size:13px}
+/* C53.03 — карточка хоста (макет 9): страница поверх раздела, под шапкой и справа от меню */
+.host-page{position:fixed;left:232px;top:56px;right:0;bottom:0;z-index:20;overflow:auto;background:var(--panel)}
+.host-page .sr-close{position:absolute;right:14px;top:10px;border:0;background:none;font-size:22px;color:var(--text-2);cursor:pointer;line-height:1}
+.host-page .card-pad{padding:16px 20px 20px;display:flex;flex-direction:column;gap:16px}
+.host-page .link.plain{font-size:inherit;padding:0}
+.src-list{list-style:none;margin:0;padding:4px 0}
+.src-list li{display:flex;align-items:center;gap:10px;padding:9px 16px;border-top:1px solid var(--line);font-size:14px}
+.src-list li:first-child{border-top:0}
+.src-badge{width:22px;height:22px;border-radius:5px;background:var(--panel);color:var(--blue);font-weight:700;font-size:12px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+.src-right{margin-left:auto;color:var(--text-2);white-space:nowrap}
+.problem-text{color:var(--magenta)}
+.why{list-style:none;margin:0;padding:6px 0}
+.why li{display:flex;align-items:center;gap:10px;padding:8px 16px;font-size:14px}
+.why li.hint{display:block;font-style:italic}
+.why-actions{padding:4px 16px 14px}
+@media(max-width:900px){.host-page{left:0}}

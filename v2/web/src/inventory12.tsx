@@ -48,9 +48,9 @@ function Section({asset,name,title,labels,onExpired}:{asset:string;name:string;t
  </details>;
 }
 
-export function Inventory12({asset,onExpired}:{asset:string;onExpired:()=>void}){
+export function Inventory12({asset,onExpired,only,bare}:{asset:string;onExpired:()=>void;only?:string[];bare?:boolean}){
  // подписи источников для статусов «по источникам»: способ сбора и начало идентификатора
  const [labels,setLabels]=useState<Record<string,string>>({});
  useEffect(()=>{let live=true;api.sources().then(p=>{if(live)setLabels(Object.fromEntries(p.items.map(x=>[x.source_id,(x.source_kind==='agent'?acquisitions[x.acquisition??'agent']??'Агент':x.source_kind==='portable'?'Portable':'Collector')+' '+x.source_id.slice(0,8)])))}).catch(()=>{});return ()=>{live=false}},[]);
- return <><h3>Инвентаризация · профиль 1.2</h3><p className="card-note">Данные агентов run12, SSH/WinRM-целей и portable-аудита. Откройте раздел, чтобы загрузить записи.</p><div className="inv12-list">{sections12.map(([name,title])=><Section key={name} asset={asset} name={name} title={title} labels={labels} onExpired={onExpired}/>)}</div></>;
+ return <>{bare?null:<><h3>Инвентаризация · профиль 1.2</h3><p className="card-note">Данные агентов run12, SSH/WinRM-целей и portable-аудита. Откройте раздел, чтобы загрузить записи.</p></>}<div className="inv12-list">{sections12.filter(([name])=>!only||only.includes(name)).map(([name,title])=><Section key={name} asset={asset} name={name} title={title} labels={labels} onExpired={onExpired}/>)}</div></>;
 }

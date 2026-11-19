@@ -122,6 +122,9 @@ ORDER BY CASE COALESCE(ns.color,'grey') WHEN 'red' THEN 0 WHEN 'yellow' THEN 1 W
 
 // rsmScopeHosts — хосты системы (все компоненты) или компонента.
 func rsmScopeHosts(ctx context.Context, tx pgx.Tx, tenant, kind, id string) ([]string, error) {
+	if kind == "asset" {
+		return []string{id}, nil
+	}
 	var q string
 	if kind == "system" {
 		q = `SELECT DISTINCT b.asset_uid::text FROM cmdb.bindings b JOIN cmdb.components c ON c.tenant_id=b.tenant_id AND c.component_id=b.component_id
@@ -152,6 +155,9 @@ func rsmScopeExists(ctx context.Context, tx pgx.Tx, tenant, kind, id string) err
 	q := "SELECT EXISTS(SELECT 1 FROM cmdb.services WHERE tenant_id=$1 AND service_uid=$2 AND retired_at IS NULL)"
 	if kind == "component" {
 		q = "SELECT EXISTS(SELECT 1 FROM cmdb.components WHERE tenant_id=$1 AND component_id=$2 AND retired_at IS NULL)"
+	}
+	if kind == "asset" {
+		q = "SELECT EXISTS(SELECT 1 FROM assets.assets WHERE tenant_id=$1 AND asset_uid=$2 AND merged_into IS NULL)"
 	}
 	var ok bool
 	if e := tx.QueryRow(ctx, q, tenant, id).Scan(&ok); e != nil {

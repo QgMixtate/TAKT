@@ -50,8 +50,8 @@ function SoftwarePanel({kind,id,onExpired}:{kind:'systems'|'components';id:strin
 }
 
 const ticketKind:Record<string,string>={incident:'Инцидент',request:'Запрос',change:'Изменение',problem:'Проблема'};
-function TicketsPanel({kind,id,onCreate,onExpired}:{kind:'systems'|'components';id:string;onCreate?:()=>void;onExpired:()=>void}){
- const [d,error]=useLive<RSMTicketList>(()=>api.rsmTickets(kind,id),[kind,id],onExpired);
+export function TicketsPanel({kind,id,onCreate,onExpired}:{kind:'systems'|'components'|'assets';id:string;onCreate?:()=>void;onExpired:()=>void}){
+ const [d,error]=useLive<RSMTicketList>(()=>kind==='assets'?api.assetTickets(id):api.rsmTickets(kind,id),[kind,id],onExpired);
  return <section className="panel wide"><header><h3>Обращения{d?' · '+fmt(d.items.length):''}</h3>{onCreate?<button className="button small right" onClick={onCreate}>Создать обращение</button>:null}</header>
   <Err e={error}/>{!d?<p className="muted pad">Загрузка…</p>:d.items.length===0?<p className="muted pad">Обращений нет. Обращения, связанные с системой или её хостами, появятся здесь.</p>:
   <table className="panel-table"><thead><tr><th>Номер</th><th>Вид</th><th>Тема</th><th>Состояние</th><th>Создано</th></tr></thead><tbody>{d.items.map(t=><tr key={t.ticket_id} className={t.open?'':'muted'}><td className="mono-link">{t.number}</td><td>{ticketKind[t.kind]}</td><td>{t.title}</td><td>{t.open?<span className="pill pill-warn">{t.state}</span>:<span className="pill">{t.state}</span>}</td><td>{when(t.created_at)}</td></tr>)}</tbody></table>}
@@ -59,7 +59,7 @@ function TicketsPanel({kind,id,onCreate,onExpired}:{kind:'systems'|'components';
 }
 
 // «Создать обращение» — обращение ITSM со связью с системой (сервис) или активом.
-function TicketDialog({csrf,title,serviceUid,assetUid,onClose,onCreated,onExpired}:{csrf:string;title:string;serviceUid?:string;assetUid?:string;onClose:()=>void;onCreated:(number:string)=>void;onExpired:()=>void}){
+export function TicketDialog({csrf,title,serviceUid,assetUid,onClose,onCreated,onExpired}:{csrf:string;title:string;serviceUid?:string;assetUid?:string;onClose:()=>void;onCreated:(number:string)=>void;onExpired:()=>void}){
  const [kind,setKind]=useState<TicketKind>('incident'),[t,setT]=useState(title),[desc,setDesc]=useState(''),[impact,setImpact]=useState(2),[urgency,setUrgency]=useState(2),[busy,setBusy]=useState(false),[error,setError]=useState<unknown>(null);
  async function submit(e:React.FormEvent){e.preventDefault();setBusy(true);setError(null);try{const d=await api.createTicket(csrf,{kind,title:t.trim(),description:desc,impact,urgency,service_uid:serviceUid,asset_uid:assetUid});onCreated(d.number)}catch(x){setError(x);if(x instanceof ApiError&&x.status===401)onExpired()}finally{setBusy(false)}}
  return <div className="modal-shade" role="presentation" onClick={onClose}><form className="modal" role="dialog" aria-label="Создать обращение" onClick={e=>e.stopPropagation()} onSubmit={e=>void submit(e)}>

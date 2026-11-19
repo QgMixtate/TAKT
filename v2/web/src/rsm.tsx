@@ -30,10 +30,10 @@ function useAct(onExpired:()=>void):[boolean,unknown,(fn:()=>Promise<unknown>,af
 }
 const Err=({e}:{e:unknown})=>e?<div className="error" role="alert">{errorMessage(e)}</div>:null;
 
-type Mode={kind:'components'}|{kind:'list'}|{kind:'system';uid:string}|{kind:'component';id:string;from?:string}|{kind:'proposals'}|{kind:'unassigned'}|{kind:'import'};
-export function RSMView({start='list',csrf,canWrite,onOpenAsset,onNavigate,onCrumbs,onExpired}:{start?:'list'|'components';csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onNavigate:(view:string)=>void;onCrumbs:(c:string[])=>void;onExpired:()=>void}){
+export type Mode={kind:'components'}|{kind:'list'}|{kind:'system';uid:string}|{kind:'component';id:string;from?:string}|{kind:'proposals'}|{kind:'unassigned'}|{kind:'import'};
+export function RSMView({start='list',open,csrf,canWrite,onOpenAsset,onNavigate,onCrumbs,onExpired}:{start?:'list'|'components';open?:Mode;csrf:string;canWrite:boolean;onOpenAsset:(uid:string)=>void;onNavigate:(view:string)=>void;onCrumbs:(c:string[])=>void;onExpired:()=>void}){
  const home:Mode=start==='components'?{kind:'components'}:{kind:'list'};
- const [mode,setMode0]=useState<Mode>(home),[v,setV]=useState(0),[note,setNote]=useState(''),[dirName,setDirName]=useState('');
+ const [mode,setMode0]=useState<Mode>(open??home),[v,setV]=useState(0),[note,setNote]=useState(''),[dirName,setDirName]=useState('');
  const setMode=(m:Mode)=>{if(m.kind==='list'||m.kind==='components')onCrumbs([]);else if(m.kind==='proposals')onCrumbs(['Предложения правил']);else if(m.kind==='unassigned')onCrumbs(['Хосты вне систем']);else if(m.kind==='import')onCrumbs(['Импорт привязок']);setMode0(m)};
  const [overview,error]=useLoad<RSMOverview>(()=>api.rsmOverview(),[v],onExpired);
  useEffect(()=>{if(!note)return;const t=setTimeout(()=>setNote(''),6000);return()=>clearTimeout(t)},[note]);

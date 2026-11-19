@@ -308,6 +308,23 @@ func TestC54RSMHTTP(t *testing.T) {
 	get("/api/v1/rsm/components/"+comp.ID+"/software?q=samp", "SoftwarePage")
 	get("/api/v1/rsm/systems/"+service.UID+"/tickets", "TicketList")
 	get("/api/v1/rsm/components/"+comp.ID+"/changes", "ChangeList")
+	// карточка хоста (макет 9)
+	var ho struct {
+		Name     string `json:"name"`
+		IP       string `json:"ip"`
+		Sections []struct {
+			Name   string `json:"name"`
+			Status string `json:"status"`
+		} `json:"sections"`
+		Bindings []json.RawMessage `json:"bindings"`
+		Software int               `json:"software_count"`
+	}
+	_ = json.Unmarshal(get("/api/v1/assets/"+h2+"/overview", "HostOverview"), &ho)
+	if ho.Name != "crm-db-01" || len(ho.Sections) != 12 || ho.Sections[0].Name != "identity" || ho.Sections[0].Status == "unknown" || len(ho.Bindings) != 1 || ho.Software < 1 {
+		t.Fatalf("host overview: %+v", ho)
+	}
+	get("/api/v1/assets/"+h2+"/tickets", "TicketList")
+	send("POST", "/api/v1/assets/"+h2+"/collect", `{}`, 200, "CollectResult")
 	var coll struct {
 		Hosts int `json:"hosts"`
 	}
