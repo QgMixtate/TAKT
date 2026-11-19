@@ -164,8 +164,11 @@ func rsmLoad(t *testing.T, f *registryFixture) {
 	defer tx.Rollback(ctx)
 	steps := []string{
 		"ALTER TABLE assets.assets DISABLE TRIGGER USER",
+		"ALTER TABLE assets.asset_business_fields DISABLE TRIGGER USER",
 		"INSERT INTO assets.assets(tenant_id,asset_uid,site_id,scope_id) SELECT $1,gen_random_uuid(),'" + siteID + "','" + scopeID + "' FROM generate_series(1," + strconv.Itoa(n) + ")",
+		"INSERT INTO assets.asset_business_fields(tenant_id,asset_uid,display_name) SELECT tenant_id,asset_uid,'load-'||row_number() OVER (ORDER BY asset_uid) FROM assets.assets WHERE tenant_id=$1 ON CONFLICT DO NOTHING",
 		"ALTER TABLE assets.assets ENABLE TRIGGER USER",
+		"ALTER TABLE assets.asset_business_fields ENABLE TRIGGER USER",
 		"INSERT INTO cmdb.services(tenant_id,service_uid,name,criticality) SELECT $1,gen_random_uuid(),'Нагрузка '||i,(ARRAY['low','medium','high','critical'])[1+i%4] FROM generate_series(1," + strconv.Itoa(systems) + ") i",
 		"INSERT INTO cmdb.environments(tenant_id,environment_id,service_uid,kind,name) SELECT $1,gen_random_uuid(),service_uid,'prod','Прод' FROM cmdb.services WHERE tenant_id=$1 AND name LIKE 'Нагрузка %'",
 		"INSERT INTO cmdb.components(tenant_id,component_id,environment_id,name,critical) SELECT $1,gen_random_uuid(),environment_id,c.name,c.critical FROM cmdb.environments, (VALUES ('Приложение',true),('Веб',false)) c(name,critical) WHERE tenant_id=$1 AND service_uid IN (SELECT service_uid FROM cmdb.services WHERE tenant_id=$1 AND name LIKE 'Нагрузка %')",
@@ -202,6 +205,21 @@ JOIN c ON c.k=a.r%(SELECT m FROM m) WHERE a.r%20<>0`,
 		t.Fatal(err)
 	}
 	t.Logf("load: recompute %d hosts, %d nodes in %s %v", res.Hosts, res.Nodes, res.Duration.Round(time.Millisecond), res.Phases)
+	// C53.04: проекция плотного реестра хостов — полный пересчёт (первый — с наблюдаемым классом) и повторный
+	hs := time.Now()
+	hn, err := f.registry.RecomputeHostRegistry(ctx, load)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("load: host registry first recompute %d hosts in %s", hn, time.Since(hs).Round(time.Millisecond))
+	hs = time.Now()
+	if _, err = f.registry.RecomputeHostRegistry(ctx, load); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("load: host registry repeat recompute in %s", time.Since(hs).Round(time.Millisecond))
+	if _, e = f.pool.Exec(ctx, "ANALYZE cmdb.host_registry"); e != nil {
+		t.Fatal(e)
+	}
 	store := cmdb.Store{}
 	read, _ := f.pool.Begin(ctx)
 	defer read.Rollback(ctx)
@@ -231,4 +249,11 @@ JOIN c ON c.k=a.r%(SELECT m FROM m) WHERE a.r%20<>0`,
 	})
 	measure("component hosts page", func() error { _, e := store.ComponentHostStates(ctx, read, load, component, 0, 100); return e })
 	measure("unassigned hosts page", func() error { _, e := store.UnassignedHosts(ctx, read, load, "", 100); return e })
+	measure("hosts registry page (name)", func() error { _, _, e := store.HostRegistryPage(ctx, read, load, cmdb.HostFilter{Limit: 100}); return e })
+	measure("hosts registry page (filter+sort last)", func() error {
+		_, _, e := store.HostRegistryPage(ctx, read, load, cmdb.HostFilter{Query: "load-1", Sort: "last", Desc: true, Limit: 500})
+		return e
+	})
+	measure("hosts registry counters", func() error { _, e := store.HostRegistryCounters(ctx, read, load); return e })
+	measure("hosts registry tree (site)", func() error { _, e := store.HostRegistryTree(ctx, read, load, "site"); return e })
 }
