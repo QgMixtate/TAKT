@@ -426,4 +426,57 @@ func TestC54RSMHTTP(t *testing.T) {
 	if !strings.Contains(string(raw), `"will_bind"`) {
 		t.Fatalf("dry run must offer the unbound host: %s", raw)
 	}
+	// C53.04: плотный реестр хостов — проекция, фильтры, сортировка, счётчики, дерево, CSV, массовые операции
+	if n, err := f.registry.RecomputeHostRegistry(ctx, tenant); err != nil || n < 2 {
+		t.Fatalf("host registry recompute: %d %v", n, err)
+	}
+	var hp struct {
+		Items []struct {
+			UID    string `json:"asset_uid"`
+			Name   string `json:"name"`
+			System string `json:"system_name"`
+			Owner  string `json:"accountable_name"`
+		} `json:"items"`
+		Total    int `json:"total"`
+		Counters struct {
+			Total int `json:"total"`
+		} `json:"counters"`
+	}
+	_ = json.Unmarshal(get("/api/v1/hosts?q=crm-db&sort=name&dir=desc&limit=250", "HostRegistryPage"), &hp)
+	if hp.Total != 1 || len(hp.Items) != 1 || hp.Items[0].Name != "crm-db-01" || hp.Counters.Total < 2 || hp.Items[0].Owner == "" {
+		t.Fatalf("hosts page: %+v", hp)
+	}
+	_ = json.Unmarshal(get("/api/v1/hosts?system=none", "HostRegistryPage"), &hp)
+	for _, x := range hp.Items {
+		if x.System != "" {
+			t.Fatalf("system=none must list hosts outside systems: %+v", hp)
+		}
+	}
+	for _, by := range []string{"site", "owner", "system", "os"} {
+		get("/api/v1/hosts/tree?by="+by, "HostTree")
+	}
+	for _, bad := range []string{"/api/v1/hosts?limit=7", "/api/v1/hosts?sort=evil", "/api/v1/hosts?freshness=x", "/api/v1/hosts/tree?by=x", "/api/v1/hosts?owner=1"} {
+		if code, _, _ := b.request(t, "GET", bad, "", "", "", nil); code != 422 {
+			t.Fatalf("%s: want 422, got %d", bad, code)
+		}
+	}
+	if code, raw, _ := b.request(t, "GET", "/api/v1/hosts.csv?q=crm", "", "", "", nil); code != 200 || !strings.Contains(string(raw), "crm-db-01") || !strings.HasPrefix(string(raw), "\ufeffИмя;IP") {
+		t.Fatalf("hosts csv: %d %s", code, raw)
+	}
+	send("POST", "/api/v1/hosts/collect", `{"filter":{"q":"crm-db"}}`, 200, "HostBulkResult")
+	send("POST", "/api/v1/hosts/collect", `{"filter":{"evil":"1"}}`, 422, "")
+	var subject struct {
+		S struct {
+			ID string `json:"subject_id"`
+		} `json:"subject"`
+	}
+	_ = json.Unmarshal(send("POST", "/api/v1/subjects", `{"kind":"team","name":"Команда реестра","contact":"team@example.test"}`, 201, ""), &subject)
+	var assigned struct {
+		Applied int `json:"applied"`
+	}
+	_ = json.Unmarshal(send("POST", "/api/v1/hosts/assign", `{"asset_uids":["`+h2+`"],"role":"accountable","subject_id":"`+subject.S.ID+`"}`, 200, "HostBulkResult"), &assigned)
+	_ = json.Unmarshal(get("/api/v1/hosts?q=crm-db", "HostRegistryPage"), &hp)
+	if assigned.Applied != 1 || len(hp.Items) != 1 || hp.Items[0].Owner != "Команда реестра" {
+		t.Fatalf("bulk assign must refresh the registry row: %+v %+v", assigned, hp)
+	}
 }

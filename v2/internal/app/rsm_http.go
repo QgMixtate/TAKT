@@ -759,5 +759,6 @@ func (r *Registry) rsmHandlers() map[string]rsmRoute {
 	})}
 	r.rsmMoreHandlers(h)
 	r.hostHandlers(h)
+	r.hostRegistryHandlers(h)
 	return h
 }

@@ -67,10 +67,10 @@ func NewHTTP(auth *access.HTTP, health http.Handler, registry ...*Registry) (htt
 			if route[:4] == "GET " {
 				permission = "assets:read"
 			}
-			mux.Handle(route, auth.Wrap(permission, false, handler))
+			mux.Handle(route, auth.Wrap(permission, false, registry[0].refreshHostAfter(route, handler)))
 		}
 		for route, d := range registry[0].targetHandlers() {
-			mux.Handle(route, auth.Wrap(d.permission, false, d.handler))
+			mux.Handle(route, auth.Wrap(d.permission, false, registry[0].refreshHostAfter(route, d.handler)))
 		}
 		for route, d := range registry[0].collectHandlers() {
 			mux.Handle(route, auth.Wrap(d.permission, false, d.handler))
@@ -94,7 +94,7 @@ func NewHTTP(auth *access.HTTP, health http.Handler, registry ...*Registry) (htt
 			mux.Handle(route, auth.Wrap(r.permission, false, r.handler))
 		}
 		for route, r := range registry[0].ownershipHandlers() {
-			mux.Handle(route, auth.Wrap(r.permission, false, r.handler))
+			mux.Handle(route, auth.Wrap(r.permission, false, registry[0].refreshHostAfter(route, r.handler)))
 		}
 		for route, d := range registry[0].rsmHandlers() { // C54: РСМ — отдельный модуль (лицензирование C56)
 			mux.Handle(route, auth.Wrap(d.permission, false, d.handler))

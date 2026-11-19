@@ -2952,6 +2952,331 @@
     "tickets_total"
    ],
    "additionalProperties": false
+  },
+  "RegistryHost": {
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "ip": {
+     "type": "string",
+     "maxLength": 64
+    },
+    "os": {
+     "type": "string",
+     "maxLength": 512
+    },
+    "os_family": {
+     "enum": [
+      "windows",
+      "linux",
+      "macos",
+      "network",
+      "other",
+      "unknown"
+     ]
+    },
+    "asset_class": {
+     "type": "string",
+     "maxLength": 64
+    },
+    "site_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "site_name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "segment": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "accountable_id": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    },
+    "accountable_name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "team_name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "site_fallback": {
+     "type": "boolean"
+    },
+    "system_uid": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "uuid"
+    },
+    "system_name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "component_name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "sections_ok": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "sections_total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "sources": {
+     "type": "array",
+     "items": {
+      "type": "string",
+      "maxLength": 64
+     },
+     "maxItems": 32
+    },
+    "freshness": {
+     "enum": [
+      "fresh",
+      "stale",
+      "unknown"
+     ]
+    },
+    "last_inventory_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    },
+    "created_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "computed_at": {
+     "type": "string",
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "asset_uid",
+    "name",
+    "ip",
+    "os",
+    "os_family",
+    "asset_class",
+    "site_id",
+    "site_name",
+    "segment",
+    "accountable_id",
+    "accountable_name",
+    "team_name",
+    "site_fallback",
+    "system_uid",
+    "system_name",
+    "component_name",
+    "sections_ok",
+    "sections_total",
+    "sources",
+    "freshness",
+    "last_inventory_at",
+    "created_at",
+    "computed_at"
+   ],
+   "additionalProperties": false
+  },
+  "HostCounters": {
+   "type": "object",
+   "properties": {
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "fresh": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "partial": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "stale": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "unknown": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "without_owner": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "new_7d": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "computed_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    }
+   },
+   "required": [
+    "total",
+    "fresh",
+    "partial",
+    "stale",
+    "unknown",
+    "without_owner",
+    "new_7d",
+    "computed_at"
+   ],
+   "additionalProperties": false
+  },
+  "HostRegistryPage": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/RegistryHost"
+     },
+     "maxItems": 500
+    },
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "offset": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "limit": {
+     "enum": [
+      100,
+      250,
+      500
+     ]
+    },
+    "counters": {
+     "$ref": "#/$defs/HostCounters"
+    }
+   },
+   "required": [
+    "items",
+    "total",
+    "offset",
+    "limit",
+    "counters"
+   ],
+   "additionalProperties": false
+  },
+  "HostTreeNode": {
+   "type": "object",
+   "properties": {
+    "key": {
+     "type": "string",
+     "maxLength": 512
+    },
+    "label": {
+     "type": "string",
+     "maxLength": 512
+    },
+    "count": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "children": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/HostTreeNode"
+     }
+    }
+   },
+   "required": [
+    "key",
+    "label",
+    "count",
+    "children"
+   ],
+   "additionalProperties": false
+  },
+  "HostTree": {
+   "type": "object",
+   "properties": {
+    "by": {
+     "enum": [
+      "site",
+      "owner",
+      "system",
+      "os"
+     ]
+    },
+    "nodes": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/HostTreeNode"
+     }
+    }
+   },
+   "required": [
+    "by",
+    "nodes"
+   ],
+   "additionalProperties": false
+  },
+  "HostBulkResult": {
+   "type": "object",
+   "properties": {
+    "hosts": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "applied": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "unchanged": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "requested": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "agents": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "no_target": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "hosts",
+    "applied",
+    "unchanged",
+    "requested",
+    "agents",
+    "no_target"
+   ],
+   "additionalProperties": false
   }
  }
 }

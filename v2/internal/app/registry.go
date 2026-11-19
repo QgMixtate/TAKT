@@ -212,6 +212,7 @@ func (r *Registry) IngestAuthorized(ctx context.Context, tenant, source string, 
 	}
 	if result.AssetID != nil {
 		r.applyRSMRulesAfterIngest(ctx, tenant, *result.AssetID) // C54.02: правила автопривязки к хосту
+		r.refreshHostAfterIngest(ctx, tenant, *result.AssetID)   // C53.04: строка плотного реестра хостов
 	}
 	return result, nil
 }

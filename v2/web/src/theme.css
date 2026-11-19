@@ -334,3 +334,17 @@ dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;f
 .env-check{display:inline-flex;gap:8px;align-items:center;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:#fff}
 .panel-table td input:not([type=checkbox]),.panel-table td select{border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit;font-size:14px}
 @media(max-width:900px){.wizard-grid{grid-template-columns:1fr}}
+/* портал сотрудника по макету */
+.portal-page{min-height:100vh;background:var(--panel)}
+.portal-top{display:flex;align-items:center;gap:14px;height:56px;padding:0 24px;background:var(--navy);color:#fff}
+.portal-top .brand{display:flex;align-items:center;gap:10px;font-family:var(--head);font-weight:700;font-size:18px}.portal-top .brand small{font-family:var(--sans);font-weight:400;font-size:12px;opacity:.6;margin-left:6px}
+.portal-top .brand-mark{position:relative;width:28px;height:28px;border:1.5px solid var(--magenta);border-radius:8px;display:grid;place-items:center;font-size:17px}
+.portal-top .brand-mark span{position:absolute;width:5px;height:5px;border-radius:50%;background:var(--magenta);right:4px;top:4px}
+.portal-top .portal-title{color:#C9D2E0}.portal-top .text-button{margin-left:auto;color:#fff}
+.portal-page .portal{max-width:1120px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:16px}
+.portal-h1{font-family:var(--head);font-size:28px;margin:0}
+.portal-search{display:flex;align-items:center;gap:10px;height:46px;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.portal-search input{flex:1;border:0;font:inherit;font-size:16px;outline:none;min-width:0;background:transparent}
+.portal-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.portal-tiles .tile{display:flex;flex-direction:column;gap:4px;text-align:left;background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;font:inherit;color:var(--text);cursor:pointer}
+.portal-tiles .tile b{font-size:16px}.portal-tiles .tile span{color:var(--text-2);font-size:14px}.portal-tiles .tile:hover{border-color:var(--blue)}

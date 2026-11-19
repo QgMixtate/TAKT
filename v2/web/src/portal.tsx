@@ -9,6 +9,7 @@ const fmt=(v:string)=>new Date(v).toLocaleString('ru-RU');
 
 export function PortalView({csrf,onLogout}:{csrf:string;onLogout:()=>void}){
  const [items,setItems]=useState<Ticket[]|null>(null),[open,setOpen]=useState<TicketDetail|null>(null),[error,setError]=useState<unknown>(null),[n,setN]=useState(0);
+ const [problem,setProblem]=useState(false),[find,setFind]=useState('');
  const [title,setTitle]=useState(''),[desc,setDesc]=useState(''),[urgency,setUrgency]=useState(2),[busy,setBusy]=useState(false),[text,setText]=useState('');
  const [catalog,setCatalog]=useState<CatalogItem[]>([]),[service,setService]=useState<CatalogItem|null>(null),[values,setValues]=useState<Record<string,string>>({}),[approvals,setApprovals]=useState<Ticket[]>([]);
  const fail=(e:unknown)=>{setError(e);if(e instanceof ApiError&&e.status===401)onLogout()};
@@ -17,8 +18,9 @@ export function PortalView({csrf,onLogout}:{csrf:string;onLogout:()=>void}){
  async function decide(t:Ticket,approve:boolean){let comment='';if(!approve){comment=(window.prompt('Причина отклонения (обязательно):')??'').trim();if(!comment)return}setBusy(true);setError(null);try{await api.portalApprove(csrf,t.ticket_id,{revision:t.revision,approve,comment});setN(x=>x+1)}catch(e){fail(e);setN(x=>x+1)}finally{setBusy(false)}}
  const missing=service?service.form.some(f=>f.required&&!(values[f.key]??'').trim()):true;
  async function run(fn:()=>Promise<TicketDetail>){setBusy(true);setError(null);try{setOpen(await fn());setN(x=>x+1)}catch(e){fail(e)}finally{setBusy(false)}}
- return <main className="portal">
-  <header className="portal-head"><strong>Обращения в ИТ</strong><button className="text-button" onClick={onLogout}>Выйти</button></header>
+ // C53.07 (макет «Портал сотрудника»): тёмная шапка, «Чем помочь?» с поиском по услугам, плитки услуг, мои обращения.
+ return <div className="portal-page"><header className="portal-top"><span className="brand"><span className="brand-mark" aria-hidden="true">т<span/></span><span>такт<small>каталог</small></span></span><span className="portal-title">Портал сотрудника</span><button className="text-button" onClick={onLogout}>Выйти</button></header>
+ <main className="portal">
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   {open?<section className="table-panel portal-card"><div className="table-toolbar"><h2>{open.number} · {open.title}</h2><button className="text-button" onClick={()=>setOpen(null)}>к списку</button></div>
    <p className="portal-state">{stateName[open.state]??open.state}</p>{open.description?<p>{open.description}</p>:null}
@@ -35,17 +37,19 @@ export function PortalView({csrf,onLogout}:{csrf:string;onLogout:()=>void}){
     f.type==='textarea'?<textarea aria-label={f.label} rows={3} value={values[f.key]??''} onChange={e=>setValues({...values,[f.key]:e.target.value})} maxLength={1000}/>:<input aria-label={f.label} value={values[f.key]??''} onChange={e=>setValues({...values,[f.key]:e.target.value})} maxLength={1000}/>}</label>)}
     <label>Насколько срочно<select aria-label="Срочность заявки" value={urgency} onChange={e=>setUrgency(Number(e.target.value))}><option value={1}>очень срочно</option><option value={2}>в ближайшие дни</option><option value={3}>не срочно</option></select></label>
     <div className="wh-submit"><button className="button" disabled={busy||missing} onClick={()=>void run(async()=>{const form_values=Object.fromEntries(Object.entries(values).map(([k,v])=>[k,v.trim()]).filter(([,v])=>v));const d=await api.portalRequest(csrf,{catalog_item_id:service.item_id,form_values,urgency});setService(null);setValues({});return d})}>Отправить заявку</button></div></div>
-  </section>:<>
-   {approvals.length?<section className="table-panel"><div className="table-toolbar"><h2>Ждут вашего согласования <span>{approvals.length}</span></h2></div><div className="table-scroll"><table><thead><tr><th>Номер</th><th>Заявка</th><th>Создано</th><th><span className="sr-only">Решение</span></th></tr></thead><tbody>{approvals.map(t=><tr key={t.ticket_id}><td className="mono">{t.number}</td><td><strong>{t.title}</strong><small style={{whiteSpace:'pre-line'}}>{t.description}</small></td><td className="time">{fmt(t.created_at)}</td>
-    <td><button className="button small" disabled={busy} onClick={()=>void decide(t,true)}>Согласовать</button> <button className="button small" disabled={busy} onClick={()=>void decide(t,false)}>Отклонить</button></td></tr>)}</tbody></table></div></section>:null}
-   {catalog.length?<section className="table-panel"><div className="table-toolbar"><h2>Заказать услугу</h2></div><div className="table-scroll"><table><tbody>{catalog.map(c=><tr key={c.item_id}><td><button className="asset-link" onClick={()=>{setService(c);setValues({});setUrgency(3)}}><span><strong>{c.name}</strong><small>{c.description}</small></span></button></td></tr>)}</tbody></table></div></section>:null}
-   <section className="table-panel"><div className="table-toolbar"><h2>Сообщить о проблеме</h2></div><div className="wh-form">
+  </section>:problem?<section className="table-panel portal-card"><div className="table-toolbar"><h2>Сообщить о проблеме</h2><button className="text-button" onClick={()=>setProblem(false)}>к списку</button></div><div className="wh-form">
     <label className="wide">Что случилось<input aria-label="Тема обращения" value={title} onChange={e=>setTitle(e.target.value)} maxLength={256} placeholder="Например: не работает VPN"/></label>
     <label className="wide">Подробности<textarea aria-label="Подробности" rows={3} value={desc} onChange={e=>setDesc(e.target.value)} maxLength={8000}/></label>
     <label>Насколько срочно<select aria-label="Срочность" value={urgency} onChange={e=>setUrgency(Number(e.target.value))}><option value={1}>не могу работать</option><option value={2}>мешает работе</option><option value={3}>не срочно</option></select></label>
-    <div className="wh-submit"><button className="button" disabled={busy||!title.trim()} onClick={()=>void run(async()=>{const d=await api.portalCreate(csrf,{title:title.trim(),description:desc.trim(),urgency});setTitle('');setDesc('');return d})}>Отправить в ИТ</button></div></div></section>
+    <div className="wh-submit"><button className="button" disabled={busy||!title.trim()} onClick={()=>void run(async()=>{const d=await api.portalCreate(csrf,{title:title.trim(),description:desc.trim(),urgency});setTitle('');setDesc('');setProblem(false);return d})}>Отправить в ИТ</button></div></div></section>:<>
+   <h1 className="portal-h1">Чем помочь?</h1>
+   <label className="portal-search"><span aria-hidden="true">⌕</span><input aria-label="Поиск услуги" placeholder="Например: принтер, VPN, доступ к 1С" value={find} onChange={e=>setFind(e.target.value)}/></label>
+   <div className="portal-tiles"><button className="tile" onClick={()=>{setProblem(true);setUrgency(2)}}><b>Сообщить о проблеме</b><span>Что-то не работает — опишите, мы разберёмся</span></button>
+    {catalog.filter(c=>!find.trim()||(c.name+' '+(c.description??'')).toLowerCase().includes(find.trim().toLowerCase())).map(c=><button key={c.item_id} className="tile" onClick={()=>{setService(c);setValues({});setUrgency(3)}}><b>{c.name}</b><span>{c.description||'Заказать услугу'}</span></button>)}</div>
+   {approvals.length?<section className="table-panel"><div className="table-toolbar"><h2>Ждут вашего согласования <span>{approvals.length}</span></h2></div><div className="table-scroll"><table><thead><tr><th>Номер</th><th>Заявка</th><th>Создано</th><th><span className="sr-only">Решение</span></th></tr></thead><tbody>{approvals.map(t=><tr key={t.ticket_id}><td className="mono">{t.number}</td><td><strong>{t.title}</strong><small style={{whiteSpace:'pre-line'}}>{t.description}</small></td><td className="time">{fmt(t.created_at)}</td>
+    <td><button className="button small" disabled={busy} onClick={()=>void decide(t,true)}>Согласовать</button> <button className="button small" disabled={busy} onClick={()=>void decide(t,false)}>Отклонить</button></td></tr>)}</tbody></table></div></section>:null}
    <section className="table-panel"><div className="table-toolbar"><h2>Мои обращения <span>{items?.length??'…'}</span></h2></div>
     {items&&items.length===0?<div className="empty"><span>☏</span><h3>Обращений пока нет</h3></div>:<div className="table-scroll"><table><thead><tr><th>Номер</th><th>Тема</th><th>Состояние</th><th>Создано</th></tr></thead><tbody>{(items??[]).map(t=><tr key={t.ticket_id}><td><button className="asset-link" onClick={()=>void api.portalTicket(t.ticket_id).then(setOpen).catch(fail)}><strong className="mono">{t.number}</strong></button></td><td>{t.title}</td><td>{stateName[t.state]??t.state}</td><td className="time">{fmt(t.created_at)}</td></tr>)}</tbody></table></div>}</section>
   </>}
- </main>;
+ </main></div>;
 }

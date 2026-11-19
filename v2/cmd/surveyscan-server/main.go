@@ -202,10 +202,11 @@ func run(args []string) error {
 		registry.OnWebhooksEnabled(func() { go registry.WebhookMaintain(ctx, func(m string) { fmt.Println(m) }) })
 		go registry.WatchIntegrations(ctx) // уведомления, включённые в Web через api-процесс, подхватываются здесь
 		go registry.DirectoryMaintain(ctx, func(m string) { fmt.Println(m) })
-		go registry.DiscoveryMaintain(ctx, func(m string) { fmt.Println(m) }) // C51: расписание обследований
-		go registry.SLAMaintain(ctx, func(m string) { fmt.Println(m) })       // W3 C50.01: предупреждения и нарушения SLA
-		go registry.RSMStateMaintain(ctx, func(m string) { fmt.Println(m) })  // C54.03: светофор РСМ раз в 5 мин
-		go registry.RetentionMaintain(ctx, func(m string) { fmt.Println(m) }) // C36.03 // C31.05: тенанты с настройками из Web или конфигурации
+		go registry.DiscoveryMaintain(ctx, func(m string) { fmt.Println(m) })    // C51: расписание обследований
+		go registry.SLAMaintain(ctx, func(m string) { fmt.Println(m) })          // W3 C50.01: предупреждения и нарушения SLA
+		go registry.RSMStateMaintain(ctx, func(m string) { fmt.Println(m) })     // C54.03: светофор РСМ раз в 5 мин
+		go registry.HostRegistryMaintain(ctx, func(m string) { fmt.Println(m) }) // C53.04: проекция реестра хостов
+		go registry.RetentionMaintain(ctx, func(m string) { fmt.Println(m) })    // C36.03 // C31.05: тенанты с настройками из Web или конфигурации
 		if registry.Search != nil {
 			go registry.SearchMaintain(ctx, func(m string) { fmt.Println(m) })
 		}
