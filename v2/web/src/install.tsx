@@ -6,8 +6,8 @@ import {api,ApiError,errorMessage,type PortableScope,type RegistrationCode,type 
 const stateName:Record<RegistrationCode['state'],[string,string]>={active:['действует','state-ok'],exhausted:['исчерпан','state-pending'],expired:['истёк','state-unavailable'],revoked:['отозван','state-unavailable']};
 const time=(v:string)=>new Date(v).toLocaleString('ru-RU');
 
-export function InstallPanel({csrf,sources,onExpired}:{csrf:string;sources:Source[];onExpired:()=>void}){
- const [open,setOpen]=useState(false),[items,setItems]=useState<RegistrationCode[]>([]),[fp,setFp]=useState(''),[sites,setSites]=useState<PortableScope[]>([]),[error,setError]=useState<unknown>(null),[busy,setBusy]=useState(false),[n,setN]=useState(0);
+export function InstallPanel({csrf,sources,onExpired,embedded}:{csrf:string;sources:Source[];onExpired:()=>void;embedded?:boolean}){
+ const [open,setOpen]=useState(!!embedded),[items,setItems]=useState<RegistrationCode[]>([]),[fp,setFp]=useState(''),[sites,setSites]=useState<PortableScope[]>([]),[error,setError]=useState<unknown>(null),[busy,setBusy]=useState(false),[n,setN]=useState(0);
  const [kind,setKind]=useState<'collector'|'agent'>('collector'),[site,setSite]=useState(''),[collector,setCollector]=useState(''),[platform,setPlatform]=useState<'windows/amd64'|'linux/amd64'>('windows/amd64'),[uses,setUses]=useState(1),[hours,setHours]=useState(24),[comment,setComment]=useState(''),[created,setCreated]=useState<RegistrationCode|null>(null),[centerURL,setCenterURL]=useState(location.origin),[collectorURL,setCollectorURL]=useState('https://collector:8443');
  const [usesOf,setUsesOf]=useState<{id:string;items:{source_id:string;hostname:string;registered_at:string}[]}|null>(null);
  const fail=(e:unknown)=>{setError(e);if(e instanceof ApiError&&e.status===401)onExpired()};
@@ -24,7 +24,7 @@ export function InstallPanel({csrf,sources,onExpired}:{csrf:string;sources:Sourc
   ['Windows (MSI, тихая установка; установщики — со следующим выпуском C52)',`msiexec /i surveyscan-collector.msi /qn CENTER_URL=${centerURL} REG_CODE=${code} CENTER_FINGERPRINT=${f}`]]:[
   ['Linux (deb/rpm или архив)',`sudo SURVEYSCAN_REGISTRATION_CODE=${code} surveyscan-agent register --collector ${collectorURL} --fingerprint ${f} \\\n  --config /etc/surveyscan-agent/agent.json --state /var/lib/surveyscan-agent\nsudo systemctl enable --now surveyscan-agent`],
   ['Windows (MSI, тихая установка или GPO; установщики — со следующим выпуском C52)',`msiexec /i surveyscan-agent.msi /qn COLLECTOR_URL=${collectorURL} REG_CODE=${code} CENTER_FINGERPRINT=${f}`]]):[];
- return <section className="table-panel install-panel"><div className="table-toolbar"><h2>Установка <span>коды регистрации</span></h2><button className="button small" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?'Свернуть':'Открыть'}</button></div>
+ return <section className={embedded?'install-panel embedded':'table-panel install-panel'}><div className="table-toolbar"><h2>Установка {embedded?'по коду':<span>коды регистрации</span>}</h2>{embedded?null:<button className="button small" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?'Свернуть':'Открыть'}</button>}</div>{embedded?<p className="muted">Код показывается один раз; в центре хранится только его хеш.</p>:null}
   {open?<div className="portable-body">
    {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
    <p className="panel-note">Отпечаток центра (проверяется при установке): <span className="mono">{fp||'—'}</span></p>

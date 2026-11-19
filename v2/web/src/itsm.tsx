@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import {PageTabs,Pct,Split,Strip} from './ui';
 import {api,ApiError,errorMessage,type CalendarEntry,type CatalogField,type CatalogItem,type ChangeWindow,type SlaSettings,type SlaTimer,type Subject,type Ticket,type TicketDetail,type TicketKind,type WItem,type WLocation,type WUnit} from './api';
 
 // Волна 3 (C47): обращения — очередь, регистрация, карточка с переходами, назначением, журналом и связями.
@@ -11,9 +12,6 @@ const actionName:Record<string,string>={in_progress:'В работу',waiting_cu
 const slaName:Record<SlaTimer['status'],[string,string]>={running:['идёт','state-active'],paused:['пауза','state-pending'],warning:['скоро срок','state-partial'],breached:['нарушен','state-unavailable'],met:['в срок','state-ok'],missed:['просрочен','state-unavailable']};
 const metricName:Record<SlaTimer['metric'],string>={response:'Реакция',resolution:'Решение'};
 const span=(m:number)=>m>=60?Math.floor(m/60)+' ч'+(m%60?' '+m%60+' мин':''):m+' мин';
-// худший таймер обращения для очереди: нарушение важнее предупреждения, идущий — с ближайшим сроком
-function slaBadge(list:SlaTimer[]){const rank={breached:0,missed:1,warning:2,running:3,paused:4,met:5};const t=[...list].sort((a,b)=>rank[a.status]-rank[b.status])[0];if(!t)return <span className="muted">—</span>;
- return <span className={'badge '+slaName[t.status][1]} title={metricName[t.metric]}><i/>{t.status==='running'&&t.due_at?'до '+new Date(t.due_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):slaName[t.status][0]}</span>}
 const riskName:Record<ChangeWindow['risk'],string>={low:'низкий',medium:'средний',high:'высокий'};
 const prio=(p:number)=>'P'+p;
 const fmt=(v:string)=>new Date(v).toLocaleString('ru-RU');
@@ -24,27 +22,38 @@ export function TicketsView({csrf,canWrite,canAdmin,onOpenAsset,onExpired}:{csrf
  useEffect(()=>{api.subjects().then(p=>setSubjects(p.items)).catch(fail)},[]);
  useEffect(()=>{const t=setTimeout(()=>api.tickets({kind,state,mine,q}).then(p=>{setItems(p.items);setError(null)}).catch(fail),250);return()=>clearTimeout(t)},[kind,state,mine,q,n]);
  const name=(id:string|null)=>id?(subjects.find(s=>s.subject_id===id)?.name??id.slice(0,8)):'—';
- return <div className="stack">
-  {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
-  <div className="ticket-tabs" role="tablist"><button role="tab" aria-selected={tab==='queue'} className={tab==='queue'?'active':''} onClick={()=>setTab('queue')}>Очередь</button><button role="tab" aria-selected={tab==='calendar'} className={tab==='calendar'?'active':''} onClick={()=>setTab('calendar')}>Календарь изменений</button><button role="tab" aria-selected={tab==='catalog'} className={tab==='catalog'?'active':''} onClick={()=>setTab('catalog')}>Каталог услуг</button><button role="tab" aria-selected={tab==='sla'} className={tab==='sla'?'active':''} onClick={()=>setTab('sla')}>SLA</button></div>
-  {tab==='catalog'?<CatalogAdmin csrf={csrf} canAdmin={canAdmin} subjects={subjects} onFail={fail}/>:tab==='calendar'?<ChangeCalendar onOpen={setOpen} onFail={fail}/>:tab==='sla'?<SlaAdmin csrf={csrf} canAdmin={canAdmin} onFail={fail}/>:<>
-  <div className="table-panel"><div className="table-toolbar"><h2>Обращения <span>{items?.length??'…'}</span></h2><div className="filters">
-   <label className="search-field"><span>⌕</span><input aria-label="Поиск обращения" placeholder="Номер или тема…" value={q} onChange={e=>setQ(e.target.value)}/></label>
-   <select aria-label="Вид обращения" value={kind} onChange={e=>setKind(e.target.value)}><option value="">Все виды</option>{(['incident','request','change','problem'] as TicketKind[]).map(k=><option key={k} value={k}>{kindName[k]}</option>)}</select>
-   <select aria-label="Состояние обращения" value={state} onChange={e=>setState(e.target.value)}><option value="open">Открытые</option><option value="">Все</option><option value="pending_approval">На согласовании</option><option value="in_fulfillment">В исполнении</option><option value="resolved">Решённые</option><option value="fulfilled">Исполненные</option><option value="closed">Закрытые</option></select>
+ // C53.07 (макет «Обращения»): вкладки раздела, сводка по открытым, очередь с расходом SLA и карточка обращения справа.
+ const [all,setAll]=useState<Ticket[]|null>(null);
+ useEffect(()=>{api.tickets({state:'open'}).then(p=>setAll(p.items)).catch(fail)},[n]);
+ const worst=(t:Ticket)=>t.sla.reduce((m,x)=>Math.max(m,x.target_minutes?Math.round(100*x.elapsed_minutes/x.target_minutes):0),0);
+ const cnt=(f:(t:Ticket)=>boolean)=>all?all.filter(f).length:null;
+ const tabs:[typeof tab,string][]=[['queue','Очередь'],['catalog','Каталог услуг'],['calendar','Календарь изменений'],['sla','SLA']];
+ const queue=<>
+  <div className="systems-toolbar"><select aria-label="Состояние обращения" value={state} onChange={e=>setState(e.target.value)}><option value="open">Открытые</option><option value="">Все</option><option value="pending_approval">На согласовании</option><option value="in_fulfillment">В исполнении</option><option value="resolved">Решённые</option><option value="fulfilled">Исполненные</option><option value="closed">Закрытые</option></select>
+   <select aria-label="Вид обращения" value={kind} onChange={e=>setKind(e.target.value)}><option value="">Вид: все</option>{(['incident','request','change','problem'] as TicketKind[]).map(k=><option key={k} value={k}>{kindName[k]}</option>)}</select>
    <label className="check"><input type="checkbox" checked={mine} onChange={e=>setMine(e.target.checked)}/> мои</label>
-   {canWrite?<button className="button small" onClick={()=>setCreating(true)}>+ Обращение</button>:null}</div></div>
-   {items&&items.length===0?<div className="empty"><span>☏</span><h3>Обращений нет</h3><p>Зарегистрируйте инцидент или проблему.</p></div>:
-   <div className="table-scroll"><table><thead><tr><th>Номер</th><th>Тема</th><th>Приоритет</th><th>Состояние</th><th>SLA</th><th>Исполнитель / команда</th><th>Создано</th></tr></thead><tbody>{(items??[]).map(t=><tr key={t.ticket_id}>
-    <td><button className="asset-link" onClick={()=>setOpen(t.ticket_id)}><span><strong className="mono">{t.number}</strong><small>{kindName[t.kind]}</small></span></button></td><td>{t.title}</td>
-    <td><span className={'badge '+(t.priority<=2?'state-unavailable':'state-pending')}><i/>{prio(t.priority)}</span></td><td><span className={'badge '+(stateName[t.state]?.[1]??'')}><i/>{stateName[t.state]?.[0]??t.state}</span></td><td>{slaBadge(t.sla)}</td>
-    <td>{name(t.assignee_id)}{t.team_id?<small>{name(t.team_id)}</small>:null}</td><td className="time">{fmt(t.created_at)}</td></tr>)}</tbody></table></div>}
-  </div>
-  </>}
+   <input className="toolbar-search" aria-label="Поиск обращения" placeholder="Номер или тема" value={q} onChange={e=>setQ(e.target.value)}/>
+   <span className="spacer"/>{canWrite?<button className="button primary-sm" onClick={()=>setCreating(true)}>+ Обращение</button>:null}</div>
+  {items&&items.length===0?<div className="empty"><span>☏</span><h3>Обращений нет</h3><p>Зарегистрируйте инцидент или проблему.</p></div>:
+  <div className="panel table-scroll"><table className="panel-table"><thead><tr><th>Номер</th><th>Вид</th><th>Тема</th><th>Приоритет</th><th>Состояние</th><th>Исполнитель / команда</th><th>SLA израсходовано</th></tr></thead><tbody>{(items??[]).map(t=><tr key={t.ticket_id} className={open===t.ticket_id?'selected':''}>
+   <td><button className="link plain mono" onClick={()=>setOpen(t.ticket_id)}><b>{t.number}</b></button></td><td>{kindName[t.kind]}</td><td>{t.title}</td>
+   <td><span className={'badge '+(t.priority<=2?'state-unavailable':'state-pending')}><i/>{prio(t.priority)}</span></td><td><span className={'badge '+(stateName[t.state]?.[1]??'')}><i/>{stateName[t.state]?.[0]??t.state}</span></td>
+   <td>{name(t.assignee_id)}{t.team_id?<small className="muted"> · {name(t.team_id)}</small>:null}</td><td>{t.sla.length?<span title={slaTitle(t.sla)} className="sla-cell"><Pct value={worst(t)}/><small className="muted">{slaText(t.sla)}</small></span>:<span className="muted">—</span>}</td></tr>)}</tbody></table></div>}
+ </>;
+ return <>
+  <PageTabs label="Разделы обращений" tabs={tabs} value={tab} onChange={setTab}/>
+  {tab==='queue'?<Strip label="Сводка обращений" items={[{key:'open',n:cnt(()=>true),label:'открытых',active:state==='open'&&!mine,onClick:()=>{setState('open');setMine(false)}},{key:'breached',n:cnt(t=>t.sla.some(x=>x.status==='breached'||x.status==='missed')),label:'нарушают SLA',tone:'warn'},{key:'warning',n:cnt(t=>t.sla.some(x=>x.status==='warning')),label:'близко к сроку',tone:'amber'},{key:'noassignee',n:cnt(t=>!t.assignee_id),label:'не назначены'},{key:'approval',n:cnt(t=>t.state==='pending_approval'),label:'ждут согласования',onClick:()=>setState('pending_approval')}]}/>:null}
+  {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
+  {tab==='catalog'?<div className="page-pad"><CatalogAdmin csrf={csrf} canAdmin={canAdmin} subjects={subjects} onFail={fail}/></div>:tab==='calendar'?<div className="page-pad"><ChangeCalendar onOpen={setOpen} onFail={fail}/></div>:tab==='sla'?<div className="page-pad"><SlaAdmin csrf={csrf} canAdmin={canAdmin} onFail={fail}/></div>:
+   <Split wide side={open?<TicketCard key={open} embedded id={open} csrf={csrf} canWrite={canWrite} canAdmin={canAdmin} subjects={subjects} onOpenAsset={onOpenAsset} onFail={fail} onClose={()=>{setOpen(null);setN(x=>x+1)}}/>:<div className="empty"><span>☏</span><h3>Выберите обращение</h3><p>Карточка откроется здесь: статус, SLA, связи с системой и хостом, журнал и действия.</p></div>}>{queue}</Split>}
+  {tab!=='queue'&&open?<TicketCard id={open} csrf={csrf} canWrite={canWrite} canAdmin={canAdmin} subjects={subjects} onOpenAsset={onOpenAsset} onFail={fail} onClose={()=>{setOpen(null);setN(x=>x+1)}}/>:null}
   {creating?<CreateTicket csrf={csrf} subjects={subjects} onFail={fail} onClose={()=>setCreating(false)} onCreated={d=>{setCreating(false);setN(x=>x+1);setOpen(d.ticket_id)}}/>:null}
-  {open?<TicketCard id={open} csrf={csrf} canWrite={canWrite} canAdmin={canAdmin} subjects={subjects} onOpenAsset={onOpenAsset} onFail={fail} onClose={()=>{setOpen(null);setN(x=>x+1)}}/>:null}
- </div>;
+ </>;
 }
+
+// худший таймер: нарушение важнее предупреждения, идущий — с ближайшим сроком
+function slaText(list:SlaTimer[]){const rank={breached:0,missed:1,warning:2,running:3,paused:4,met:5};const t=[...list].sort((a,b)=>rank[a.status]-rank[b.status])[0];if(!t)return '';return t.status==='running'&&t.due_at?'до '+new Date(t.due_at).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}):slaName[t.status][0]}
+const slaTitle=(list:SlaTimer[])=>list.map(x=>metricName[x.metric]+': '+slaName[x.status][0]+', '+span(x.elapsed_minutes)+' из '+span(x.target_minutes)).join('; ');
 
 function CreateTicket({csrf,subjects,onFail,onClose,onCreated}:{csrf:string;subjects:Subject[];onFail:(e:unknown)=>void;onClose:()=>void;onCreated:(d:TicketDetail)=>void}){
  const [kind,setKind]=useState<TicketKind>('incident'),[title,setTitle]=useState(''),[desc,setDesc]=useState(''),[impact,setImpact]=useState(2),[urgency,setUrgency]=useState(2),[requester,setRequester]=useState(''),[asset,setAsset]=useState(''),[busy,setBusy]=useState(false);
@@ -63,14 +72,14 @@ function CreateTicket({csrf,subjects,onFail,onClose,onCreated}:{csrf:string;subj
   <button className="button primary" disabled={busy||!title.trim()} onClick={()=>void save()}>Зарегистрировать <span>→</span></button></aside></div>;
 }
 
-function TicketCard({id,csrf,canWrite,canAdmin,subjects,onOpenAsset,onFail,onClose}:{id:string;csrf:string;canWrite:boolean;canAdmin:boolean;subjects:Subject[];onOpenAsset:(uid:string)=>void;onFail:(e:unknown)=>void;onClose:()=>void}){
+function TicketCard({id,csrf,canWrite,canAdmin,subjects,onOpenAsset,onFail,onClose,embedded}:{embedded?:boolean;id:string;csrf:string;canWrite:boolean;canAdmin:boolean;subjects:Subject[];onOpenAsset:(uid:string)=>void;onFail:(e:unknown)=>void;onClose:()=>void}){
  const [d,setD]=useState<TicketDetail|null>(null),[busy,setBusy]=useState(false),[text,setText]=useState(''),[internal,setInternal]=useState(false),[team,setTeam]=useState(''),[link,setLink]=useState(''),[linkKind,setLinkKind]=useState<'asset'|'ticket'|'service'>('asset');
  useEffect(()=>{api.ticket(id).then(setD).catch(onFail)},[id]);
  const name=(ref:string|null)=>ref?(subjects.find(s=>s.subject_id===ref)?.name??ref.slice(0,8)):'—';
  async function act(action:'transition'|'assign'|'comments'|'links'|'approve'|'fulfill'|'window',b:Record<string,unknown>){if(!d)return;setBusy(true);try{setD(await api.ticketAction(csrf,d.ticket_id,action,b))}catch(e){onFail(e);api.ticket(id).then(setD).catch(()=>{})}finally{setBusy(false)}}
  function transition(to:string){if(!d)return;let t='';if(to==='scheduled'&&d.change?.conflicts.length){if(!window.confirm('Окно пересекается с изменениями: '+d.change.conflicts.map(c=>c.number).join(', ')+'. Запланировать всё равно?'))return;void act('transition',{revision:d.revision,to,confirm_conflicts:true});return}if(to==='resolved'||to==='known_error'||to==='fulfilled'||to==='completed'||to==='rolled_back'){t=(window.prompt(to==='resolved'?'Решение (обязательно):':to==='fulfilled'?'Что сделано (обязательно):':to==='completed'?'Результат проверки (обязательно):':to==='rolled_back'?'Причина отката (обязательно):':'Обходное решение (обязательно):')??'').trim();if(!t)return}else if((to==='in_progress'||to==='in_fulfillment')&&(d.state==='resolved'||d.state==='fulfilled')){t=(window.prompt('Причина повторного открытия:')??'').trim()}void act('transition',{revision:d.revision,to,text:t})}
  if(!d)return null;
- return <div className="drawer-shade" onClick={onClose}><aside className="drawer ticket-card" role="dialog" aria-label={'Обращение '+d.number} onClick={e=>e.stopPropagation()}><header><span className="eyebrow muted">{kindName[d.kind]} · {d.number}</span><button className="text-button" aria-label="Закрыть обращение" onClick={onClose}>Закрыть</button></header>
+ const body=<><header><span className="eyebrow muted">{kindName[d.kind]} · {d.number}</span><button className="text-button" aria-label="Закрыть обращение" onClick={onClose}>Закрыть</button></header>
   <h2>{d.title}</h2>
   <p><span className={'badge '+(stateName[d.state]?.[1]??'')}><i/>{stateName[d.state]?.[0]??d.state}</span> <span className="badge"><i/>{prio(d.priority)}</span>{d.reopen_count?<small> · открыт повторно: {d.reopen_count}</small>:null}</p>
   {d.description?<p>{d.description}</p>:null}
@@ -88,7 +97,8 @@ function TicketCard({id,csrf,canWrite,canAdmin,subjects,onOpenAsset,onFail,onClo
   {canWrite?<div className="wh-line"><select aria-label="Вид связи" value={linkKind} onChange={e=>setLinkKind(e.target.value as 'asset'|'ticket'|'service')}><option value="asset">актив</option><option value="ticket">обращение</option><option value="service">сервис</option></select><input aria-label="UID для связи" className="mono" value={link} onChange={e=>setLink(e.target.value)} placeholder="UID"/><button className="text-link" disabled={busy||!/^[0-9a-f-]{36}$/.test(link.trim())} onClick={()=>{void act('links',{target_kind:linkKind,target_id:link.trim()});setLink('')}}>Связать</button></div>:null}
   <h3>Журнал</h3><ul className="ticket-feed">{d.events.map(e=><li key={e.event_id} className={e.public?'':'internal'}><small>{fmt(e.occurred_at)} · {e.actor_ref.replace(/^user:/,'').slice(0,8)}{e.public?'':' · внутренний'}</small><span>{e.kind==='state'?'Состояние: '+(stateName[String(e.detail.to)]?.[0]??String(e.detail.to)):e.kind==='assigned'?'Назначение'+(e.detail.team_id?' команде '+name(String(e.detail.team_id)):'')+(e.detail.assignee_id?' исполнителю '+name(String(e.detail.assignee_id)):''):e.kind==='created'?'Создано':e.kind==='linked'?'Связь: '+String(e.detail.target_kind):e.kind==='approval'?(e.detail.decision==='approved'?'Согласовано':'Отклонено'):e.kind==='sla'?'SLA '+(e.detail.metric==='response'?'реакции':'решения')+': '+(e.detail.mark==='breached'?'срок нарушен':'скоро срок'):e.kind==='window'?'Окно изменения задано':e.kind==='fulfilled'?'Выдано со склада, акт '+String(e.detail.act_no):e.kind==='comment'?'':e.kind}{e.text?(e.kind==='comment'?'':' — ')+e.text:''}</span></li>)}</ul>
   {canWrite?<div className="ticket-comment"><textarea aria-label="Комментарий" rows={3} value={text} onChange={e=>setText(e.target.value)} placeholder="Комментарий"/><label className="check"><input type="checkbox" checked={internal} onChange={e=>setInternal(e.target.checked)}/> внутренний (заявитель не увидит)</label><button className="button small" disabled={busy||!text.trim()} onClick={()=>{void act('comments',{text:text.trim(),internal});setText('')}}>Добавить</button></div>:null}
- </aside></div>;
+ </>;
+ return embedded?<section className="ticket-card embedded" role="dialog" aria-label={'Обращение '+d.number}>{body}</section>:<div className="drawer-shade" onClick={onClose}><aside className="drawer ticket-card" role="dialog" aria-label={'Обращение '+d.number} onClick={e=>e.stopPropagation()}>{body}</aside></div>;
 }
 
 type Act=(action:'transition'|'assign'|'comments'|'links'|'approve'|'fulfill'|'window',b:Record<string,unknown>)=>Promise<void>;
@@ -119,11 +129,13 @@ function ChangeBlock({d,canWrite,canAdmin,busy,onAct}:{d:TicketDetail;canWrite:b
 
 // Календарь окон изменений на две недели вперёд (с сегодняшнего дня).
 function ChangeCalendar({onOpen,onFail}:{onOpen:(id:string)=>void;onFail:(e:unknown)=>void}){
- const [start,setStart]=useState(()=>{const d=new Date();d.setHours(0,0,0,0);return d}),[items,setItems]=useState<CalendarEntry[]|null>(null);
+ const [start,setStart]=useState(()=>{const d=new Date();d.setHours(0,0,0,0);d.setDate(d.getDate()-((d.getDay()+6)%7));return d}),[items,setItems]=useState<CalendarEntry[]|null>(null);
  useEffect(()=>{const end=new Date(start.getTime()+14*864e5);api.changeCalendar(start.toISOString(),end.toISOString()).then(p=>setItems(p.items)).catch(onFail)},[start]);
  const shift=(days:number)=>setStart(s=>new Date(s.getTime()+days*864e5));
  const days=new Map<string,CalendarEntry[]>();for(const it of items??[]){const k=new Date(it.starts_at).toLocaleDateString('ru-RU',{weekday:'short',day:'numeric',month:'long'});days.set(k,[...(days.get(k)??[]),it])}
  return <div className="table-panel"><div className="table-toolbar"><h2>Окна изменений <span>{items?.length??'…'}</span></h2><div className="filters"><button className="button small" onClick={()=>shift(-14)}>← 2 недели</button><span>{start.toLocaleDateString('ru-RU')} — {new Date(start.getTime()+13*864e5).toLocaleDateString('ru-RU')}</span><button className="button small" onClick={()=>shift(14)}>2 недели →</button></div></div>
+  <div className="week-grid" aria-label="Неделя">{Array.from({length:14},(_,i)=>{const d=new Date(start.getTime()+i*864e5),k=d.toDateString(),list=(items??[]).filter(it=>new Date(it.starts_at).toDateString()===k);const wk=d.getDay()===0||d.getDay()===6;return <div key={i} className={'day'+(wk?' weekend':'')+(new Date().toDateString()===k?' today':'')}><small>{d.toLocaleDateString('ru-RU',{weekday:'short',day:'numeric'})}</small>{list.map(it=><button key={it.ticket_id} className={'ev risk-'+it.risk} onClick={()=>onOpen(it.ticket_id)} title={it.title}><b>{it.number}</b><span>{it.title}</span></button>)}</div>})}</div>
+  <p className="muted pad">Цвет — риск изменения: синий — низкий, жёлтый — средний, пурпурный — высокий. Пересечения окон по одной цели показываются в карточке изменения.</p>
   {items&&items.length===0?<div className="empty"><span>▤</span><h3>Окон в этом периоде нет</h3></div>:
   <div className="table-scroll"><table><thead><tr><th>День</th><th>Изменение</th><th>Окно</th><th>Риск</th><th>Состояние</th><th>Затрагивает</th></tr></thead><tbody>{[...days].flatMap(([day,list])=>list.map((it,i)=><tr key={it.ticket_id}>
    <td>{i===0?<strong>{day}</strong>:null}</td><td><button className="asset-link" onClick={()=>onOpen(it.ticket_id)}><span><strong className="mono">{it.number}</strong><small>{it.title}</small></span></button></td>
