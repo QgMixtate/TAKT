@@ -39,9 +39,19 @@ fn write_private(dir: &Path, name: &str, raw: &[u8]) -> Result<(), String> {
     state::write_atomic(&dir.join(name), raw)
 }
 
+/// №58: идентификатор, вставленный из Web/мессенджера, часто приходит с пробелами, кавычками, «ёлочками» или
+/// невидимыми символами — оставляются только шестнадцатеричные цифры и дефисы.
+pub fn clean_id(raw: &str) -> String {
+    raw.chars().filter(|c| c.is_ascii_hexdigit() || *c == '-').collect::<String>().to_ascii_lowercase()
+}
+
 pub fn init(dir: &Path, tenant: &str, site: &str, scope: &str) -> Result<(Identity, VerifyingKey), String> {
-    if ![tenant, site, scope].iter().all(|s| crate::claims::valid_id(s)) {
-        return Err("portable: tenant, site and scope must be UUIDs issued by the centre".into());
+    let (tenant, site, scope) = (clean_id(tenant), clean_id(site), clean_id(scope));
+    let (tenant, site, scope) = (tenant.as_str(), site.as_str(), scope.as_str());
+    for (name, v) in [("tenant_id", tenant), ("site_id", site), ("scope_id", scope)] {
+        if !crate::claims::valid_id(v) {
+            return Err(format!("portable: {name} must be a UUID issued by the centre (xxxxxxxx-xxxx-4xxx-xxxx-xxxxxxxxxxxx), got {} characters after cleanup", v.len()));
+        }
     }
     if dir.join("identity.json").exists() {
         return Err("portable: state directory already initialised".into());
@@ -257,4 +267,16 @@ pub fn discovery_doc(last: &Value, outcomes: &std::collections::HashMap<String, 
     let doc = json!({"schema_version": {"major": 1, "minor": 0}, "ranges": last["ranges"], "excluded": last["excluded"], "started_at": last["started_at"],
         "finished_at": last["finished_at"], "complete": last["complete"], "hosts": hosts});
     serde_json::to_vec(&doc).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod clean_id_tests {
+    #[test]
+    fn pasted_ids_are_cleaned() {
+        let id = "00000000-0000-4000-8000-000000000001";
+        for raw in [format!(" {id}\n"), format!("«{id}»"), format!("\"{id}\""), format!("\u{200b}{id}\u{feff}"), id.to_uppercase()] {
+            assert_eq!(super::clean_id(&raw), id);
+        }
+        assert!(!crate::claims::valid_id(&super::clean_id("site 42")));
+    }
 }

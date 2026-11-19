@@ -64,7 +64,12 @@ func lockRegistry(ctx context.Context, tx pgx.Tx, tenant string) error {
 	return e
 }
 func (r *Registry) assetEvent(ctx context.Context, tx pgx.Tx, tenant, uid, version, kind, producer, reason, actor, correlation string, subject ...string) error {
-	if e := r.Assets.History(ctx, tx, tenant, uid, version, reason, actor); e != nil {
+	return r.assetEventWith(ctx, tx, tenant, uid, version, kind, producer, reason, actor, correlation, nil, subject...)
+}
+
+// assetEventWith — то же, с подробностями в истории актива (provenance); событие C03 не меняется.
+func (r *Registry) assetEventWith(ctx context.Context, tx pgx.Tx, tenant, uid, version, kind, producer, reason, actor, correlation string, details map[string]any, subject ...string) error {
+	if e := r.Assets.History(ctx, tx, tenant, uid, version, reason, actor, details); e != nil {
 		return e
 	}
 	if e := r.Audit.Record(ctx, tx, tenant, actor, kind, "asset", uid); e != nil {
@@ -159,7 +164,7 @@ func (r *Registry) IngestAuthorized(ctx context.Context, tenant, source string, 
 			if e != nil {
 				return result, e
 			}
-			if e = r.assetEvent(ctx, tx, tenant, resolved.AssetID, version, "asset.facts_changed.v1", "Assets", "HOSTNAME_CHANGED", source, o.ID); e != nil {
+			if e = r.assetEventWith(ctx, tx, tenant, resolved.AssetID, version, "asset.facts_changed.v1", "Assets", "HOSTNAME_CHANGED", source, o.ID, map[string]any{"from": resolved.RenamedFrom, "to": resolved.RenamedTo, "source_id": source}); e != nil {
 				return result, e
 			}
 		}

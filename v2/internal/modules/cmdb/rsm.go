@@ -226,7 +226,6 @@ type Binding struct {
 	Actor       string     `json:"actor_ref"`
 }
 
-
 func scanBinding(r pgx.Row) (Binding, error) {
 	var b Binding
 	e := r.Scan(&b.ID, &b.ComponentID, &b.AssetUID, &b.Status, &b.Primary, &b.Origin, &b.RuleID, &b.ValidFrom, &b.ValidTo, &b.Actor)

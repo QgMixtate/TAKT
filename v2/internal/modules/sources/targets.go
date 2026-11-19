@@ -219,11 +219,13 @@ FROM sources.remote_targets WHERE tenant_id=$1 ORDER BY address, kind`, tenant)
 	return out, rows.Err()
 }
 
-// SetTargetState — включить/отключить цель (администратор).
+// SetTargetState — включить/отключить цель (администратор). Включение отключённой цели — заново через регистрацию
+// (№56): сертификат её личности живёт сутки и у отключённой цели не продлевается; прежний источник остаётся в истории.
 // resetTrust — забыть отпечаток ключа SSH (запомненный или введённый) или запомненный сертификат WinRM (после
 // переустановки ОС/смены сертификата): при следующем подключении collector запомнит новый. PEM администратора не трогается.
 func (Store) SetTargetState(ctx context.Context, tx pgx.Tx, tenant, id, revision string, disabled, resetTrust bool) (RemoteTarget, error) {
-	tag, e := tx.Exec(ctx, `UPDATE sources.remote_targets SET state=CASE WHEN $4 THEN 'disabled' WHEN agent_source_id IS NULL THEN 'pending' ELSE 'active' END,
+	tag, e := tx.Exec(ctx, `UPDATE sources.remote_targets SET state=CASE WHEN $4 THEN 'disabled' WHEN agent_source_id IS NULL OR state='disabled' THEN 'pending' ELSE 'active' END,
+agent_source_id=CASE WHEN NOT $4 AND state='disabled' THEN NULL ELSE agent_source_id END,
 host_key_sha256=CASE WHEN $5 AND kind='ssh' THEN NULL ELSE host_key_sha256 END,host_key_origin=CASE WHEN $5 AND kind='ssh' THEN NULL ELSE host_key_origin END,
 tls_cert_sha256=CASE WHEN $5 AND tls_cert_origin='first_use' THEN NULL ELSE tls_cert_sha256 END,tls_cert_origin=CASE WHEN $5 AND tls_cert_origin='first_use' THEN NULL ELSE tls_cert_origin END,
 last_error=CASE WHEN $5 THEN NULL ELSE last_error END,revision=revision+1

@@ -152,6 +152,8 @@ export interface components {
             sources: components["schemas"]["SourceSummary"][];
             /** @description Имена хоста по записям источников: действующие (valid_to=null) и прежние, новые сверху. */
             hostnames?: components["schemas"]["HostnameEntry"][];
+            /** @description История изменений актива (C25/№57), новые сверху, до 50. */
+            history?: components["schemas"]["AssetHistoryEntry"][];
         };
         HostnameEntry: {
             value: string;
@@ -161,6 +163,14 @@ export interface components {
             valid_from: string;
             /** Format: date-time */
             valid_to: string | null;
+        };
+        AssetHistoryEntry: {
+            reason_code: string;
+            /** Format: date-time */
+            occurred_at: string;
+            actor_ref: string;
+            /** @description Подробности изменения (например, для HOSTNAME_CHANGED: from, to, source_id). */
+            details: Record<string, never>;
         };
     };
     responses: never;

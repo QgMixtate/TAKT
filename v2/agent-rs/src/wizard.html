@@ -92,8 +92,9 @@ function busy() { return job && job.running; }
 function stepInit() {
   if (st.initialized) {
     return `<h2>Каталог аудита подготовлен</h2><p class="hint">Источник portable создан; ключ подписи остаётся на этом носителе.</p>
-      <label>source_id</label><div class="mono">${esc(st.source_id)}</div>
-      <label>Открытый ключ (передайте в центр: «Portable-аудит» → доверие источнику)</label><div class="mono">${esc(st.public_key)}</div>
+      <label for="ib2">Блок для центра — скопируйте целиком в Web: «Portable-аудит» → «Зарегистрировать источник»</label>
+      <textarea id="ib2" class="mono" rows="7" readonly>${esc(st.init_block || '')}</textarea>
+      <button class="sec" id="ibc">Копировать блок</button>
       <label>Шифрование пакета ключом центра</label><div>${st.center_key ? '<span class="ok">включено</span>' : '<span class="warn">не задан ключ центра — пакет не шифруется</span>'}</div>
       <label for="ck">Ключ шифрования центра (base64, из «Portable-аудит»)</label><input id="ck" autocomplete="off" placeholder="например, MCowBQYDK2VuAyEA…">
       <button class="sec" id="ckb">Сохранить ключ центра</button>` + jobView("init");
@@ -105,6 +106,7 @@ function stepInit() {
     <button class="main" id="ib" ${busy() ? "disabled" : ""}>Подготовить</button>` + jobView("init");
 }
 function bindInit() {
+  if ($("ibc")) $("ibc").onclick = async () => { const t = $("ib2"); t.select(); try { await navigator.clipboard.writeText(t.value); } catch (e) { document.execCommand("copy"); } $("ibc").textContent = "Скопировано"; };
   if ($("ib")) $("ib").onclick = () => run("/api/init", { tenant: $("t").value, site: $("s").value, scope: $("sc").value, center_key: $("ck").value });
   if ($("ckb")) $("ckb").onclick = async () => { try { await api("POST", "/api/center-key", { center_key: $("ck").value }); await refresh(); } catch (e) { alert(e.message); } };
 }

@@ -83,6 +83,9 @@ func (r *Registry) InventoryDetail(ctx context.Context, id accessport.Identity, 
 	if out.Hostnames, e = r.Assets.Hostnames(ctx, tx, id.TenantID, uid); e != nil {
 		return out, e
 	}
+	if out.History, e = r.Assets.AssetHistory(ctx, tx, id.TenantID, uid); e != nil {
+		return out, e
+	}
 	raw, e := json.Marshal(out)
 	if e != nil {
 		return out, e

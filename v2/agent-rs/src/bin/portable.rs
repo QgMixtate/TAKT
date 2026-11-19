@@ -10,6 +10,13 @@ fn arg(args: &[String], name: &str) -> Option<String> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1).cloned())
 }
 
+/// Адреса интерфейсов этого ПК из раздела network (записи с addresses[].ip).
+fn own_addresses(sections: &[serde_json::Value]) -> std::collections::HashSet<String> {
+    sections.iter().filter(|s| s["name"] == "network").flat_map(|s| s["records"].as_array().cloned().unwrap_or_default())
+        .flat_map(|r| r["addresses"].as_array().cloned().unwrap_or_default())
+        .filter_map(|a| a["ip"].as_str().map(str::to_string)).collect()
+}
+
 fn host() -> Result<(serde_json::Value, Vec<serde_json::Value>), String> {
     #[cfg(target_os = "linux")]
     {
@@ -119,11 +126,16 @@ fn main() -> ExitCode {
             println!("source_id={} key_id={}", id.source_id, id.key_id);
             let mut observations = vec![];
             let mut failed_targets = 0;
+            // №59: адреса этого ПК и наблюдение «этот ПК» — тот же узел по сети не собирается повторно
+            let mut own: (std::collections::HashSet<String>, Option<serde_json::Value>) = (Default::default(), None);
             if !args.iter().any(|a| a == "--no-host") {
                 let (candidates, sections) = host()?;
                 let name = hostname(&sections);
                 report("host", &name, &sections);
-                observations.push(p::observation(&dir, &id, "host", &name, &candidates, sections)?);
+                own.0 = own_addresses(&sections);
+                let o = p::observation(&dir, &id, "host", &name, &candidates, sections)?;
+                own.1 = Some(o["observation_id"].clone());
+                observations.push(o);
             }
             // узлы последнего обследования: один профиль по правилам (без перебора), сбор SSH; исход — в discovery.json
             let last: Option<serde_json::Value> = match std::fs::read(dir.join(p::DISCOVERY_FILE)) {
@@ -145,6 +157,11 @@ fn main() -> ExitCode {
                     }
                     if only.as_ref().is_some_and(|o| !o.contains(&ip)) {
                         continue; // без профиля: в пакете — no_profile
+                    }
+                    if let (true, Some(obs)) = (own.0.contains(&ip), &own.1) {
+                        // этот ПК уже собран локально (полнее, чем по сети): исход — собран, наблюдение «этот ПК»
+                        outcomes.insert(ip, serde_json::json!({"outcome": "collected", "reason": "LOCAL_HOST", "observation_id": obs}));
+                        continue;
                     }
                     match profiles.bind(&ip, kind, None) {
                         Some(pr) if pr.kind == "ssh" => plan.push((ip, pr.clone())),

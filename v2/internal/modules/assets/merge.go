@@ -213,6 +213,27 @@ func (Store) SetClass(ctx context.Context, tx pgx.Tx, tenant, asset, revision st
 	return nil
 }
 
+// AssetHistory — история изменений актива (новые сверху, до 50) для карточки (№57); проекции описи — шум, не показываются.
+func (Store) AssetHistory(ctx context.Context, tx pgx.Tx, tenant, asset string) ([]contracts.AssetHistoryEntry, error) {
+	rows, e := tx.Query(ctx, `SELECT reason_code,occurred_at,actor_ref,provenance FROM assets.asset_changes WHERE tenant_id=$1 AND asset_uid=$2 AND reason_code NOT IN ('INVENTORY_PROJECTED','TEST_PROJECTION') ORDER BY occurred_at DESC,aggregate_version DESC LIMIT 50`, tenant, asset)
+	if e != nil {
+		return nil, e
+	}
+	defer rows.Close()
+	out := []contracts.AssetHistoryEntry{}
+	for rows.Next() {
+		var h contracts.AssetHistoryEntry
+		var raw []byte
+		if e = rows.Scan(&h.ReasonCode, &h.OccurredAt, &h.ActorRef, &raw); e != nil {
+			return nil, e
+		}
+		h.OccurredAt = h.OccurredAt.UTC()
+		h.Details = raw
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
 // Hostnames — имена хоста актива по записям источников (действующие и закрытые), новые сверху, до 50.
 func (Store) Hostnames(ctx context.Context, tx pgx.Tx, tenant, asset string) ([]contracts.HostnameEntry, error) {
 	rows, e := tx.Query(ctx, `SELECT i.normalized_value,r.source_id::text,i.valid_from,i.valid_to FROM assets.asset_identifiers i JOIN assets.source_records r ON r.tenant_id=i.tenant_id AND r.source_record_key=i.source_record_key

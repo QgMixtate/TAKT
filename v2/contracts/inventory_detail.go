@@ -1,6 +1,9 @@
 package contracts
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type SubjectSummary struct {
 	ID   string `json:"subject_id"`
@@ -35,18 +38,27 @@ type SourceSummary struct {
 	Acquisition   *string `json:"acquisition,omitempty"` // agent | ssh | winrm (только source_kind=agent)
 }
 type InventoryDetail struct {
-	Version     Version         `json:"schema_version"`
-	Tenant      string          `json:"tenant_id"`
-	Asset       string          `json:"asset_uid"`
-	Snapshot    Asset           `json:"asset"`
-	Accountable SubjectSummary  `json:"accountable"`
-	Facts       []CurrentFact   `json:"facts"`
-	Sections    []SectionDetail `json:"sections"`
-	Sources     []SourceSummary `json:"sources"`
-	Hostnames   []HostnameEntry `json:"hostnames,omitempty"`
+	Version     Version             `json:"schema_version"`
+	Tenant      string              `json:"tenant_id"`
+	Asset       string              `json:"asset_uid"`
+	Snapshot    Asset               `json:"asset"`
+	Accountable SubjectSummary      `json:"accountable"`
+	Facts       []CurrentFact       `json:"facts"`
+	Sections    []SectionDetail     `json:"sections"`
+	Sources     []SourceSummary     `json:"sources"`
+	Hostnames   []HostnameEntry     `json:"hostnames,omitempty"`
+	History     []AssetHistoryEntry `json:"history,omitempty"`
 }
 
 // HostnameEntry — имя хоста из записи источника и срок его действия (смена имени видна в карточке).
+// AssetHistoryEntry — запись истории актива (assets.asset_changes): причина, время, кто, подробности.
+type AssetHistoryEntry struct {
+	ReasonCode string          `json:"reason_code"`
+	OccurredAt time.Time       `json:"occurred_at"`
+	ActorRef   string          `json:"actor_ref"`
+	Details    json.RawMessage `json:"details"`
+}
+
 type HostnameEntry struct {
 	Value     string     `json:"value"`
 	SourceID  string     `json:"source_id"`

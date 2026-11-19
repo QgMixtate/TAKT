@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"github.com/QgMixtate/surveyscan/v2/contracts"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/domain"
@@ -25,6 +26,8 @@ type Resolution struct {
 	// Renamed — запись прислала другое имя хоста: прежний идентификатор hostname закрыт (valid_to), вызывающий
 	// фиксирует HOSTNAME_CHANGED в истории актива (стенд №18: «старое имя не закрыто, истории смены нет»).
 	Renamed bool
+	// RenamedFrom/RenamedTo — прежние и новые имена (№57: «было → стало» в истории актива)
+	RenamedFrom, RenamedTo []string
 }
 
 // strongKind — сильные идентификаторы (C25.01 §1). IP/MAC/hostname — слабые и никогда не склеивают.
@@ -327,12 +330,27 @@ SELECT $1,$2,$3,$4,$5,'open' WHERE NOT EXISTS(SELECT 1 FROM assets.reconciliatio
 		}
 	}
 	for namespace, values := range hostnames {
-		tag, e := tx.Exec(ctx, `UPDATE assets.asset_identifiers SET valid_to=now() WHERE tenant_id=$1 AND asset_uid=$2 AND kind='hostname' AND namespace=$3 AND source_record_key=$4 AND valid_to IS NULL AND NOT normalized_value=ANY($5::text[])`, o.TenantID, result.AssetID, namespace, result.RecordKey, values)
+		rows, e := tx.Query(ctx, `UPDATE assets.asset_identifiers SET valid_to=now() WHERE tenant_id=$1 AND asset_uid=$2 AND kind='hostname' AND namespace=$3 AND source_record_key=$4 AND valid_to IS NULL AND NOT normalized_value=ANY($5::text[]) RETURNING normalized_value`, o.TenantID, result.AssetID, namespace, result.RecordKey, values)
 		if e != nil {
 			return result, e
 		}
-		if tag.RowsAffected() > 0 && !result.Created {
+		var closed []string
+		for rows.Next() {
+			var v string
+			if e = rows.Scan(&v); e != nil {
+				rows.Close()
+				return result, e
+			}
+			closed = append(closed, v)
+		}
+		rows.Close()
+		if e = rows.Err(); e != nil {
+			return result, e
+		}
+		if len(closed) > 0 && !result.Created {
 			result.Renamed = true
+			result.RenamedFrom = append(result.RenamedFrom, closed...)
+			result.RenamedTo = append(result.RenamedTo, values...)
 		}
 	}
 	return result, nil
@@ -354,8 +372,18 @@ func (Store) Bump(ctx context.Context, tx pgx.Tx, tenant, asset string) (string,
 	e := tx.QueryRow(ctx, "UPDATE assets.assets SET aggregate_version=aggregate_version+1 WHERE tenant_id=$1 AND asset_uid=$2 RETURNING aggregate_version::text", tenant, asset).Scan(&v)
 	return v, e
 }
-func (Store) History(ctx context.Context, tx pgx.Tx, tenant, asset, version, reason, actor string) error {
-	_, e := tx.Exec(ctx, "INSERT INTO assets.asset_changes(tenant_id,change_id,asset_uid,aggregate_version,reason_code,actor_ref) VALUES($1,$2,$3,$4,$5,$6)", tenant, identifier.New(), asset, version, reason, actor)
+
+// History — запись истории версии актива; details (необязательно) — подробности в provenance (№57: «было → стало»).
+func (Store) History(ctx context.Context, tx pgx.Tx, tenant, asset, version, reason, actor string, details ...map[string]any) error {
+	provenance := []byte("{}")
+	if len(details) > 0 && details[0] != nil {
+		raw, e := json.Marshal(details[0])
+		if e != nil {
+			return e
+		}
+		provenance = raw
+	}
+	_, e := tx.Exec(ctx, "INSERT INTO assets.asset_changes(tenant_id,change_id,asset_uid,aggregate_version,reason_code,actor_ref,provenance) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)", tenant, identifier.New(), asset, version, reason, actor, provenance)
 	return e
 }
 func (Store) Get(ctx context.Context, tx pgx.Tx, tenant, uid string) (contracts.Asset, error) {

@@ -217,6 +217,14 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 		platform = contracts.InventoryPlatformNetwork12
 	}
 	state := filepath.Join(c.StateDir, "targets", t.ID)
+	// №56: центр снял привязку (цель включена заново) — прежняя личность цели недействительна, регистрация с нуля
+	if _, e := os.Stat(filepath.Join(state, "identity.json")); e == nil && t.Source == nil {
+		telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_state_reset")
+		if e = os.RemoveAll(state); e != nil {
+			telemetry.Log(os.Stderr, "collector", "target_state_unavailable")
+			return
+		}
+	}
 	if e := os.MkdirAll(state, 0o700); e != nil {
 		telemetry.Log(os.Stderr, "collector", "target_state_unavailable")
 		return
@@ -233,6 +241,7 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 		}
 		switch {
 		case s == "inventory_queued":
+			targetProblem.Store("") // успешный сбор: прежняя причина отказа больше не актуальна
 			c.report(ctx, t.ID, true, "")
 		case s == "inventory_failed" || s == "inventory_collection_deadline":
 			// закреплённый сертификат WinRM сменился во время работы: показать причину, а не общий отказ
@@ -357,6 +366,9 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 		}
 		if e != nil {
 			problem := "collector:" + shortError(e)
+			if code, _ := targetProblem.Load().(string); code != "" && !strings.HasSuffix(code, ":") {
+				problem = code // №56: причина отказа подключения (TLS/Kerberos/SSH) и при отказе запуска цикла
+			}
 			if errors.Is(e, errHostKeyChanged) || errors.Is(e, errCertChanged) {
 				problem = e.Error() // код показывается в Web как есть: ключ/сертификат сменился, нужен сброс
 			}

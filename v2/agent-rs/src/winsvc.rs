@@ -133,6 +133,23 @@ pub fn install(name: &str, exe: &str, args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+/// Запуск установленной службы (№54: после install-service служба не должна оставаться Stopped).
+pub fn start(name: &str) -> Result<(), String> {
+    if !valid_name(name) {
+        return Err("service name invalid".into());
+    }
+    let m = manager(SC_MANAGER_CONNECT)?;
+    let n = wide(name);
+    let s = Handle(unsafe { OpenServiceW(m.0, n.as_ptr(), SERVICE_START) });
+    if s.0 == 0 {
+        return Err("service unavailable".into());
+    }
+    if unsafe { StartServiceW(s.0, 0, null()) } == 0 {
+        return Err(format!("service start failed ({})", unsafe { windows_sys::Win32::Foundation::GetLastError() }));
+    }
+    Ok(())
+}
+
 /// Удаление: остановка (если работает) и пометка на удаление; отсутствующая служба — не ошибка.
 pub fn uninstall(name: &str) -> Result<(), String> {
     if !valid_name(name) {

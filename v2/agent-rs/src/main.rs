@@ -75,7 +75,14 @@ fn main() -> ExitCode {
                 "install-service" => match arg(&args, "--config") {
                     Some(c) if std::path::Path::new(&c).is_absolute() => std::env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
                         ssagent::winsvc::install(&name, &exe.to_string_lossy(), &["service".into(), "--name".into(), name.clone(), "--config".into(), c])
-                    }).map(|_| println!("service_installed")),
+                    }).map(|_| {
+                        println!("service_installed");
+                        // №54: служба запускается сразу; отказ запуска не отменяет установку — подсказка оператору
+                        match ssagent::winsvc::start(&name) {
+                            Ok(()) => println!("service_started"),
+                            Err(e) => eprintln!("служба установлена, но не запущена ({e}); запустите: Start-Service {name}"),
+                        }
+                    }),
                     _ => Err("для службы требуется абсолютный --config".into()),
                 },
                 _ => match arg(&args, "--config") {

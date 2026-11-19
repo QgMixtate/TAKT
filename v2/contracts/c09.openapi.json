@@ -612,6 +612,14 @@
               "$ref": "#/components/schemas/HostnameEntry"
             },
             "description": "Имена хоста по записям источников: действующие (valid_to=null) и прежние, новые сверху."
+          },
+          "history": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/AssetHistoryEntry"
+            },
+            "description": "История изменений актива (C25/№57), новые сверху, до 50."
           }
         },
         "required": [
@@ -655,6 +663,36 @@
               "null"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "AssetHistoryEntry": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reason_code",
+          "occurred_at",
+          "actor_ref",
+          "details"
+        ],
+        "properties": {
+          "reason_code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor_ref": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "details": {
+            "type": "object",
+            "description": "Подробности изменения (например, для HOSTNAME_CHANGED: from, to, source_id)."
           }
         }
       }

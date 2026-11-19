@@ -73,3 +73,6 @@
 .request-block{border:1px solid #dfe7dd;border-radius:6px;padding:10px 12px;margin:8px 0;display:grid;gap:6px}.request-block p{margin:0}.portal-form{display:grid;gap:10px}
 .install-panel{margin-top:18px}
 input::placeholder,textarea::placeholder{color:#b3bcb0;font-style:italic}
+.inline-form{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.inline-form input{padding:2px 6px}
+.asset-history summary{cursor:pointer}.asset-history summary h3{display:inline}

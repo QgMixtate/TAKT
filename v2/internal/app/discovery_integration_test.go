@@ -483,7 +483,11 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if !paused() {
 		t.Fatal("disabled target source must be paused")
 	}
-	call("admin", "PATCH", "/api/v1/discovery/targets/"+tg.ID, `{"revision":"`+dis.Revision+`","disabled":false}`, 200)
+	var re sources.RemoteTarget
+	_ = json.Unmarshal(call("admin", "PATCH", "/api/v1/discovery/targets/"+tg.ID, `{"revision":"`+dis.Revision+`","disabled":false}`, 200), &re)
+	if re.State != "pending" || re.Source != nil { // №56: включение — заново через регистрацию (личность цели живёт сутки)
+		t.Fatalf("re-enabled target must re-register: state=%s source=%v", re.State, re.Source)
+	}
 	if paused() {
 		t.Fatal("re-enabled target source must not be paused")
 	}

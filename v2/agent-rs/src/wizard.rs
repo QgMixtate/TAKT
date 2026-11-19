@@ -278,9 +278,14 @@ fn list(v: &Value) -> Result<String, (u16, String)> {
 }
 
 fn state(w: &Wizard) -> R {
-    let (identity, public) = match p::load(&w.dir) {
-        Ok((id, key)) => (Some(id.source_id.clone()), Some(p::public_b64url(&key.verifying_key()))),
-        Err(_) => (None, None),
+    // №58: блок для центра («Portable-аудит» → регистрация источника) — тот же вывод, что у команды init
+    let (identity, public, block) = match p::load(&w.dir) {
+        Ok((id, key)) => {
+            let public = p::public_b64url(&key.verifying_key());
+            let block = format!("tenant_id={}\nsite_id={}\nscope_id={}\nsource_id={}\ngeneration_id={}\nkey_id={}\npublic_key={}", id.tenant_id, id.site_id, id.network_scope_id, id.source_id, id.generation_id, id.key_id, public);
+            (Some(id.source_id.clone()), Some(public), Some(block))
+        }
+        Err(_) => (None, None, None),
     };
     let profiles = Profiles::load(&w.dir).map(|p| serde_json::to_value(p).unwrap_or(Value::Null)).map_err(|e| (500, e))?;
     let discovery: Value = std::fs::read(w.dir.join(p::DISCOVERY_FILE)).ok().and_then(|r| serde_json::from_slice(&r).ok()).unwrap_or(Value::Null);
@@ -289,7 +294,7 @@ fn state(w: &Wizard) -> R {
         _ => vec![],
     };
     let center = p::center_key(&w.dir).ok().flatten().is_some();
-    Ok(json!({"dir": w.dir.display().to_string(), "initialized": identity.is_some(), "source_id": identity, "public_key": public, "center_key": center,
+    Ok(json!({"dir": w.dir.display().to_string(), "initialized": identity.is_some(), "source_id": identity, "public_key": public, "init_block": block, "center_key": center,
         "profiles": profiles, "discovery": discovery, "bound": bound, "platform": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION")}))
 }
 

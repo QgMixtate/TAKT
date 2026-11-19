@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/QgMixtate/surveyscan/v2/contracts"
@@ -63,5 +64,22 @@ func TestHostnameChangeClosesOldIdentifier(t *testing.T) {
 	names, err := f.registry.Assets.Hostnames(f.ctx, tx, tenant, a)
 	if err != nil || len(names) != 2 || names[0].Value != "calc-dep-renamed" || names[0].ValidTo != nil || names[1].ValidTo == nil {
 		t.Fatal("card hostname history", names, err)
+	}
+	// №57: в истории «было → стало», карточка отдаёт историю без проекций описи
+	hist, err := f.registry.Assets.AssetHistory(f.ctx, tx, tenant, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, h := range hist {
+		if h.ReasonCode == "INVENTORY_PROJECTED" {
+			t.Fatal("inventory projections must not be listed in card history")
+		}
+		if h.ReasonCode == "HOSTNAME_CHANGED" {
+			found = string(h.Details) != "" && strings.Contains(string(h.Details), `"from": ["calc-dep"]`) && strings.Contains(string(h.Details), `"to": ["calc-dep-renamed"]`)
+		}
+	}
+	if !found {
+		t.Fatalf("rename details missing: %+v", hist)
 	}
 }
