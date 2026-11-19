@@ -1,5 +1,6 @@
 import {useEffect,useState,type ReactNode} from 'react';
 import {SystemsScreen} from './systems';
+import {SystemCardPage,ComponentCardPage} from './cards';
 import {api,ApiError,errorMessage,type AssetRSM,type RSMColor,type RSMComponentDetail,type RSMEnvKind,type RSMImportResult,type RSMNodeState,type RSMOverview,type RSMProposal,type RSMReason,type RSMSystemDetail,type RSMUnassignedPage} from './api';
 
 // C54.04 — РСМ в Web: системы со светофором (сначала проблемные), карточки системы и компонента, предложения правил,
@@ -44,15 +45,15 @@ export function RSMView({csrf,canWrite,onOpenAsset,onExpired}:{csrf:string;canWr
  return <section className="rsm">
   <Err e={error}/><Err e={actError}/>{note?<p className="rsm-note" role="status">{note} <button className="link" onClick={()=>setNote('')}>скрыть</button></p>:null}
   {mode.kind==='list'?<SystemsScreen overview={overview} actions={actions} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenComponent={id=>setMode({kind:'component',id})} onOpenAsset={onOpenAsset} onUnassigned={()=>setMode({kind:'unassigned'})} onProposals={()=>setMode({kind:'proposals'})} onExpired={onExpired}/>:null}
-  {mode.kind==='system'?<SystemCard uid={mode.uid} csrf={csrf} canWrite={canWrite} directions={overview?.directions??[]} onBack={()=>{setMode({kind:'list'});setV(x=>x+1)}} onComponent={id=>setMode({kind:'component',id,from:mode.uid})} onExpired={onExpired} onDirection={()=>setV(x=>x+1)}/>:null}
-  {mode.kind==='component'?<ComponentCard id={mode.id} csrf={csrf} canWrite={canWrite} onBack={()=>mode.from?setMode({kind:'system',uid:mode.from}):setMode({kind:'list'})} onOpenAsset={onOpenAsset} onExpired={onExpired}/>:null}
+  {mode.kind==='system'?<SystemCardPage uid={mode.uid} csrf={csrf} canWrite={canWrite} directions={overview?.directions??[]} onBack={()=>{setMode({kind:'list'});setV(x=>x+1)}} onComponent={(id,from)=>setMode({kind:'component',id,from})} onOpenAsset={onOpenAsset} onOpenSystem={uid=>setMode({kind:'system',uid})} onExpired={onExpired} onChanged={()=>setV(x=>x+1)}/>:null}
+  {mode.kind==='component'?<ComponentCardPage key={mode.id} id={mode.id} csrf={csrf} canWrite={canWrite} backLabel={mode.from?'Карточка системы':'Все системы'} onBack={()=>mode.from?setMode({kind:'system',uid:mode.from}):setMode({kind:'list'})} onOpenSystem={uid=>setMode({kind:'system',uid})} onOpenAsset={onOpenAsset} onExpired={onExpired}/>:null}
   {mode.kind==='proposals'?<>{back}<Proposals csrf={csrf} canWrite={canWrite} onOpenAsset={onOpenAsset} onExpired={onExpired} onChange={()=>setV(x=>x+1)}/></>:null}
   {mode.kind==='unassigned'?<>{back}<Unassigned onOpenAsset={onOpenAsset} onExpired={onExpired}/></>:null}
   {mode.kind==='import'?<>{back}<Import csrf={csrf} canWrite={canWrite} onExpired={onExpired}/></>:null}
  </section>;
 }
 
-function SystemCard({uid,csrf,canWrite,directions,onBack,onComponent,onExpired,onDirection}:{uid:string;csrf:string;canWrite:boolean;directions:RSMOverview['directions'];onBack:()=>void;onComponent:(id:string)=>void;onExpired:()=>void;onDirection:()=>void}){
+export function SystemCard({uid,csrf,canWrite,directions,onBack,onComponent,onExpired,onDirection,embedded=false}:{uid:string;csrf:string;canWrite:boolean;directions:RSMOverview['directions'];onBack:()=>void;onComponent:(id:string)=>void;onExpired:()=>void;onDirection:()=>void;embedded?:boolean}){
  const [d,error,reload]=useLoad<RSMSystemDetail>(()=>api.rsmSystem(uid),[uid],onExpired);
  const [busy,actError,act]=useAct(onExpired);
  const [owner,setOwner]=useState<string|null>(null),[window_,setWindow]=useState<string|null>(null);
@@ -65,7 +66,7 @@ function SystemCard({uid,csrf,canWrite,directions,onBack,onComponent,onExpired,o
  let baselineError='';let baseline:Record<string,unknown>|undefined;
  if(comp?.baseline.trim()){try{const v=JSON.parse(comp.baseline);if(typeof v!=='object'||Array.isArray(v)||v===null)baselineError='эталон — JSON-объект';else baseline=v}catch{baselineError='эталон — неверный JSON'}}
  return <div className="table-panel rsm-card">
-  <div className="table-toolbar"><button className="text-link" onClick={onBack}>← Все системы</button><h2>{sys.name}</h2>{d.state?<Dot color={d.state.color} label/>:null}</div>
+  {embedded?null:<div className="table-toolbar"><button className="text-link" onClick={onBack}>← Все системы</button><h2>{sys.name}</h2>{d.state?<Dot color={d.state.color} label/>:null}</div>}
   <Err e={actError}/>
   <div className="rsm-fields">
    <div><span className="muted">Важность</span><strong>{critNames[sys.criticality]}</strong><small>меняется в разделе «Сервисы»</small></div>
@@ -93,7 +94,7 @@ function SystemCard({uid,csrf,canWrite,directions,onBack,onComponent,onExpired,o
  </div>;
 }
 
-function ComponentCard({id,csrf,canWrite,onBack,onOpenAsset,onExpired}:{id:string;csrf:string;canWrite:boolean;onBack:()=>void;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
+export function ComponentCard({id,csrf,canWrite,onBack,onOpenAsset,onExpired,embedded=false}:{id:string;csrf:string;canWrite:boolean;onBack:()=>void;onOpenAsset:(uid:string)=>void;onExpired:()=>void;embedded?:boolean}){
  const [offset,setOffset]=useState(0);
  const [d,error,reload]=useLoad<RSMComponentDetail>(()=>api.rsmComponent(id,offset),[id,offset],onExpired);
  const [busy,actError,act]=useAct(onExpired);
@@ -104,17 +105,17 @@ function ComponentCard({id,csrf,canWrite,onBack,onOpenAsset,onExpired}:{id:strin
  const badUID=uids.find(u=>!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(u));
  const baseline=Object.keys(d.component.baseline).length?JSON.stringify(d.component.baseline):'';
  return <div className="table-panel rsm-card">
-  <div className="table-toolbar"><button className="text-link" onClick={onBack}>← {d.system_name}</button><h2>{d.component.name}</h2>{d.state?<Dot color={d.state.color} label/>:null}<small className="muted">{d.system_name} / {d.environment.name}{d.component.critical?' · критичный':''}</small></div>
+  {embedded?null:<div className="table-toolbar"><button className="text-link" onClick={onBack}>← {d.system_name}</button><h2>{d.component.name}</h2>{d.state?<Dot color={d.state.color} label/>:null}<small className="muted">{d.system_name} / {d.environment.name}{d.component.critical?' · критичный':''}</small></div>}
   <Err e={actError}/>{note?<p className="panel-note" role="status">{note}</p>:null}
   {baseline?<p className="panel-note">Эталон: <span className="mono">{baseline}</span></p>:null}
   {d.state?<p className="panel-note"><Counts s={d.state}/> <Reasons list={d.state.reasons} max={6}/></p>:null}
-  <h3>Хосты</h3>
+  {embedded?null:<><h3>Хосты</h3>
   {d.hosts.length===0?<div className="empty"><span>◌</span><h3>Хостов нет</h3><p>Привяжите хосты списком ниже или правилом — новые хосты под правилом попадут в предложения.</p></div>:
   <div className="table-scroll"><table><thead><tr><th/><th>Хост</th><th>Почему</th><th>Инвентаризация</th><th>Привязка</th>{canWrite?<th/>:null}</tr></thead><tbody>{d.hosts.map(h=><tr key={h.asset_uid}>
    <td><Dot color={h.color}/></td><td><button className="asset-link" onClick={()=>onOpenAsset(h.asset_uid)}><span><strong>{h.name||h.asset_uid.slice(0,8)}</strong><small className="mono">{h.asset_uid}</small></span></button></td>
    <td><Reasons list={h.reasons} max={4}/></td><td>{time(h.last_inventory_at)}</td><td>{h.is_primary?'основная':'дополнительная (общий хост)'}<small> · {originNames[h.origin]??h.origin}</small></td>
    {canWrite?<td className="actions">{!h.is_primary&&h.binding_id?<button className="text-link" disabled={busy} onClick={()=>void act(()=>api.rsmPrimary(h.binding_id,csrf),reload)}>Сделать основной</button>:null}{h.binding_id?<button className="text-link" disabled={busy} onClick={()=>{if(window.confirm('Отвязать хост от компонента? Изменение попадёт в историю.'))void act(()=>api.rsmUnbind(h.binding_id,csrf),reload)}}>Отвязать</button>:null}</td>:null}</tr>)}</tbody></table></div>}
-  <div className="pager"><small>Сначала проблемные</small><div><button className="button small" disabled={offset===0} onClick={()=>setOffset(Math.max(0,offset-100))}>← Назад</button><button className="button small" disabled={d.next_offset==null} onClick={()=>setOffset(d.next_offset!)}>Далее →</button></div></div>
+  <div className="pager"><small>Сначала проблемные</small><div><button className="button small" disabled={offset===0} onClick={()=>setOffset(Math.max(0,offset-100))}>← Назад</button><button className="button small" disabled={d.next_offset==null} onClick={()=>setOffset(d.next_offset!)}>Далее →</button></div></div></>}
   <h3>Правила автопривязки</h3>
   {d.rules.length===0?<p className="muted">Правил нет.</p>:<table><tbody>{d.rules.map(r=><tr key={r.rule_id}><td>{ruleKinds[r.kind]??r.kind}</td><td className="mono">{r.pattern}</td><td>{r.mode==='auto'?'привязывать сразу':'предлагать оператору'}</td>{canWrite?<td className="actions"><button className="text-link" disabled={busy} onClick={()=>void act(()=>api.rsmRetireRule(r.rule_id,csrf),reload)}>Снять</button></td>:null}</tr>)}</tbody></table>}
   {canWrite?<form className="rsm-inline" onSubmit={e=>{e.preventDefault();void act(()=>api.rsmCreateRule(id,csrf,rule),()=>{setRule({...rule,pattern:''});setNote('Правило добавлено: новые хосты проверяются при приёме данных; для уже известных — «Применить правила ко всем хостам».');reload()})}}>

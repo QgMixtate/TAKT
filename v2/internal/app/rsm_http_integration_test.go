@@ -228,6 +228,51 @@ func TestC54RSMHTTP(t *testing.T) {
 	if len(comp2.Environments) != 0 {
 		t.Fatalf("composition search without hits: %+v", comp2)
 	}
+	// C53.03: карточки системы и компонента
+	var card struct {
+		Direction *string  `json:"direction_name"`
+		EnvKinds  []string `json:"env_kinds"`
+		Matrix    []struct {
+			Name  string `json:"name"`
+			Cells map[string]struct {
+				Hosts int `json:"hosts"`
+			} `json:"cells"`
+		} `json:"matrix"`
+		Changes []struct {
+			Object string `json:"object_type"`
+		} `json:"changes"`
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/systems/"+service.UID+"/card", "SystemCard"), &card)
+	if card.Direction == nil || *card.Direction != "Продажи" || len(card.EnvKinds) != 1 || len(card.Matrix) != 1 || card.Matrix[0].Cells["prod"].Hosts != 2 || len(card.Changes) == 0 {
+		t.Fatalf("system card: %+v", card)
+	}
+	var cc struct {
+		Matched  int `json:"matched"`
+		Baseline []struct {
+			Key        string `json:"key"`
+			Deviations int    `json:"deviations"`
+		} `json:"baseline_summary"`
+		Hosts []struct {
+			Name   string            `json:"name"`
+			Site   string            `json:"site"`
+			Values map[string]string `json:"values"`
+		} `json:"hosts"`
+		Sites []struct {
+			Count int `json:"count"`
+		} `json:"sites"`
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/components/"+comp.ID+"/card", "ComponentCard"), &cc)
+	if cc.Matched != 2 || len(cc.Baseline) != 1 || cc.Baseline[0].Key != "software:Sample" || cc.Baseline[0].Deviations != 0 || len(cc.Sites) != 1 || cc.Sites[0].Count != 2 || cc.Hosts[0].Site == "" {
+		t.Fatalf("component card: %+v", cc)
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/components/"+comp.ID+"/card?q=crm-db", "ComponentCard"), &cc)
+	if cc.Matched != 1 || cc.Hosts[0].Name != "crm-db-01" || cc.Hosts[0].Values["software:Sample"] == "" {
+		t.Fatalf("component card filter: %+v", cc)
+	}
+	_ = json.Unmarshal(get("/api/v1/rsm/systems/"+service.UID+"/composition?q=nothing-here", "Composition"), &comp2)
+	if len(comp2.Environments) != 0 {
+		t.Fatalf("composition search without hits: %+v", comp2)
+	}
 	get("/api/v1/rsm/systems?limit=10", "SystemPage")
 	get("/api/v1/rsm/systems?color=red", "SystemPage")
 	if code, _, _ := b.request(t, "GET", "/api/v1/rsm/systems?color=pink", "", "", "", nil); code != 422 {

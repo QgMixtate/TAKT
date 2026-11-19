@@ -493,6 +493,25 @@ func (r *Registry) rsmHandlers() map[string]rsmRoute {
 		out, e := r.RSMComposition(ctx, id, req.PathValue("service_uid"), q.Get("q"), q.Get("env"), q.Get("problems") == "true")
 		reply(w, req, out, e)
 	})
+	h["GET /api/v1/rsm/systems/{service_uid}/card"] = read(func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity) {
+		if _, ok := queryOnly(w, req); !ok {
+			return
+		}
+		out, e := r.RSMSystemCard(ctx, id, req.PathValue("service_uid"))
+		reply(w, req, out, e)
+	})
+	h["GET /api/v1/rsm/components/{component_id}/card"] = read(func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity) {
+		q, ok := queryOnly(w, req, "q", "site", "color", "offset", "limit")
+		if !ok {
+			return
+		}
+		offset, limit, ok := offsetLimit(w, q)
+		if !ok {
+			return
+		}
+		out, e := r.RSMComponentCard(ctx, id, req.PathValue("component_id"), q.Get("q"), q.Get("site"), q.Get("color"), offset, limit)
+		reply(w, req, out, e)
+	})
 	h["PATCH /api/v1/rsm/systems/{service_uid}"] = write(func() any { return &systemPatch{} }, func(w http.ResponseWriter, req *http.Request, ctx context.Context, id accessport.Identity, body any) {
 		p := body.(*systemPatch)
 		var out cmdb.System

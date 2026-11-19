@@ -1593,6 +1593,611 @@
     "dependents"
    ],
    "additionalProperties": false
+  },
+  "MatrixRow": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "critical": {
+     "type": "boolean"
+    },
+    "color": {
+     "enum": [
+      "green",
+      "yellow",
+      "red",
+      "grey"
+     ]
+    },
+    "cells": {
+     "type": "object",
+     "propertyNames": {
+      "enum": [
+       "prod",
+       "test",
+       "dev",
+       "stage",
+       "dr",
+       "other"
+      ]
+     },
+     "additionalProperties": {
+      "type": "object",
+      "properties": {
+       "component_id": {
+        "type": "string",
+        "format": "uuid"
+       },
+       "hosts": {
+        "type": "integer",
+        "minimum": 0
+       }
+      },
+      "required": [
+       "component_id",
+       "hosts"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "problems": {
+     "type": "object",
+     "propertyNames": {
+      "enum": [
+       "stale",
+       "no_data",
+       "missing",
+       "baseline",
+       "conflict"
+      ]
+     },
+     "additionalProperties": {
+      "type": "integer",
+      "minimum": 0
+     }
+    }
+   },
+   "required": [
+    "name",
+    "critical",
+    "color",
+    "cells",
+    "problems"
+   ],
+   "additionalProperties": false
+  },
+  "Attention": {
+   "type": "object",
+   "properties": {
+    "color": {
+     "enum": [
+      "green",
+      "yellow",
+      "red",
+      "grey"
+     ]
+    },
+    "code": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 64
+    },
+    "detail": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 1024
+    },
+    "component_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "component_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "environment_name": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 128
+    },
+    "hosts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/AssetRef"
+     },
+     "maxItems": 5
+    },
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "color",
+    "code",
+    "detail",
+    "component_name",
+    "component_id",
+    "environment_name",
+    "hosts",
+    "total"
+   ],
+   "additionalProperties": false
+  },
+  "Dependency": {
+   "type": "object",
+   "properties": {
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "criticality": {
+     "enum": [
+      "unknown",
+      "low",
+      "medium",
+      "high",
+      "critical"
+     ]
+    },
+    "color": {
+     "enum": [
+      "green",
+      "yellow",
+      "red",
+      "grey"
+     ]
+    },
+    "problems": {
+     "type": "object",
+     "propertyNames": {
+      "enum": [
+       "stale",
+       "no_data",
+       "missing",
+       "baseline",
+       "conflict"
+      ]
+     },
+     "additionalProperties": {
+      "type": "integer",
+      "minimum": 0
+     }
+    }
+   },
+   "required": [
+    "service_uid",
+    "name",
+    "criticality",
+    "color",
+    "problems"
+   ],
+   "additionalProperties": false
+  },
+  "Change": {
+   "type": "object",
+   "properties": {
+    "occurred_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "source": {
+     "enum": [
+      "cmdb",
+      "asset"
+     ]
+    },
+    "object_type": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 64
+    },
+    "action": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 64
+    },
+    "detail": {
+     "type": "object"
+    },
+    "asset_uid": {
+     "anyOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "asset_name": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "occurred_at",
+    "source",
+    "object_type",
+    "action",
+    "detail",
+    "asset_uid",
+    "asset_name"
+   ],
+   "additionalProperties": false
+  },
+  "SystemCard": {
+   "type": "object",
+   "properties": {
+    "system": {
+     "$ref": "#/$defs/System"
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "direction_name": {
+     "anyOf": [
+      {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 256
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "it_subject_name": {
+     "anyOf": [
+      {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "sites": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "env_kinds": {
+     "type": "array",
+     "items": {
+      "enum": [
+       "prod",
+       "test",
+       "dev",
+       "stage",
+       "dr",
+       "other"
+      ]
+     }
+    },
+    "matrix": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/MatrixRow"
+     }
+    },
+    "attention": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Attention"
+     },
+     "maxItems": 20
+    },
+    "depends_on": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Dependency"
+     }
+    },
+    "dependents": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Dependency"
+     }
+    },
+    "changes": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Change"
+     },
+     "maxItems": 50
+    },
+    "changes_total": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "system",
+    "state",
+    "direction_name",
+    "it_subject_name",
+    "sites",
+    "env_kinds",
+    "matrix",
+    "attention",
+    "depends_on",
+    "dependents",
+    "changes",
+    "changes_total"
+   ],
+   "additionalProperties": false
+  },
+  "Count": {
+   "type": "object",
+   "properties": {
+    "name": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 512
+    },
+    "count": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "name",
+    "count"
+   ],
+   "additionalProperties": false
+  },
+  "BaselineItem": {
+   "type": "object",
+   "properties": {
+    "key": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 300
+    },
+    "label": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "expected": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 512
+    },
+    "values": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Count"
+     },
+     "maxItems": 5
+    },
+    "deviations": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "no_data": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "key",
+    "label",
+    "expected",
+    "values",
+    "deviations",
+    "no_data"
+   ],
+   "additionalProperties": false
+  },
+  "ComponentHost": {
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "name": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 256
+    },
+    "color": {
+     "enum": [
+      "green",
+      "yellow",
+      "red",
+      "grey"
+     ]
+    },
+    "reasons": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Reason"
+     },
+     "maxItems": 256
+    },
+    "last_inventory_at": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "format": "date-time"
+    },
+    "binding_id": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 64
+    },
+    "is_primary": {
+     "type": "boolean"
+    },
+    "origin": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 16
+    },
+    "ip": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 64
+    },
+    "site": {
+     "type": "string",
+     "minLength": 0,
+     "maxLength": 512
+    },
+    "values": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 4096
+     }
+    }
+   },
+   "required": [
+    "asset_uid",
+    "name",
+    "color",
+    "reasons",
+    "last_inventory_at",
+    "binding_id",
+    "is_primary",
+    "origin",
+    "ip",
+    "site",
+    "values"
+   ],
+   "additionalProperties": false
+  },
+  "ComponentCard": {
+   "type": "object",
+   "properties": {
+    "component": {
+     "$ref": "#/$defs/Component"
+    },
+    "environment": {
+     "$ref": "#/$defs/Environment"
+    },
+    "system_name": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "state": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/NodeState"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "rules": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Rule"
+     }
+    },
+    "hosts": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/ComponentHost"
+     },
+     "maxItems": 500
+    },
+    "offset": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "next_offset": {
+     "type": [
+      "integer",
+      "null"
+     ],
+     "minimum": 0
+    },
+    "service_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "it_subject_name": {
+     "anyOf": [
+      {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 512
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "sites": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Count"
+     },
+     "maxItems": 6
+    },
+    "networks": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/Count"
+     },
+     "maxItems": 4
+    },
+    "baseline_summary": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/BaselineItem"
+     }
+    },
+    "matched": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "component",
+    "environment",
+    "system_name",
+    "state",
+    "rules",
+    "hosts",
+    "offset",
+    "next_offset",
+    "service_uid",
+    "it_subject_name",
+    "sites",
+    "networks",
+    "baseline_summary",
+    "matched"
+   ],
+   "additionalProperties": false
   }
  }
 }
