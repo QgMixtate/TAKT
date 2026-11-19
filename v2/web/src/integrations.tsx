@@ -72,7 +72,7 @@ export function CSVPanel({csrf,canWrite,onExpired,onImported}:{csrf:string;canWr
   {result?<div role="status">Проверка: применится {result.counts.applied}, без изменений {result.counts.unchanged}, устарело {result.counts.stale_revision}, не найдено {result.counts.not_found}, ошибок {result.counts.invalid}.
    {issues.length?<div className="table-scroll"><table><thead><tr><th>Строка</th><th>Актив</th><th>Итог</th></tr></thead><tbody>{issues.slice(0,100).map(r=><tr key={r.line}><td>{r.line}</td><td className="mono">{r.asset_uid}</td><td>{statusNames[r.status]}{r.field?' «'+r.field+'»':''}</td></tr>)}</tbody></table></div>:null}</div>:null}
   {done?<div className="notice" role="status">{done}</div>:null}
-  {error?<div className="error" role="alert">{error instanceof ApiError&&error.code==='INVALID_INPUT'?'Файл не похож на выгрузку SurveyScan (первая строка «#surveyscan-assets-csv;v1»).':errorMessage(error)}</div>:null}
+  {error?<div className="error" role="alert">{error instanceof ApiError&&error.code==='INVALID_INPUT'?'Файл не похож на выгрузку ТАКТ (первая строка «#surveyscan-assets-csv;v1»).':errorMessage(error)}</div>:null}
  </section>;
 }
 

@@ -1,4 +1,4 @@
-import {useState,type FormEvent,type ReactNode} from 'react';
+import {useEffect,useState,type FormEvent,type ReactNode} from 'react';
 import {api,ApiError,errorMessage,type SearchItem,type SearchPage} from './api';
 import {classNames} from './cmdb';
 
@@ -10,8 +10,9 @@ function Highlighted({text,ranges}:{text:string;ranges:[number,number][]}){
  if(at<chars.length)out.push(chars.slice(at).join(''));
  return <>{out}</>;
 }
-export function SearchView({onOpenAsset,onExpired}:{onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
- const [q,setQ]=useState(''),[page,setPage]=useState<SearchPage|null>(null),[items,setItems]=useState<SearchItem[]>([]),[filters,setFilters]=useState<{os?:string;class?:string}>({}),[error,setError]=useState<unknown>(null),[loading,setLoading]=useState(false);
+export function SearchView({initial='',onOpenAsset,onExpired}:{initial?:string;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
+ const [q,setQ]=useState(initial),[page,setPage]=useState<SearchPage|null>(null),[items,setItems]=useState<SearchItem[]>([]),[filters,setFilters]=useState<{os?:string;class?:string}>({}),[error,setError]=useState<unknown>(null),[loading,setLoading]=useState(false);
+ useEffect(()=>{if(initial.trim().length>=2)void run(initial,{},null)},[]); // общий поиск из шапки
  async function run(query:string,f:{os?:string;class?:string},cursor:string|null){
   if(query.trim().length<2)return;setLoading(true);setError(null);
   try{const p=await api.search(query.trim(),f,cursor);setPage(p);setItems(x=>cursor?[...x,...p.items]:p.items)}catch(e){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setLoading(false)}
