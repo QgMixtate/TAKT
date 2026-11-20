@@ -48,6 +48,8 @@ def scenario(**s):
                 for a in assets.get('items', []):
                     r = orig_run([cli, 'assets', 'get', '--id', a['asset_uid'], '--context-file', str(ctxf)], capture_output=True, text=True)
                     f.write('$ surveyscanctl assets get --id ' + a['asset_uid'] + '\n' + r.stdout + '\n')
+            if os.environ.get('SURVEYSCAN_AUDIT'):  # сверка с макетами: все разделы нового Web
+                return orig_run(['node', str(Path(DEMO_JS).with_name('audit_shots.mjs')), cmd[2], str(OUT)], **{**kw, 'timeout': 600})
             if os.environ.get('SURVEYSCAN_README'):  # скриншоты README: системы через API + новый интерфейс
                 return orig_run(['node', str(Path(DEMO_JS).with_name('readme_shots.mjs')), cmd[2], str(OUT)], **{**kw, 'timeout': 400})
             result = orig_run(['node', DEMO_JS, cmd[2], str(OUT)], **kw)

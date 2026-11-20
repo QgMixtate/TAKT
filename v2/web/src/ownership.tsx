@@ -46,7 +46,7 @@ export function WorklistView({csrf,canWrite,onOpenAsset,onNavigate,onExpired}:{c
  const [selected,setSelected]=useState<string[]>([]),[role,setRole]=useState<RoleName>('accountable'),[subject,setSubject]=useState(''),[busy,setBusy]=useState(false);
  const [subjects]=useSubjects(onExpired);
  const [sum,setSum]=useState<Record<string,WorklistPage|null>>({}),[tickets,setTickets]=useState<Ticket[]|null>(null);
- useEffect(()=>{for(const [k] of scopes)api.worklist(k).then(p=>setSum(x=>({...x,[k]:p}))).catch(e=>{setSum(x=>({...x,[k]:null}));expired(e,onExpired)});api.tickets({mine:true}).then(p=>setTickets(p.items.filter(t=>t.state!=='closed'&&t.state!=='resolved'))).catch(e=>expired(e,onExpired))},[n]);
+ useEffect(()=>{for(const [k] of scopes)api.worklist(k).then(p=>setSum(x=>({...x,[k]:p}))).catch(e=>{setSum(x=>({...x,[k]:null}));expired(e,onExpired)});api.tickets({mine:true}).then(p=>setTickets(p.items.filter(t=>t.state!=='closed'&&t.state!=='resolved'))).catch(e=>{setTickets([]);expired(e,onExpired)})},[n]);
  async function load(cursor:string|null){setLoading(true);setError(null);try{const p=await api.worklist(scope,cursor);setItems(x=>cursor?[...x,...p.items]:p.items);setNext(p.next_cursor)}catch(e){setError(e);expired(e,onExpired)}finally{setLoading(false)}}
  useEffect(()=>{setSelected([]);void load(null)},[scope,n]);
  async function bulk(){
