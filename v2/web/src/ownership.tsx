@@ -60,7 +60,9 @@ export function WorklistView({csrf,canWrite,onOpenAsset,onNavigate,onExpired}:{c
  const count=(k:string)=>sum[k]===undefined?'…':sum[k]===null?'—':sum[k]!.items.length+(sum[k]!.next_cursor?'+':'');
  const kpiNote:Record<string,string>={mine:'вы — ответственный',team:'на ваших командах',unassigned:'без ответственного',attention:'ответственный выбыл'};
  const name=(i:WorklistItem)=>i.display_name??i.observed_hostname??'Без имени';
+ const hour=new Date().getHours(),hello=hour<5?'Доброй ночи':hour<12?'Доброе утро':hour<18?'Добрый день':'Добрый вечер';
  return <>
+  <div className="greet"><h2>{hello}</h2><p className="muted">{sum.mine===undefined?'Считаем вашу зону ответственности…':'Вы отвечаете за '+count('mine')+' акт. лично и '+count('team')+' — через команды; нераспределённых: '+count('unassigned')+'.'}</p></div>
   <div className="kpi-cards">{scopes.map(([k,v])=><button key={k} className={(k==='attention'?'amber':'')+(scope===k?' active':'')} aria-pressed={scope===k} onClick={()=>setScope(k)}><small>{v}</small><b>{count(k)}</b><span>{kpiNote[k]}</span></button>)}
    <button className={tickets?.length?'warn':''} onClick={()=>onNavigate?.('tickets')}><small>Обращения на мне</small><b>{tickets?tickets.length:'…'}</b><span>открытые</span></button></div>
   <div className="two-col">

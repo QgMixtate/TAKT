@@ -36,7 +36,7 @@ export function InstallPanel({csrf,sources,onExpired,embedded}:{csrf:string;sour
     <label>Установок по коду<input aria-label="Число установок" type="number" min={1} max={10000} value={uses} onChange={e=>setUses(Number(e.target.value))}/></label>
     <label>Действует, часов<input aria-label="Срок кода" type="number" min={1} max={720} value={hours} onChange={e=>setHours(Number(e.target.value))}/></label>
     <label className="wide">Комментарий<input aria-label="Комментарий к коду" value={comment} maxLength={256} onChange={e=>setComment(e.target.value)} placeholder="например: бухгалтерия, GPO"/></label>
-    <div className="wh-submit"><button className="button" disabled={busy||!site||(kind==='agent'&&!collector)||uses<1||hours<1} onClick={()=>void create()}>Создать код</button></div>
+    <div className="wh-submit"><button className="button primary-sm" disabled={busy||!site||(kind==='agent'&&!collector)||uses<1||hours<1} onClick={()=>void create()}>Создать код</button></div>
    </div>
    {created?<div className="map-notice ok" role="status"><p><strong>Код: <span className="mono">{created.code}</span></strong> — показывается один раз, сохраните его сейчас. Действует до {time(created.expires_at)}, установок: {created.max_uses}.</p>
     {created.source_kind==='collector'?<label>Адрес центра для collector<input aria-label="Адрес центра" className="mono" value={centerURL} onChange={e=>setCenterURL(e.target.value)}/></label>:<label>Адрес collector площадки<input aria-label="Адрес collector" className="mono" value={collectorURL} onChange={e=>setCollectorURL(e.target.value)}/></label>}

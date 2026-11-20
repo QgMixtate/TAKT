@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/QgMixtate/surveyscan/v2/internal/platform/identifier"
 	"io"
 	"net/http"
 	"strconv"
@@ -393,6 +394,10 @@ func (r *Registry) SearchAssets(ctx context.Context, id accessport.Identity, que
 	if filters == nil {
 		filters = map[string]string{}
 	}
+	// площадка и свежесть — не в индексе: отбираются при перепроверке по источнику истины (реестр хостов)
+	site, fresh := filters["site"], filters["freshness"]
+	delete(filters, "site")
+	delete(filters, "freshness")
 	e = r.Search.call(ctx, "/v1/search", map[string]any{"tenant": id.TenantID, "query": query, "filters": filters, "limit": searchWindow, "snippets": min(offset+limit+20, searchWindow)}, &resp)
 	if e == nil {
 		out.Mode, hits = "fulltext", resp.Hits
@@ -411,7 +416,8 @@ func (r *Registry) SearchAssets(ctx context.Context, id accessport.Identity, que
 		candidates = append(candidates, h.Asset)
 	}
 	live := map[string]bool{}
-	rows, e := tx.Query(ctx, "SELECT asset_uid::text FROM assets.assets WHERE tenant_id=$1 AND asset_uid=ANY($2::uuid[]) AND merged_into IS NULL", id.TenantID, candidates)
+	rows, e := tx.Query(ctx, `SELECT a.asset_uid::text FROM assets.assets a LEFT JOIN cmdb.host_registry h ON h.tenant_id=a.tenant_id AND h.asset_uid=a.asset_uid
+WHERE a.tenant_id=$1 AND a.asset_uid=ANY($2::uuid[]) AND a.merged_into IS NULL AND ($3='' OR a.site_id::text=$3) AND ($4='' OR COALESCE(h.freshness,'unknown')=$4)`, id.TenantID, candidates, site, fresh)
 	if e != nil {
 		return out, e
 	}
@@ -502,7 +508,7 @@ OR EXISTS(SELECT 1 FROM inventory.software_installations12 s WHERE s.tenant_id=a
 
 func (r *Registry) searchHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		q, ok := queryOnly(w, req, "q", "os", "class", "cursor", "limit")
+		q, ok := queryOnly(w, req, "q", "os", "class", "site", "freshness", "cursor", "limit")
 		if !ok {
 			return
 		}
@@ -524,6 +530,20 @@ func (r *Registry) searchHandler() http.Handler {
 			if v := q.Get(k); v != "" {
 				filters[k] = v
 			}
+		}
+		if v := q.Get("site"); v != "" {
+			if !identifier.Valid(v) {
+				access.APIError(w, 400, "INVALID_QUERY")
+				return
+			}
+			filters["site"] = v
+		}
+		if v := q.Get("freshness"); v != "" {
+			if v != "fresh" && v != "stale" && v != "unknown" {
+				access.APIError(w, 400, "INVALID_QUERY")
+				return
+			}
+			filters["freshness"] = v
 		}
 		ctx, cancel, id := cmdbContext(req)
 		defer cancel()

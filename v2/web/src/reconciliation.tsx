@@ -33,7 +33,9 @@ export function ReconciliationView({csrf,onOpenAsset,onExpired}:{csrf:string;onO
   try{const r=await api.resolveConflict(c.conflict_id,csrf,{action,...(asset?{asset_uid:asset}:{}),revision:c.revision});setNotice(action==='dismiss'?'Конфликт отложен.':`Готово: запись привязана к активу${r.asset_uid?' '+r.asset_uid.slice(0,8):''}, применено наблюдений: ${r.replayed_observations}.`);setRefresh(n=>n+1)}
   catch(e){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setBusy(false)}
  }
- const shown=items.filter(i=>!q||[i.observed_hostname,i.source_local_id,i.namespace,...(i.identifiers??[]).map(x=>x.value)].some(v=>v&&v.toLowerCase().includes(q.toLowerCase())));
+ const [rtype,setRtype]=useState('');
+ const types=[...new Set(items.map(i=>i.reason_code))];
+ const shown=items.filter(i=>!rtype||i.reason_code===rtype).filter(i=>!q||[i.observed_hostname,i.source_local_id,i.namespace,...(i.identifiers??[]).map(x=>x.value)].some(v=>v&&v.toLowerCase().includes(q.toLowerCase())));
  const pd=pick?cand[pick]?.detail:null;
  const ids=c?.identifiers??(c?.observed_hostname?[{kind:'hostname',value:c.observed_hostname}]:[]);
  const side=c?<>
@@ -50,7 +52,7 @@ export function ReconciliationView({csrf,onOpenAsset,onExpired}:{csrf:string;onO
  return <>
   <Strip label="Сводка конфликтов" items={states.map(([k,l])=>({key:k,n:counts[k]??null,label:l,tone:k==='open'?'warn':'muted',active:state===k,onClick:()=>setState(k)}))} right={<button className="button" disabled={loading} onClick={()=>setRefresh(n=>n+1)}>Обновить</button>}/>
   <Split wide side={side}>
-   <div className="systems-toolbar"><input className="toolbar-search" aria-label="Фильтр конфликтов" placeholder="Хост, MAC, серийный, источник" value={q} onChange={e=>setQ(e.target.value)}/></div>
+   <div className="systems-toolbar"><select aria-label="Тип конфликта" value={rtype} onChange={e=>setRtype(e.target.value)}><option value="">Тип: все</option>{types.map(t=><option key={t} value={t}>{(reasons[t]?.[0]??t)+' · '+items.filter(i=>i.reason_code===t).length}</option>)}</select><input className="toolbar-search" aria-label="Фильтр конфликтов" placeholder="Хост, MAC, серийный, источник" value={q} onChange={e=>setQ(e.target.value)}/></div>
    <Err e={error}/>{notice?<div className="notice" role="status">{notice}</div>:null}
    {loading?<div className="empty" role="status">Загружаем очередь…</div>:<div className="table-scroll panel"><table className="panel-table"><thead><tr><th/><th>Конфликт</th><th>Объект</th><th>Источник</th><th className="num">Ожидает</th><th className="num">Кандидатов</th></tr></thead><tbody>
     {shown.map(i=><tr key={i.conflict_id} className={i.conflict_id===sel?'selected':''} onClick={()=>setSel(i.conflict_id)}><td><StateDot tone={i.state==='open'?(i.asset_uid?'amber':'red'):'grey'}/></td><td><button className="link plain" onClick={()=>setSel(i.conflict_id)}>{reasons[i.reason_code]?.[0]??i.reason_code}</button></td><td className="mono">{i.observed_hostname||i.source_local_id}</td><td>{i.namespace}</td><td className="num">{fmt(i.pending_observations)}</td><td className="num">{i.candidate_asset_uids.length}{i.asset_uid?<> <Pill>привязана</Pill></>:null}</td></tr>)}

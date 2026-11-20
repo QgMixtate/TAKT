@@ -1,4 +1,8 @@
 import {useState} from 'react';
+
+const DRAFT='takt.system-wizard.draft';
+type Draft={step:number;name:string;dir:string;crit:string;envs:string[];comps:unknown[];deps:string[];owner:string;it:string;onCall:string;backup:string;window_:string};
+function loadDraft():Partial<Draft>{try{return JSON.parse(localStorage.getItem(DRAFT)??'{}') as Partial<Draft>}catch{return {}}}
 import {api,ApiError,errorMessage,type RSMEnvKind,type RSMOverview,type Subject} from './api';
 import {Panel,Pill,Split,useLoad} from './ui';
 
@@ -12,9 +16,12 @@ type Comp={name:string;env:RSMEnvKind;role:string;critical:boolean;ruleKind:stri
 const steps=['Описание','Среды','Компоненты и правила','Зависимости','Ответственные','Проверка'];
 
 export function SystemWizard({csrf,onDone,onCancel,onExpired}:{csrf:string;onDone:(uid:string)=>void;onCancel:()=>void;onExpired:()=>void}){
- const [step,setStep]=useState(0),[name,setName]=useState(''),[dir,setDir]=useState(''),[crit,setCrit]=useState('high'),[envs,setEnvs]=useState<RSMEnvKind[]>(['prod','test']);
- const [comps,setComps]=useState<Comp[]>([{name:'',env:'prod',role:'',critical:true,ruleKind:'',rule:'',mode:'propose'}]);
- const [deps,setDeps]=useState<string[]>([]),[owner,setOwner]=useState(''),[it,setIt]=useState(''),[onCall,setOnCall]=useState(''),[backup,setBackup]=useState(''),[window_,setWindow]=useState('');
+ const [draft]=useState(loadDraft);
+ const [step,setStep]=useState(draft.step??0),[name,setName]=useState(draft.name??''),[dir,setDir]=useState(draft.dir??''),[crit,setCrit]=useState(draft.crit??'high'),[envs,setEnvs]=useState<RSMEnvKind[]>((draft.envs as RSMEnvKind[]|undefined)??['prod','test']);
+ const [comps,setComps]=useState<Comp[]>((draft.comps as Comp[]|undefined)??[{name:'',env:'prod',role:'',critical:true,ruleKind:'',rule:'',mode:'propose'}]);
+ const [deps,setDeps]=useState<string[]>(draft.deps??[]),[owner,setOwner]=useState(draft.owner??''),[it,setIt]=useState(draft.it??''),[onCall,setOnCall]=useState(draft.onCall??''),[backup,setBackup]=useState(draft.backup??''),[window_,setWindow]=useState(draft.window_??''),[saved,setSaved]=useState(!!draft.name);
+ function saveDraft(){try{localStorage.setItem(DRAFT,JSON.stringify({step,name,dir,crit,envs,comps,deps,owner,it,onCall,backup,window_}));setSaved(true)}catch{/* хранилище недоступно */}}
+ function dropDraft(){try{localStorage.removeItem(DRAFT)}catch{/* нет */}}
  const [busy,setBusy]=useState(false),[error,setError]=useState<unknown>(null),[log,setLog]=useState<string[]>([]),[created,setCreated]=useState<string|null>(null),[applied,setApplied]=useState<string>('');
  const [ov]=useLoad<RSMOverview>(()=>api.rsmOverview(),[],onExpired);
  const [systems]=useLoad(()=>api.rsmSystems({limit:500}),[],onExpired);
@@ -38,7 +45,7 @@ export function SystemWizard({csrf,onDone,onCancel,onExpired}:{csrf:string;onDon
    out.push('Компонентов: '+comps.length+', правил: '+comps.filter(c=>c.ruleKind).length);
    for(const d of deps)await api.createRelation(csrf,{relation_type:'depends_on',from:{kind:'service',id:sv.service_uid},to:{kind:'service',id:d}});
    if(deps.length)out.push('Зависимостей: '+deps.length);
-   setCreated(sv.service_uid);setLog(out);
+   setCreated(sv.service_uid);setLog(out);dropDraft();
   }catch(e){setError(e);setLog(out);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setBusy(false)}
  }
  async function apply(){setBusy(true);setError(null);try{const r=await api.rsmApplyRules(csrf);setApplied('Правила применены ко всем хостам: привязано '+r.bound+', предложено '+r.proposed+(r.conflicts?', конфликтов '+r.conflicts:''))}catch(e){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setBusy(false)}}
@@ -76,7 +83,7 @@ export function SystemWizard({csrf,onDone,onCancel,onExpired}:{csrf:string;onDon
    <label>Резерв<select value={backup} onChange={e=>setBackup(e.target.value)}><option value="">не задан</option>{people.map(p=><option key={p.subject_id} value={p.subject_id}>{p.kind==='team'?'Команда: ':''}{p.name}</option>)}</select></label>
    <label>Окно обслуживания<input value={window_} onChange={e=>setWindow(e.target.value)} placeholder="вс 02:00–05:00"/></label></div>:null}
   {step===5?<Panel title="Проверка"><ul className="plain-list"><li>Система «{name}», критичность {critNames.find(c=>c[0]===crit)?.[1]}</li><li>Среды: {envs.map(envName).join(', ')}</li>{comps.map((c,i)=><li key={i}>{c.name||'—'} / {envName(c.env)}{c.role?' · '+c.role:''}{c.critical?' · критичный':''}{c.ruleKind?' · правило «'+(ruleKinds.find(r=>r[0]===c.ruleKind)?.[1])+' '+c.rule+'», '+(c.mode==='auto'?'автоматически':'предлагать'):''}</li>)}{deps.length?<li>Зависит от: {deps.map(sysName).join(', ')}</li>:null}</ul></Panel>:null}
-  <div className="form-row"><button className="button" disabled={busy} onClick={()=>step?setStep(step-1):onCancel()}>{step?'← Назад':'Отмена'}</button><span className="spacer"/>
+  <div className="form-row"><button className="button" disabled={busy} onClick={()=>step?setStep(step-1):onCancel()}>{step?'← Назад':'Отмена'}</button><span className="spacer"/>{created?null:<button className="button" disabled={busy||!name.trim()} onClick={saveDraft}>{saved?'Черновик сохранён':'Сохранить черновик'}</button>}
    {step<5?<button className="button primary-sm" disabled={!valid[step]} onClick={()=>setStep(step+1)}>Далее: {steps[step+1].toLowerCase()} →</button>:<button className="button primary-sm" disabled={busy||!valid.every(Boolean)} onClick={()=>void create()}>{busy?'Создаём…':'Создать систему'}</button>}</div>
   </>}
  </Split>;

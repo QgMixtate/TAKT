@@ -50,7 +50,7 @@ export function SystemsScreen({overview,actions,onOpenSystem,onOpenComponent,onO
   <div className="count-strip" role="toolbar" aria-label="Сводка систем">{strip.map(([k,n,label,active,on])=><button key={k} className={'count'+(active?' active':'')+(k==='problems'||k==='unassigned'?' warn':'')+(k==='owner'?' amber':'')} disabled={k==='hosts'} onClick={on}><b>{n===undefined?'…':fmt(n)}</b> {label}</button>)}{overview?.proposals?<button className="count warn" onClick={onProposals}><b>{fmt(overview.proposals)}</b> {plural(overview.proposals,'предложение','предложения','предложений')} правил</button>:null}<span className="spacer"/>{actions}</div>
   <div className="systems-grid">
    <section className="systems-main">
-    <div className="systems-toolbar">
+    <div className="toolbar-row"><div className="systems-toolbar">
      <select aria-label="Представление" value={preset} onChange={e=>{const p=e.target.value as Preset;setPreset(p);setF(presets[p][1]);setOffset(0);setSelected(null)}}>{(Object.keys(presets) as Preset[]).map(p=><option key={p} value={p}>Представление: {presets[p][0]}</option>)}</select>
      {chips.map(([label,drop])=><span key={label} className="chip">{label}<button aria-label={'Убрать фильтр '+label} onClick={drop}>×</button></span>)}
      <div className="menu-anchor"><button className="chip add" onClick={()=>setMenu(menu==='filter'?'':'filter')} aria-expanded={menu==='filter'}>+ Фильтр</button>
@@ -66,7 +66,7 @@ export function SystemsScreen({overview,actions,onOpenSystem,onOpenComponent,onO
      <select aria-label="Группировка" value={group} onChange={e=>setGroup(e.target.value as typeof group)}><option value="direction">Группировать: направление</option><option value="criticality">Группировать: критичность</option><option value="none">Без группировки</option></select>
      <div className="menu-anchor"><button className="button" onClick={()=>setMenu(menu==='columns'?'':'columns')} aria-expanded={menu==='columns'}>Колонки</button>
       {menu==='columns'?<div className="popover right" role="dialog" aria-label="Колонки">{(Object.keys(columnNames) as Column[]).map(k=><label key={k} className="check"><input type="checkbox" checked={columns.includes(k)} onChange={e=>{const next=e.target.checked?[...columns,k]:columns.filter(x=>x!==k);setColumns(next);try{localStorage.setItem('takt.systems.columns',JSON.stringify(next))}catch{/* без сохранения */}}}/>{columnNames[k]}</label>)}<button className="button small" onClick={()=>setMenu('')}>Готово</button></div>:null}</div>
-    </div>
+    </div></div>
     {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
     <div className="table-panel dense">
      {page&&page.items.length===0?<div className="empty"><h3>Систем по фильтру нет</h3><p>Системы — это бизнес-сервисы. Заведите сервис в «Сервисы и связи», затем среды и компоненты — в карточке системы или импортом.</p></div>:

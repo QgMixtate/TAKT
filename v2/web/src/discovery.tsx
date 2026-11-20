@@ -18,8 +18,12 @@ type Tab='networks'|'credentials'|'targets';
 
 export function DiscoveryView({csrf,isAdmin,canRun,onExpired,onOpenAsset}:{csrf:string;isAdmin:boolean;canRun:boolean;onExpired:()=>void;onOpenAsset?:(uid:string)=>void}){
  const [tab,setTab]=useState<Tab>('networks'),[version,setVersion]=useState(0);
- const tabs:[Tab,string][]=[['networks','Подсети'],...(isAdmin?[['credentials','Учётки сбора'] as [Tab,string]]:[]),['targets','Цели сбора']];
+ const [cnt,setCnt]=useState<{n?:number;c?:number;t?:number}>({}),[nets,setNets]=useState<DiscoveryNetwork[]|null>(null);
+ useEffect(()=>{api.discoveryNetworks().then(p=>{setNets(p.items);setCnt(x=>({...x,n:p.items.length}))}).catch(()=>{});api.remoteTargets().then(p=>setCnt(x=>({...x,t:p.items.length}))).catch(()=>{});if(isAdmin)api.collectCredentials().then(p=>setCnt(x=>({...x,c:p.items.length}))).catch(()=>{})},[version,tab,isAdmin]);
+ const cn=(n?:number)=>n===undefined?'':' · '+n;
+ const tabs:[Tab,string][]=[['networks','Подсети'+cn(cnt.n)],['targets','Цели сбора'+cn(cnt.t)],...(isAdmin?[['credentials','Учётки сбора'+cn(cnt.c)] as [Tab,string]]:[])];
  return <div className="discovery">
+  {nets?(()=>{const h=nets.reduce((x,n)=>x+n.present_hosts,0),m=nets.reduce((x,n)=>x+n.missing_hosts,0),f=nets.filter(n=>n.last_run?.state==='failed'||(n.last_run?.errors.length??0)>0).length;return <Strip label="Сводка обследований" items={[{key:'n',n:nets.length,label:'подсети',active:tab==='networks',onClick:()=>setTab('networks')},{key:'h',n:h,label:'узлов в сети'},{key:'m',n:m,label:'пропали',tone:m?'warn':'muted'},{key:'f',n:f,label:'запусков с ошибкой',tone:f?'warn':'muted'}]}/>})():null}
   <PageTabs label="Разделы обследований" tabs={tabs} value={tab} onChange={setTab}/>
   {tab==='networks'?<NetworksTab csrf={csrf} isAdmin={isAdmin} canRun={canRun} onExpired={onExpired} onOpenAsset={onOpenAsset} onTargetCreated={()=>{setVersion(v=>v+1);setTab('targets')}}/>:null}
   {tab==='credentials'&&isAdmin?<CredentialsTab csrf={csrf} onExpired={onExpired}/>:null}
@@ -53,7 +57,6 @@ function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated,onOpenAsset}
  if(!page)return error?<div className="error" role="alert">{errorMessage(error)}</div>:<p className="muted">Загрузка…</p>;
  const l=page.limits,net=page.items.find(n=>n.network_id===open);
  // C53.07 (макет «Обследования сети»): сводка, подсети и узлы слева; справа — последний запуск выбранной подсети, новые и пропавшие узлы, история.
- const sumHosts=page.items.reduce((x,n)=>x+n.present_hosts,0),sumMissing=page.items.reduce((x,n)=>x+n.missing_hosts,0),failed=page.items.filter(n=>n.last_run?.state==='failed'||(n.last_run?.errors.length??0)>0).length;
  const lr=net?.last_run;
  const appeared=events.filter(v=>v.kind!=='missing'),gone=events.filter(v=>v.kind==='missing');
  const side=net?<>
@@ -63,8 +66,7 @@ function NetworksTab({csrf,isAdmin,canRun,onExpired,onTargetCreated,onOpenAsset}
   <Panel title={'Пропали из сети · '+gone.length} flush>{gone.length?<table className="panel-table"><tbody>{gone.slice(0,12).map(v=><tr key={v.ip+v.run_id+v.kind}><td className="mono">{v.ip}</td><td className="muted">{time(v.at)}</td></tr>)}</tbody></table>:<p className="muted pad">Пропавших нет.</p>}</Panel>
   {runs.length?<Panel title="История обследований" flush><ul className="task-list">{runs.slice(0,8).map(r=><li key={r.run_id}><span className={'badge '+runState[r.state][1]}><i/>{runState[r.state][0]}</span><span className="muted">{time(r.requested_at)} · {r.trigger==='manual'?'вручную':'по расписанию'}{r.found!==null?' · найдено '+r.found+', новых '+r.new_hosts+', пропало '+r.missing:''}</span></li>)}</ul></Panel>:null}
  </>:<div className="empty"><span>⌖</span><h3>Выберите подсеть</h3></div>;
- return <><Strip label="Сводка обследований" items={[{key:'n',n:page.items.length,label:'подсети',active:true},{key:'h',n:sumHosts,label:'узлов в сети'},{key:'m',n:sumMissing,label:'пропали',tone:sumMissing?'warn':'muted'},{key:'f',n:failed,label:'запусков с ошибкой',tone:failed?'warn':'muted'}]}/>
- <Split wide side={side}>
+ return <> <Split wide side={side}>
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   <div className="table-panel"><div className="table-toolbar"><h2>Подсети <span>{page.items.length}</span></h2>
    {isAdmin?<button className="button small" onClick={()=>setCreating(true)}>+ Новая подсеть</button>:null}</div>

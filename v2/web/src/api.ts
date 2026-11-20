@@ -320,7 +320,7 @@ export const api={
  bulkAssign:(csrf:string,body:{role:RoleName;subject_id:string;note?:string;items:{asset_uid:string;expected_version:string}[]})=>call<BulkAssignResult>('/api/v1/assignments/bulk','BulkAssignResult',{method:'POST',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
  orgOverview:()=>call<OrgOverview>('/api/v1/org/overview','OrgOverview'),
  worklist:(scope:string,cursor:string|null=null)=>call<WorklistPage>('/api/v1/worklist?limit=100&scope='+encodeURIComponent(scope)+(cursor?'&cursor='+encodeURIComponent(cursor):''),'WorklistPage'),
- search:(q:string,filters:{os?:string;class?:string},cursor:string|null)=>call<SearchPage>('/api/v1/search?limit=20&q='+encodeURIComponent(q)+(filters.os?'&os='+encodeURIComponent(filters.os):'')+(filters.class?'&class='+encodeURIComponent(filters.class):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),'SearchPage'),
+ search:(q:string,filters:{os?:string;class?:string;site?:string;freshness?:string},cursor:string|null)=>call<SearchPage>('/api/v1/search?limit=20&q='+encodeURIComponent(q)+(filters.os?'&os='+encodeURIComponent(filters.os):'')+(filters.class?'&class='+encodeURIComponent(filters.class):'')+(filters.site?'&site='+encodeURIComponent(filters.site):'')+(filters.freshness?'&freshness='+encodeURIComponent(filters.freshness):'')+(cursor?'&cursor='+encodeURIComponent(cursor):''),'SearchPage'),
  topology:()=>call<Topology>('/api/v1/topology','Topology'),
  networkMap:()=>call<NetworkMap>('/api/v1/topology/map','NetworkMap'),
  saveNetworkMap:(csrf:string,revision:string,document:MapDocument)=>call<NetworkMap>('/api/v1/topology/map','NetworkMap',{method:'PUT',body:JSON.stringify({revision,document}),headers:{'X-CSRF-Token':csrf}}),
