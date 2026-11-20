@@ -17,7 +17,9 @@ import uuid
 
 from release import digest, read_json, require
 
-MAX_BYTES = 2 * 1024 * 1024 * 1024
+# Предел набора: дамп БД стенда перерос 2 GiB (стенд №20) — по умолчанию 64 GiB, переопределяется
+# SURVEYSCAN_CHECKPOINT_MAX_GIB (целое, 1..1024).
+MAX_BYTES = max(1, min(1024, int(os.environ.get('SURVEYSCAN_CHECKPOINT_MAX_GIB', '64')))) * 1024 * 1024 * 1024
 
 
 def files(root):
@@ -31,7 +33,7 @@ def files(root):
         require(all(32 <= ord(c) < 127 for c in name) and '\\' not in name, 'unsupported state filename')
         if stat.S_ISREG(mode):
             size += path.stat().st_size
-            require(size <= MAX_BYTES and len(result) < 20000, 'checkpoint exceeds bound')
+            require(size <= MAX_BYTES and len(result) < 20000, 'checkpoint exceeds bound (SURVEYSCAN_CHECKPOINT_MAX_GIB)')
             result[name] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
     return result
 
@@ -134,5 +136,7 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except (ValueError, OSError, KeyError, TypeError):
-        raise SystemExit('checkpoint operation refused; inspect protected source, quiescence and destination')
+    except ValueError as e:  # тексты require() фиксированы и без секретов — причина видна оператору
+        raise SystemExit('checkpoint operation refused: ' + str(e))
+    except (OSError, KeyError, TypeError) as e:
+        raise SystemExit('checkpoint operation refused (' + type(e).__name__ + '); inspect protected source, quiescence and destination')
