@@ -197,8 +197,8 @@ func (Store) UnassignedCount(ctx context.Context, tx pgx.Tx, tenant string) (int
 	var n int
 	// разность двух агрегатов вместо anti-join: план не зависит от статистики (на 100 000 хостов anti-join без
 	// свежего ANALYZE уходил во вложенный цикл на секунды)
-	e := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM assets.assets WHERE tenant_id=$1 AND merged_into IS NULL)
--(SELECT count(DISTINCT b.asset_uid) FROM cmdb.bindings b JOIN assets.assets a ON a.tenant_id=b.tenant_id AND a.asset_uid=b.asset_uid AND a.merged_into IS NULL
+	e := tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM assets.assets WHERE tenant_id=$1 AND merged_into IS NULL AND retired_at IS NULL)
+-(SELECT count(DISTINCT b.asset_uid) FROM cmdb.bindings b JOIN assets.assets a ON a.tenant_id=b.tenant_id AND a.asset_uid=b.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
 WHERE b.tenant_id=$1 AND b.valid_to IS NULL AND b.status='active')`, tenant).Scan(&n)
 	return n, e
 }
@@ -211,7 +211,7 @@ func (Store) UnassignedHosts(ctx context.Context, tx pgx.Tx, tenant, after strin
 	if after != "" && !identifier.Valid(after) {
 		return nil, domain.Invalid
 	}
-	rows, e := tx.Query(ctx, `SELECT a.asset_uid::text FROM assets.assets a WHERE a.tenant_id=$1 AND a.merged_into IS NULL AND ($2='' OR a.asset_uid>$2::uuid)
+	rows, e := tx.Query(ctx, `SELECT a.asset_uid::text FROM assets.assets a WHERE a.tenant_id=$1 AND a.merged_into IS NULL AND a.retired_at IS NULL AND ($2='' OR a.asset_uid>$2::uuid)
 AND NOT EXISTS(SELECT 1 FROM cmdb.bindings b WHERE b.tenant_id=a.tenant_id AND b.asset_uid=a.asset_uid AND b.valid_to IS NULL AND b.status='active')
 ORDER BY a.asset_uid LIMIT $3`, tenant, after, limit)
 	if e != nil {

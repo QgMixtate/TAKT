@@ -254,7 +254,7 @@ t.resolution,t.workaround,t.reopen_count,t.created_by,t.created_at,t.updated_at,
  WHEN 'ticket' THEN (SELECT o.number||' '||o.title FROM itsm.tickets o WHERE o.tenant_id=l.tenant_id AND o.ticket_id=l.target_id)
  WHEN 'service' THEN (SELECT s.name FROM cmdb.services s WHERE s.tenant_id=l.tenant_id AND s.service_uid=l.target_id)
  WHEN 'movement' THEN (SELECT 'акт '||m.act_no FROM warehouse.movements m WHERE m.tenant_id=l.tenant_id AND m.movement_id=l.target_id)
- WHEN 'asset' THEN (SELECT b.display_name FROM assets.asset_business_fields b WHERE b.tenant_id=l.tenant_id AND b.asset_uid=l.target_id) END,'')
+ WHEN 'asset' THEN COALESCE(NULLIF((SELECT b.display_name FROM assets.asset_business_fields b WHERE b.tenant_id=l.tenant_id AND b.asset_uid=l.target_id),''),(SELECT h.name FROM cmdb.host_registry h WHERE h.tenant_id=l.tenant_id AND h.asset_uid=l.target_id)) END,'')
 FROM itsm.ticket_links l WHERE l.tenant_id=$1 AND l.ticket_id=$2
 UNION ALL
 SELECT 'ticket',l.ticket_id::text,(SELECT o.number||' '||o.title FROM itsm.tickets o WHERE o.tenant_id=l.tenant_id AND o.ticket_id=l.ticket_id)

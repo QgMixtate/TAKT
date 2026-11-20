@@ -153,7 +153,7 @@ func (Store) Calendar(ctx context.Context, tx pgx.Tx, tenant string, from, to ti
 	rows, e := tx.Query(ctx, `SELECT t.ticket_id::text,t.number,t.title,t.state,w.risk,w.starts_at,w.ends_at,
 COALESCE((SELECT jsonb_agg(jsonb_build_object('target_kind',l.target_kind,'target_id',l.target_id,'label',COALESCE(CASE l.target_kind
  WHEN 'service' THEN (SELECT s.name FROM cmdb.services s WHERE s.tenant_id=l.tenant_id AND s.service_uid=l.target_id)
- WHEN 'asset' THEN (SELECT b.display_name FROM assets.asset_business_fields b WHERE b.tenant_id=l.tenant_id AND b.asset_uid=l.target_id) END,'')) ORDER BY l.target_kind,l.target_id)
+ WHEN 'asset' THEN COALESCE(NULLIF((SELECT b.display_name FROM assets.asset_business_fields b WHERE b.tenant_id=l.tenant_id AND b.asset_uid=l.target_id),''),(SELECT h.name FROM cmdb.host_registry h WHERE h.tenant_id=l.tenant_id AND h.asset_uid=l.target_id)) END,'')) ORDER BY l.target_kind,l.target_id)
  FROM itsm.ticket_links l WHERE l.tenant_id=t.tenant_id AND l.ticket_id=t.ticket_id AND l.target_kind IN ('asset','service')),'[]'::jsonb)
 FROM itsm.change_windows w JOIN itsm.tickets t ON t.tenant_id=w.tenant_id AND t.ticket_id=w.ticket_id
 WHERE w.tenant_id=$1 AND w.starts_at<$3 AND w.ends_at>$2 AND t.state NOT IN ('cancelled','rejected') ORDER BY w.starts_at,t.number LIMIT 1000`, tenant, from, to)

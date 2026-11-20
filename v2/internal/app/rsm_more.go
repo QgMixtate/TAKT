@@ -40,7 +40,7 @@ func (r *Registry) RSMNav(ctx context.Context, id accessport.Identity) (RSMNav, 
 	defer tx.Rollback(ctx)
 	if e = tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM cmdb.services WHERE tenant_id=$1 AND retired_at IS NULL),
 (SELECT count(*) FROM cmdb.components c JOIN cmdb.environments e ON e.tenant_id=c.tenant_id AND e.environment_id=c.environment_id AND e.retired_at IS NULL WHERE c.tenant_id=$1 AND c.retired_at IS NULL),
-(SELECT count(*) FROM assets.assets WHERE tenant_id=$1 AND merged_into IS NULL),
+(SELECT count(*) FROM assets.assets WHERE tenant_id=$1 AND merged_into IS NULL AND retired_at IS NULL),
 (SELECT count(*) FROM assets.reconciliation_conflicts WHERE tenant_id=$1 AND state='open'),
 (SELECT count(*) FROM itsm.tickets WHERE tenant_id=$1 AND resolved_at IS NULL AND closed_at IS NULL),
 (SELECT count(*) FROM scope.sites WHERE tenant_id=$1)`, id.TenantID).Scan(&out.Systems, &out.Components, &out.Hosts, &out.Conflicts, &out.Tickets, &out.Sites); e != nil {

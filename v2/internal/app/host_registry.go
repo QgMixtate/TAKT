@@ -142,6 +142,23 @@ FROM assets.source_records r JOIN sources.sources s ON s.tenant_id=r.tenant_id A
 		sources[u] = append(sources[u], k)
 	}
 	rows.Close()
+	// №70: разделы профиля 1.2 (portable, SSH/WinRM, run12) — как в карточке: из 12 разделов собраны те, у кого
+	// последняя попытка дала данные; у активов только с 1.0 разделы берутся из a.Sections.
+	sections12OK := map[string]int{}
+	rows, e = tx.Query(ctx, `SELECT asset_uid::text,count(*) FILTER (WHERE last_status='partial') FROM inventory.record_section_state12 WHERE tenant_id=$1 AND asset_uid=ANY($2::uuid[]) GROUP BY asset_uid`, tenant, uids)
+	if e != nil {
+		return nil, nil, e
+	}
+	for rows.Next() {
+		var u string
+		var n int
+		if e = rows.Scan(&u, &n); e != nil {
+			rows.Close()
+			return nil, nil, e
+		}
+		sections12OK[u] = n
+	}
+	rows.Close()
 	previous, e := r.CMDB.HostRegistryClasses(ctx, tx, tenant, uids)
 	if e != nil {
 		return nil, nil, e
@@ -195,6 +212,9 @@ FROM assets.source_records r JOIN sources.sources s ON s.tenant_id=r.tenant_id A
 			if s.Status == "ok" {
 				row.SectionsOK++
 			}
+		}
+		if n, ok := sections12OK[a.UID]; ok && row.SectionsTotal == 0 {
+			row.SectionsTotal, row.SectionsOK = len(sections12), n
 		}
 		// класс: ручной важнее наблюдаемого; наблюдаемый — заново только при новой инвентаризации
 		manual, _, e := r.Assets.ManualClass(ctx, tx, tenant, a.UID)

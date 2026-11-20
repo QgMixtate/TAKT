@@ -384,3 +384,8 @@ dl.kv{display:grid;grid-template-columns:max-content 1fr;gap:6px 14px;margin:0;f
 @media(max-width:1300px){.net-grid{grid-template-columns:220px minmax(0,1fr)}.net-side{grid-column:1/-1;width:auto}}
 @media(max-width:900px){.net-grid{grid-template-columns:1fr}}
 .spacer{flex:1}
+label.check,label.inline-check{display:inline-flex!important;flex-direction:row!important;align-items:center;gap:6px;margin-right:12px;white-space:nowrap}label.check input,label.inline-check input{width:auto!important;height:auto!important;margin:0!important;flex:none}
+.network .topology .stats{display:none}.network .topo-body:has(>.topo-side .map-legend){grid-template-columns:minmax(0,1fr)}.network .topo-side:has(.map-legend){display:none}
+.wizard-table{table-layout:fixed;width:100%}.wizard-table td{padding:5px 6px}.wizard-table input:not([type=checkbox]),.wizard-table select{width:100%;min-width:0;box-sizing:border-box}
+@media(max-width:1400px){.systems-grid:not(.side-wide){grid-template-columns:minmax(0,1fr) 340px}}
+.wizard-table .form-row{flex-wrap:wrap;gap:4px}

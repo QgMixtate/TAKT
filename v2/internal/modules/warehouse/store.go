@@ -40,16 +40,17 @@ type Item struct {
 }
 
 type Unit struct {
-	ID          string  `json:"unit_id"`
-	Item        string  `json:"item_id"`
-	ItemName    string  `json:"item_name"`
-	Serial      string  `json:"serial"`
-	InventoryNo *string `json:"inventory_no"`
-	Asset       *string `json:"asset_uid"`
-	State       string  `json:"state"`
-	Location    *string `json:"location_id"`
-	Holder      *string `json:"holder_id"`
-	InstalledOn *string `json:"installed_on"`
+	ID            string  `json:"unit_id"`
+	Item          string  `json:"item_id"`
+	ItemName      string  `json:"item_name"`
+	Serial        string  `json:"serial"`
+	InventoryNo   *string `json:"inventory_no"`
+	Asset         *string `json:"asset_uid"`
+	State         string  `json:"state"`
+	Location      *string `json:"location_id"`
+	Holder        *string `json:"holder_id"`
+	InstalledOn   *string `json:"installed_on"`
+	InstalledName string  `json:"installed_name,omitempty"`
 }
 
 type StockRow struct {
@@ -189,7 +190,8 @@ FROM warehouse.items i WHERE i.tenant_id=$1 ORDER BY lower(i.name) LIMIT 2000`, 
 type UnitFilter struct{ State, Holder, Location, Asset, Query string }
 
 func (Store) Units(ctx context.Context, tx pgx.Tx, tenant string, f UnitFilter, limit int) ([]Unit, error) {
-	rows, e := tx.Query(ctx, `SELECT u.unit_id::text,u.item_id::text,i.name,u.serial,u.inventory_no,u.asset_uid::text,u.state,u.location_id::text,u.holder_id::text,u.installed_on::text
+	rows, e := tx.Query(ctx, `SELECT u.unit_id::text,u.item_id::text,i.name,u.serial,u.inventory_no,u.asset_uid::text,u.state,u.location_id::text,u.holder_id::text,u.installed_on::text,
+COALESCE((SELECT h.name FROM cmdb.host_registry h WHERE h.tenant_id=u.tenant_id AND h.asset_uid=u.installed_on),'')
 FROM warehouse.units u JOIN warehouse.items i USING(tenant_id,item_id) WHERE u.tenant_id=$1
 AND ($2='' OR u.state=$2) AND ($3='' OR u.holder_id::text=$3) AND ($4='' OR u.location_id::text=$4)
 AND ($5='' OR u.asset_uid::text=$5 OR u.installed_on::text=$5)
@@ -200,7 +202,7 @@ ORDER BY i.name,u.serial LIMIT $7`, tenant, f.State, f.Holder, f.Location, f.Ass
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Unit, error) {
 		var u Unit
-		return u, r.Scan(&u.ID, &u.Item, &u.ItemName, &u.Serial, &u.InventoryNo, &u.Asset, &u.State, &u.Location, &u.Holder, &u.InstalledOn)
+		return u, r.Scan(&u.ID, &u.Item, &u.ItemName, &u.Serial, &u.InventoryNo, &u.Asset, &u.State, &u.Location, &u.Holder, &u.InstalledOn, &u.InstalledName)
 	})
 }
 

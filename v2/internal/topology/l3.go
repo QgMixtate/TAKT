@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"sort"
+	"strings"
 )
 
 // L3Host — актив с наблюдаемыми интерфейсами (из инвентаризации агентов/SSH/WinRM/portable).
@@ -50,6 +51,21 @@ func usable(p netip.Prefix) bool {
 	return p.Bits() >= 32 && p.Bits() <= 64
 }
 
+// hostLocal — интерфейсы, адреса которых живут только внутри хоста (мосты контейнеров и виртуализации): одни и те же
+// 172.17.0.1/16 есть на каждом хосте с docker — это не сеть и не конфликт IP (стенд №21, ISSUES №65).
+func hostLocal(name string) bool {
+	n := strings.ToLower(name)
+	if n == "docker0" || n == "lxcbr0" || n == "lxdbr0" || n == "podman0" || n == "cni0" || n == "flannel.1" || n == "kube-bridge" {
+		return true
+	}
+	for _, prefix := range []string{"br-", "veth", "virbr", "cali", "vxlan.calico", "tunl", "weave", "vethernet (wsl"} {
+		if strings.HasPrefix(n, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // BuildL3 строит схему: хост — подсеть (адрес на интерфейсе), подсеть — шлюз (маршрут по умолчанию/настройка).
 // Шлюз, совпавший с адресом известного актива, становится этим активом (роль маршрутизатора), иначе — узел gw.
 // Один IP у нескольких активов не склеивается, а помечается конфликтом на ребре.
@@ -73,6 +89,9 @@ func BuildL3(hosts []L3Host) L3Graph {
 		}
 		add(Node{ID: "host:" + h.ID, Kind: "host", Label: label, Detail: h.OS})
 		for _, i := range h.Interfaces {
+			if hostLocal(i.Name) {
+				continue
+			}
 			for _, p := range i.Addrs {
 				if !usable(p) {
 					continue

@@ -193,6 +193,11 @@
        "type": "null"
       }
      ]
+    },
+    "installed_name": {
+     "type": "string",
+     "maxLength": 256,
+     "description": "имя актива, на котором установлен экземпляр (для отображения); пусто — имя неизвестно"
     }
    },
    "required": [

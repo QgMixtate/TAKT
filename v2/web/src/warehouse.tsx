@@ -49,7 +49,7 @@ function Units({ref_:r,onOpenAsset,onFail,state0=''}:{ref_:Ref;onOpenAsset:(uid:
   {items&&items.length===0?<div className="empty"><span>▦</span><h3>Экземпляров нет</h3><p>Оформите приход на вкладке «Операция».</p></div>:
   <div className="table-scroll"><table><thead><tr><th>Модель</th><th>Серийный / инв.</th><th>Состояние</th><th>Где / у кого</th><th>Актив</th></tr></thead><tbody>{(items??[]).map(u=><tr key={u.unit_id}>
    <td>{u.item_name}</td><td className="mono">{u.serial}{u.inventory_no?<small>{u.inventory_no}</small>:null}</td><td><span className={'badge '+stateName[u.state][1]}><i/>{stateName[u.state][0]}</span></td>
-   <td>{u.location_id?locName(r,u.location_id):u.holder_id?subjName(r,u.holder_id):u.installed_on?<button className="text-link" onClick={()=>onOpenAsset(u.installed_on!)}>на активе {u.installed_on.slice(0,8)}</button>:'—'}</td>
+   <td>{u.location_id?locName(r,u.location_id):u.holder_id?subjName(r,u.holder_id):u.installed_on?<button className="text-link" onClick={()=>onOpenAsset(u.installed_on!)}>на {u.installed_name||'активе '+u.installed_on.slice(0,8)}</button>:'—'}</td>
    <td>{u.asset_uid?<button className="text-link" onClick={()=>onOpenAsset(u.asset_uid!)}>карточка ↗</button>:'—'}</td></tr>)}</tbody></table></div>}
  </div>;
 }

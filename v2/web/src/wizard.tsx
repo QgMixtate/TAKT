@@ -52,7 +52,7 @@ export function SystemWizard({csrf,onDone,onCancel,onExpired}:{csrf:string;onDon
   <Panel title="Ответственные"><dl className="kv"><dt>Владелец (бизнес)</dt><dd>{owner||'не задан'}</dd><dt>ИТ</dt><dd>{it?subj(it):'не задан'}</dd><dt>Дежурные</dt><dd>{onCall||'не заданы'}</dd><dt>Резерв</dt><dd>{backup?subj(backup):'не задан'}</dd></dl></Panel>
   <p className="muted">Правила «предлагать» кладут подходящие хосты в «Предложения» на подтверждение; «автоматически» — привязывают сразу.</p>
  </>;
- return <Split wide side={side}>
+ return <Split side={side}>
   <div className="stepper">{steps.map((s,i)=><button key={s} className={i===step?'on':i<step?'done':''} disabled={created!==null||(i>step&&!valid.slice(0,i).every(Boolean))} onClick={()=>setStep(i)}><b>{i+1}</b>{s}</button>)}</div>
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   {created?<Panel title="Система создана"><ul className="plain-list">{log.map((l,i)=><li key={i}>{l}</li>)}</ul>{applied?<p className="notice" role="status">{applied}</p>:null}
@@ -62,7 +62,7 @@ export function SystemWizard({csrf,onDone,onCancel,onExpired}:{csrf:string;onDon
    <label>Критичность<select value={crit} onChange={e=>setCrit(e.target.value)}>{critNames.map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label></div>:null}
   {step===1?<div><p className="muted">Среды системы</p><div className="form-row">{envKinds.map(([k,v])=><label key={k} className="env-check"><input type="checkbox" checked={envs.includes(k)} onChange={e=>setEnvs(x=>e.target.checked?[...x,k]:x.filter(y=>y!==k))}/> {v}</label>)}</div></div>:null}
   {step===2?<Panel title="Компоненты и правила привязки" right={<button className="button small" onClick={()=>setComps(c=>[...c,{name:'',env:envs[0]??'prod',role:'',critical:false,ruleKind:'',rule:'',mode:'propose'}])}>+ Компонент</button>} flush>
-   <div className="table-scroll"><table className="panel-table"><thead><tr><th>Компонент</th><th>Среда</th><th>Роль</th><th>Критичный</th><th>Правило привязки</th><th/></tr></thead><tbody>{comps.map((c,i)=><tr key={i}>
+   <div className="table-scroll"><table className="panel-table wizard-table"><colgroup><col style={{width:"24%"}}/><col style={{width:"15%"}}/><col style={{width:"17%"}}/><col style={{width:"9%"}}/><col/><col style={{width:"36px"}}/></colgroup><thead><tr><th>Компонент</th><th>Среда</th><th>Роль</th><th>Критичный</th><th>Правило привязки</th><th/></tr></thead><tbody>{comps.map((c,i)=><tr key={i}>
     <td><input aria-label="Имя компонента" value={c.name} onChange={e=>set(i,{name:e.target.value})} placeholder="Веб-фронт"/></td>
     <td><select aria-label="Среда компонента" value={c.env} onChange={e=>set(i,{env:e.target.value as RSMEnvKind})}>{envs.map(k=><option key={k} value={k}>{envName(k)}</option>)}</select></td>
     <td><input aria-label="Роль" value={c.role} onChange={e=>set(i,{role:e.target.value})} placeholder="веб"/></td>

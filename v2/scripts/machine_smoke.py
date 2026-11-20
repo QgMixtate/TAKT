@@ -83,7 +83,7 @@ def main(agent_scenario=None,web_scenario=None,browser_origin=None,bao_settings=
     assert 'applied_migrations=75' in command('migrate')
    if not state:
     password=secrets.token_urlsafe(32);password_file=save('password',password+'\n');command('bootstrap-admin','--tenant',tenant,'--tenant-name','C07 synthetic','--username','admin','--password-file',password_file)
-    sql(f"INSERT INTO responsibility.subjects(tenant_id,subject_id,kind,name,contact) VALUES('{tenant}','{subject}','team','fallback','synthetic@example.invalid'); INSERT INTO scope.sites(tenant_id,site_id,name,fallback_subject_id) VALUES('{tenant}','{site}','synthetic','{subject}'); INSERT INTO scope.network_scopes(tenant_id,scope_id,site_id,namespace) VALUES('{tenant}','{scope}','{site}','default');",db)
+    sql(f"INSERT INTO responsibility.subjects(tenant_id,subject_id,kind,name,contact) VALUES('{tenant}','{subject}','team','Резерв площадки','synthetic@example.invalid'); INSERT INTO scope.sites(tenant_id,site_id,name,fallback_subject_id) VALUES('{tenant}','{site}','synthetic','{subject}'); INSERT INTO scope.network_scopes(tenant_id,scope_id,site_id,namespace) VALUES('{tenant}','{scope}','{site}','default');",db)
    if os.environ.get('SURVEYSCAN_SEARCH_BIN'):  # C29: сервис поиска рядом с центром (демо/проверка полнотекстового режима)
     search_port=freeport();token_file=save('search-token',secrets.token_hex(24))
     search_log=(directory/'search.log').open('ab');search_process=subprocess.Popen([os.environ['SURVEYSCAN_SEARCH_BIN'],f'127.0.0.1:{search_port}',str(directory/'search-index'),token_file],stdout=search_log,stderr=search_log)

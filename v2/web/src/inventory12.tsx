@@ -40,7 +40,7 @@ function Section({asset,name,title,labels,onExpired}:{asset:string;name:string;t
   <summary><span>{title}</span>{state?<span className={'badge state-'+state.status}><i/>{status12[state.status]??state.status}</span>:first?<span className="badge"><i/>Нет данных</span>:null}</summary>
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   {loading&&!pages.length?<p role="status">Загружаем…</p>:null}
-  {state?<small className="inv12-meta">Сбор: {time(state.last_attempt.collected_at)} · {kinds[state.last_attempt.origin.source_kind]??state.last_attempt.origin.source_kind} · часы: {state.last_attempt.clock_quality==='trusted'?'доверенные':'не подтверждены'}<br/><span className="mono">Источник: {state.last_attempt.origin.source_id}</span>{state.sources&&state.sources.length>1?<><br/>По источникам: {state.sources.map(x=>(labels[x.source_id]??x.source_id.slice(0,8))+' — '+(status12[x.status]??x.status).toLowerCase()).join('; ')}</>:null}</small>:first?<small className="inv12-meta">Раздел этим активом ещё не собирался.</small>:null}
+  {state?<small className="inv12-meta">Сбор: {time(state.last_attempt.collected_at)} · {labels[state.last_attempt.origin.source_id]??kinds[state.last_attempt.origin.source_kind]??state.last_attempt.origin.source_kind} · часы: {state.last_attempt.clock_quality==='trusted'?'доверенные':'не подтверждены'}<br/><span className="mono">Источник: {state.last_attempt.origin.source_id}</span>{state.sources&&state.sources.length>1?<><br/>По источникам: {state.sources.map(x=>(labels[x.source_id]??x.source_id.slice(0,8))+' — '+(status12[x.status]??x.status).toLowerCase()).join('; ')}</>:null}</small>:first?<small className="inv12-meta">Раздел этим активом ещё не собирался.</small>:null}
   {records.size>8?<input className="inv12-filter" aria-label={'Фильтр: '+title} placeholder="Фильтр по загруженным записям…" value={filter} onChange={e=>setFilter(e.target.value)}/>:null}
   {rows.length?<div className="inv12-records">{rows.map(([key,row])=><details key={key} className="inv12-record"><summary>{shown.map(f=>row.has(f)?<span key={f}><b>{label(f)}</b> {show(row.get(f))}</span>:null)}</summary><dl>{keys.filter(f=>row.has(f)).map(f=><React.Fragment key={f}><dt>{label(f)}</dt><dd>{show(row.get(f))}</dd></React.Fragment>)}</dl></details>)}</div>:null}
   {first?<small className="inv12-meta">Загружено записей: {records.size}{last?.next_cursor?' · есть ещё':''}</small>:null}
@@ -48,9 +48,9 @@ function Section({asset,name,title,labels,onExpired}:{asset:string;name:string;t
  </details>;
 }
 
-export function Inventory12({asset,onExpired,only,bare}:{asset:string;onExpired:()=>void;only?:string[];bare?:boolean}){
+export function Inventory12({asset,onExpired,only,bare,sourceNames}:{asset:string;onExpired:()=>void;only?:string[];bare?:boolean;sourceNames?:Record<string,string>}){
  // подписи источников для статусов «по источникам»: способ сбора и начало идентификатора
- const [labels,setLabels]=useState<Record<string,string>>({});
- useEffect(()=>{let live=true;api.sources().then(p=>{if(live)setLabels(Object.fromEntries(p.items.map(x=>[x.source_id,(x.source_kind==='agent'?acquisitions[x.acquisition??'agent']??'Агент':x.source_kind==='portable'?'Portable':'Collector')+' '+x.source_id.slice(0,8)])))}).catch(()=>{});return ()=>{live=false}},[]);
+ const [labels,setLabels]=useState<Record<string,string>>(sourceNames??{});
+ useEffect(()=>{let live=true;api.sources().then(p=>{if(live)setLabels({...Object.fromEntries(p.items.map(x=>[x.source_id,(x.source_kind==='agent'?acquisitions[x.acquisition??'agent']??'Агент':x.source_kind==='portable'?'Portable':'Collector')+' '+x.source_id.slice(0,8)])),...(sourceNames??{})})}).catch(()=>{});return ()=>{live=false}},[]);
  return <>{bare?null:<><h3>Инвентаризация · профиль 1.2</h3><p className="card-note">Данные агентов run12, SSH/WinRM-целей и portable-аудита. Откройте раздел, чтобы загрузить записи.</p></>}<div className="inv12-list">{sections12.filter(([name])=>!only||only.includes(name)).map(([name,title])=><Section key={name} asset={asset} name={name} title={title} labels={labels} onExpired={onExpired}/>)}</div></>;
 }
