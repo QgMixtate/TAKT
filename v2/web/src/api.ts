@@ -69,6 +69,7 @@ export type RSMComponentHost=RSMHostRow&{ip:string;site:string;values:Record<str
 export type RSMComponentCard=Omit<RSMComponentDetail,'hosts'>&{hosts:RSMComponentHost[];service_uid:string;it_subject_name:string|null;sites:{name:string;count:number}[];networks:{name:string;count:number}[];baseline_summary:{key:string;label:string;expected:string;values:{name:string;count:number}[];deviations:number;no_data:number}[];matched:number;tickets_open:number;tickets_total:number};
 export type RSMNav={systems:number;components:number;hosts:number;conflicts:number;my_tasks:number;tickets_open:number;sites:number};
 export type RSMComponentRow={component_id:string;name:string;role:string|null;critical:boolean;service_uid:string;system_name:string;environment_name:string;environment_kind:RSMEnvKind;state:RSMNodeState|null;baseline:{os?:string;software?:Record<string,string>}};
+export type SourceOverview={source_id:string;hosts:number;targets:{ssh:number;winrm:number;snmp:number;errors:number;disabled:number};last_error:string|null;last_error_target:string|null;last_collected_at:string|null;collected_by:{collector_id:string;kind:'ssh'|'winrm'|'snmp';address:string}|null};
 export type RSMCollectResult={hosts:number;requested:number;recent:number;agents:number;no_target:number};
 export type RSMSoftwarePage={hosts:number;products:{name:string;hosts:number;versions:{version:string;hosts:number}[]}[];truncated:boolean};
 export type RSMTicketList={items:{ticket_id:string;number:string;kind:TicketKind;title:string;state:string;priority:number;created_at:string;open:boolean}[];open:number};
@@ -252,6 +253,7 @@ export const api={
  rsmPatchComponent:(id:string,csrf:string,body:{revision:string;role?:string;critical?:boolean;baseline?:Record<string,unknown>})=>call<RSMComponent>('/api/v1/rsm/components/'+encodeURIComponent(id),'RSMComponent',{method:'PATCH',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),
  rsmComponentChanges:(id:string)=>call<{changes:RSMChange[];total:number}>('/api/v1/rsm/components/'+encodeURIComponent(id)+'/changes','RSMChangeList'),
  assetTickets:(uid:string)=>call<RSMTicketList>('/api/v1/assets/'+encodeURIComponent(uid)+'/tickets','RSMTicketList'),
+ sourcesOverview:(ids:string[])=>call<{items:SourceOverview[]}>('/api/v1/sources/overview?ids='+ids.map(encodeURIComponent).join(','),'RSMSourceOverviewList'),
  assetCollect:(uid:string,csrf:string)=>call<RSMCollectResult>('/api/v1/assets/'+encodeURIComponent(uid)+'/collect','RSMCollectResult',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
  hostOverview:(uid:string)=>call<HostOverview>('/api/v1/assets/'+encodeURIComponent(uid)+'/overview','RSMHostOverview'),
  assetPlatform:(uid:string)=>call<AssetPlatform>('/api/v1/assets/'+encodeURIComponent(uid)+'/platform','AssetPlatform'),

@@ -398,3 +398,27 @@ label.check,label.inline-check{display:inline-flex!important;flex-direction:row!
 .content .button.primary{width:auto;padding:7px 14px;font-size:13px;margin-top:8px;border-radius:6px}.desk-grid input{height:30px}
 .wizard-table td:last-child{white-space:nowrap;text-align:right}.wizard-table .form-row>*{flex:1 1 120px;min-width:0}
 .platform-item{padding:4px 0 10px;border-bottom:1px solid var(--line-2);margin-bottom:8px}.platform-item:last-child{border:0;margin:0}.platform-item p{margin:0 0 6px}
+/* C53.06 — здоровье: шапка, полоса инструментов и правая панель по макету 12 */
+.health-top{display:flex;flex-wrap:wrap;gap:24px;align-items:center}
+.health-company{display:flex;gap:12px;align-items:center;border-radius:10px;padding:12px 20px;background:#EEF1F6}.health-company h2{margin:0;font-size:20px}.health-company p{margin:2px 0 0;font-size:14px}
+.health-company.hc-yellow{background:#FCF1D8}.health-company.hc-yellow p{color:#A06E00}.health-company.hc-red{background:var(--magenta-soft)}.health-company.hc-red p{color:var(--magenta)}.health-company.hc-green{background:#E2F5EC}.health-company.hc-green p{color:#127A4A}
+.hdot.big{width:22px;height:22px}
+.health-kpi{display:flex;gap:28px}.health-kpi div{display:flex;flex-direction:column}.health-kpi b{font-size:24px;line-height:1.1}.health-kpi span{color:var(--text-2);font-size:14px}
+.health-tools{gap:8px}.health-tools select,.health-tools input{height:32px;font:inherit;font-size:14px}.health-tools input{min-width:200px}
+.health-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;align-items:start}
+.health-table tr.h-row{cursor:pointer}.health-table tr.h-sel td{background:#E9F0FB}.health-table tr.h-sel td:first-child{box-shadow:inset 3px 0 0 var(--navy)}
+.health-side{display:flex;flex-direction:column;gap:12px;position:sticky;top:12px}.health-side .panel{margin:0}.health-side h3{font-size:15px}
+.side-big{font-size:22px;margin:0 0 6px;display:flex;align-items:center;gap:8px}.side-list{list-style:none;margin:0;padding-left:0;display:flex;flex-direction:column;gap:8px;font-size:14px}.side-list li{display:flex;gap:8px;align-items:baseline}
+.side-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-start}.health-side .small{font-size:12px}
+@media(max-width:1100px){.health-grid{grid-template-columns:1fr}.health-side{position:static}}
+/* C53.04 — «Хосты»: представление, чипы-состояния, поиск по дереву (макет 5) */
+.chip.chip-warn{background:var(--magenta-soft);color:var(--magenta)}.chip.chip-amber{background:#FCF1D8;color:#A06E00}
+.view-select{font:inherit;font-weight:600;height:34px}.filter-menu{min-width:220px}.filter-menu .small{font-size:12px;margin:0}
+.hosts-tree .tree-find{width:calc(100% - 24px);box-sizing:border-box;margin:4px 12px 8px;padding:0 10px;border:1px solid var(--line);border-radius:6px;height:32px;font:inherit;font-size:14px}
+/* C53.07 — склад: предпросмотр акта до проведения */
+.act-preview{position:relative;margin-top:12px;border:1px dashed #B8C1CE;border-radius:8px;padding:16px;background:#fff;font-size:13px}
+.act-preview .act-print h2{font-size:16px}.act-draft{display:inline-block;margin-bottom:10px;font-size:12px;font-weight:600;color:#A06E00;background:#FCF1D8;border-radius:6px;padding:2px 8px}
+/* C53.07 — «Источники»: выбор строки и панель источника справа */
+tr.src-row{cursor:pointer}.src-panel{display:flex;flex-direction:column;gap:12px}.src-panel .panel{margin:0}.src-panel dl.kv{margin:10px 0}.src-panel .small{font-size:12px}
+.hosts-main .systems-toolbar .toolbar-search{min-width:160px;flex:1 1 160px}
+.row-head{display:flex;align-items:center;gap:8px}

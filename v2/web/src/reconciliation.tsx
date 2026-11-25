@@ -8,6 +8,12 @@ const reasons:Record<string,[string,string]>={IDENTITY_CONFLICT:['Признак
 const states:[Conflict['state'],string][]=[['open','открытых'],['resolved','разобрано'],['dismissed','отложено']];
 const idNames:Record<string,string>={hostname:'Имя ПК',fqdn:'FQDN',mac:'MAC',machine_uuid:'Machine UUID',bios_uuid:'BIOS UUID',serial:'Серийный номер',serial_number:'Серийный номер',ip:'IP'};
 type Cand={detail:InventoryDetail|null;error:unknown};
+// Полоса по типам (макет «Разбор конфликтов»): тип выводится из признаков записи — дубль сильного признака (MAC,
+// серийный, UUID), совпадение только по IP, несопоставленная запись (кандидатов нет); «решено» и «отложено» — состояния.
+type Kind='strong'|'ip'|'name'|'unmatched'|'other';
+const kindNames:[Kind,string][]=[['strong','дубли MAC / серийный'],['ip','совпадение IP'],['name','совпадение имени'],['unmatched','несопоставленные'],['other','прочие']];
+const strongIds=new Set(['mac','serial','serial_number','bios_uuid','machine_uuid']);
+function kindOf(i:Conflict):Kind{const k=new Set((i.identifiers??[]).map(x=>x.kind));if(!i.asset_uid&&!i.candidate_asset_uids.length)return 'unmatched';if([...k].some(x=>strongIds.has(x)))return 'strong';if(k.has('ip'))return 'ip';if(k.has('hostname')||k.has('fqdn')||(!k.size&&i.observed_hostname))return 'name';return 'other'}
 
 function candidateValues(d:InventoryDetail,kind:string):string[]{
  const a=d.asset;
@@ -21,7 +27,7 @@ const norm=(v:string)=>v.toLowerCase().replace(/[-:.]/g,'');
 export function ReconciliationView({csrf,onOpenAsset,onExpired}:{csrf:string;onOpenAsset:(uid:string)=>void;onExpired:()=>void}){
  const [state,setState]=useState<Conflict['state']>('open'),[items,setItems]=useState<Conflict[]>([]),[counts,setCounts]=useState<Record<string,string>>({}),[loading,setLoading]=useState(true),[error,setError]=useState<unknown>(null),[notice,setNotice]=useState(''),[busy,setBusy]=useState(false),[refresh,setRefresh]=useState(0),[sel,setSel]=useState<string|null>(null),[q,setQ]=useState(''),[cand,setCand]=useState<Record<string,Cand>>({}),[pick,setPick]=useState<string|null>(null);
  useEffect(()=>{let active=true;setLoading(true);setError(null);
-  Promise.all(states.map(([s])=>api.conflicts(s))).then(ps=>{if(!active)return;const c:Record<string,string>={};ps.forEach((p,i)=>{c[states[i][0]]=p.items.length+(p.next_cursor?'+':'')});setCounts(c);const cur=ps[states.findIndex(s=>s[0]===state)];setItems(cur.items);setSel(x=>cur.items.some(i=>i.conflict_id===x)?x:cur.items[0]?.conflict_id??null)})
+  Promise.all(states.map(([s])=>api.conflicts(s))).then(ps=>{if(!active)return;const c:Record<string,string>={};ps.forEach((p,i)=>{c[states[i][0]]=p.items.length+(p.next_cursor?'+':'')});setCounts(c);setOpenItems(ps[0].items);const cur=ps[states.findIndex(s=>s[0]===state)];setItems(cur.items);setSel(x=>cur.items.some(i=>i.conflict_id===x)?x:cur.items[0]?.conflict_id??null)})
   .catch(e=>{if(active){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[state,refresh]);
  const c=items.find(i=>i.conflict_id===sel)??null;
  const uids=c?[...new Set([...(c.asset_uid?[c.asset_uid]:[]),...c.candidate_asset_uids])]:[];
@@ -33,9 +39,9 @@ export function ReconciliationView({csrf,onOpenAsset,onExpired}:{csrf:string;onO
   try{const r=await api.resolveConflict(c.conflict_id,csrf,{action,...(asset?{asset_uid:asset}:{}),revision:c.revision});setNotice(action==='dismiss'?'Конфликт отложен.':`Готово: запись привязана к активу${r.asset_uid?' '+r.asset_uid.slice(0,8):''}, применено наблюдений: ${r.replayed_observations}.`);setRefresh(n=>n+1)}
   catch(e){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setBusy(false)}
  }
- const [rtype,setRtype]=useState('');
- const types=[...new Set(items.map(i=>i.reason_code))];
- const shown=items.filter(i=>!rtype||i.reason_code===rtype).filter(i=>!q||[i.observed_hostname,i.source_local_id,i.namespace,...(i.identifiers??[]).map(x=>x.value)].some(v=>v&&v.toLowerCase().includes(q.toLowerCase())));
+ const [rtype,setRtype]=useState<Kind|''>(''),[openItems,setOpenItems]=useState<Conflict[]>([]);
+ const byKind=Object.fromEntries(kindNames.map(([k])=>[k,openItems.filter(i=>kindOf(i)===k).length])) as Record<Kind,number>;
+ const shown=items.filter(i=>!rtype||kindOf(i)===rtype).filter(i=>!q||[i.observed_hostname,i.source_local_id,i.namespace,...(i.identifiers??[]).map(x=>x.value)].some(v=>v&&v.toLowerCase().includes(q.toLowerCase())));
  const pd=pick?cand[pick]?.detail:null;
  const ids=c?.identifiers??(c?.observed_hostname?[{kind:'hostname',value:c.observed_hostname}]:[]);
  const side=c?<>
@@ -50,12 +56,15 @@ export function ReconciliationView({csrf,onOpenAsset,onExpired}:{csrf:string;onO
    <button className="link" disabled={busy} onClick={()=>void act('dismiss')}>Отложить</button></div>:null}
  </>:<div className="empty"><span>✓</span><h3>{state==='open'?'Разбирать нечего':'Пусто'}</h3><p>{state==='open'?'Все записи источников сопоставлены с активами автоматически.':'В этом состоянии конфликтов нет.'}</p></div>;
  return <>
-  <Strip label="Сводка конфликтов" items={states.map(([k,l])=>({key:k,n:counts[k]??null,label:l,tone:k==='open'?'warn':'muted',active:state===k,onClick:()=>setState(k)}))} right={<button className="button" disabled={loading} onClick={()=>setRefresh(n=>n+1)}>Обновить</button>}/>
+  <Strip label="Сводка конфликтов" items={[{key:'open',n:counts.open??null,label:'открытых',tone:'muted',active:state==='open'&&!rtype,onClick:()=>{setState('open');setRtype('')}},
+   ...kindNames.filter(([k])=>k!=='other'||byKind.other).map(([k,l])=>({key:k,n:byKind[k],label:l,tone:(!byKind[k]?'muted':k==='unmatched'?'amber':'warn') as 'amber'|'warn'|'muted',active:state==='open'&&rtype===k,onClick:()=>{setState('open');setRtype(k)}})),
+   {key:'resolved',n:counts.resolved??null,label:'решено',tone:'muted',active:state==='resolved',onClick:()=>{setState('resolved');setRtype('')}},
+   {key:'dismissed',n:counts.dismissed??null,label:'отложено',tone:'muted',active:state==='dismissed',onClick:()=>{setState('dismissed');setRtype('')}}]} right={<button className="button" disabled={loading} onClick={()=>setRefresh(n=>n+1)}>Обновить</button>}/>
   <Split wide side={side}>
-   <div className="systems-toolbar"><select aria-label="Тип конфликта" value={rtype} onChange={e=>setRtype(e.target.value)}><option value="">Тип: все</option>{types.map(t=><option key={t} value={t}>{(reasons[t]?.[0]??t)+' · '+items.filter(i=>i.reason_code===t).length}</option>)}</select><input className="toolbar-search" aria-label="Фильтр конфликтов" placeholder="Хост, MAC, серийный, источник" value={q} onChange={e=>setQ(e.target.value)}/></div>
+   <div className="systems-toolbar"><select aria-label="Тип конфликта" value={rtype} onChange={e=>setRtype(e.target.value as Kind|'')}><option value="">Тип: все</option>{kindNames.map(([k,l])=><option key={k} value={k}>{l+' · '+byKind[k]}</option>)}</select><input className="toolbar-search" aria-label="Фильтр конфликтов" placeholder="Хост, MAC, серийный, источник" value={q} onChange={e=>setQ(e.target.value)}/></div>
    <Err e={error}/>{notice?<div className="notice" role="status">{notice}</div>:null}
    {loading?<div className="empty" role="status">Загружаем очередь…</div>:<div className="table-scroll panel"><table className="panel-table"><thead><tr><th/><th>Конфликт</th><th>Объект</th><th>Источник</th><th className="num">Ожидает</th><th className="num">Кандидатов</th></tr></thead><tbody>
-    {shown.map(i=><tr key={i.conflict_id} className={i.conflict_id===sel?'selected':''} onClick={()=>setSel(i.conflict_id)}><td><StateDot tone={i.state==='open'?(i.asset_uid?'amber':'red'):'grey'}/></td><td><button className="link plain" onClick={()=>setSel(i.conflict_id)}>{reasons[i.reason_code]?.[0]??i.reason_code}</button></td><td className="mono">{i.observed_hostname||i.source_local_id}</td><td>{i.namespace}</td><td className="num">{fmt(i.pending_observations)}</td><td className="num">{i.candidate_asset_uids.length}{i.asset_uid?<> <Pill>привязана</Pill></>:null}</td></tr>)}
+    {shown.map(i=><tr key={i.conflict_id} className={i.conflict_id===sel?'selected':''} onClick={()=>setSel(i.conflict_id)}><td><StateDot tone={i.state==='open'?(i.asset_uid?'amber':'red'):'grey'}/></td><td><button className="link plain" onClick={()=>setSel(i.conflict_id)}>{reasons[i.reason_code]?.[0]??i.reason_code}</button><small className="muted"> · {kindNames.find(([k])=>k===kindOf(i))?.[1]}</small></td><td className="mono">{i.observed_hostname||i.source_local_id}</td><td>{i.namespace}</td><td className="num">{fmt(i.pending_observations)}</td><td className="num">{i.candidate_asset_uids.length}{i.asset_uid?<> <Pill>привязана</Pill></>:null}</td></tr>)}
    </tbody></table>{!shown.length?<p className="muted pad">{items.length?'Нет совпадений с фильтром.':'Конфликтов в этом состоянии нет.'}</p>:null}</div>}
    <p className="muted">Автоматически сводятся только записи разных источников с единственным надёжным сильным признаком (machine UUID, BIOS UUID, серийный номер). Остальное — сюда: решение оператора записывается в историю актива и аудит.</p>
   </Split></>;

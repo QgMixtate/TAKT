@@ -432,6 +432,19 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if len(tl.Items) != 1 || tl.Items[0].State != "active" || tl.Items[0].Source == nil || *tl.Items[0].Source != agentSource || tl.Items[0].LastCollected == nil {
 		t.Fatalf("target after enrollment %+v", tl.Items)
 	}
+	// C53.07: «Что / сколько» — у collector одна SSH-цель, у источника цели — кто и по какому адресу его собирает
+	var so struct {
+		Items []app.SourceOverview `json:"items"`
+	}
+	_ = json.Unmarshal(call("view51", "GET", "/api/v1/sources/overview?ids="+collector+","+agentSource, "", 200), &so)
+	byID := map[string]app.SourceOverview{}
+	for _, o := range so.Items {
+		byID[o.SourceID] = o
+	}
+	if c, a := byID[collector], byID[agentSource]; len(so.Items) != 2 || c.Targets.SSH != 1 || c.Targets.Errors != 0 || c.CollectedBy != nil ||
+		a.CollectedBy == nil || a.CollectedBy.CollectorID != collector || a.CollectedBy.Kind != "ssh" || a.CollectedBy.Address != "10.51.0.10" || a.LastCollectedAt == nil {
+		t.Fatalf("sources overview: %+v", so.Items)
+	}
 	var platform, acquisition string
 	if err := f.pool.QueryRow(f.ctx, "SELECT inventory_platform,acquisition FROM sources.agents WHERE tenant_id=$1 AND source_id=$2", tenant, agentSource).Scan(&platform, &acquisition); err != nil || platform != "linux/amd64" || acquisition != "ssh" {
 		t.Fatal("target agent platform/acquisition", platform, acquisition, err)

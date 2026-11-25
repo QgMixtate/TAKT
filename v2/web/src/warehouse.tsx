@@ -90,6 +90,11 @@ function OperationForm({ref_:r,csrf,isAdmin,onFail,onDone}:{ref_:Ref;csrf:string
    if(e instanceof ApiError&&e.code==='UNIT_RESERVED'){const res=(await api.wReservations().catch(()=>({items:[] as WReservation[]}))).items.find(x=>op.lines.some(l=>l.unit_id&&l.unit_id===x.unit_id));if(res){onFail(new UserError('Экземпляр «'+res.label+'» зарезервирован за '+subjName(r,res.holder_id)+' до '+fmt(res.expires_at)+': выдать можно только ему или после отмены резерва.'));return}}
    onFail(e)}finally{setBusy(false)}
  }
+ // предпросмотр акта до проведения (макет склада, стенд №22): тот же бланк, что после проведения, с пометкой «черновик»
+ const [preview,setPreview]=useState(false);
+ const draft:WMovement={movement_id:'',kind,act_no:'б/н',occurred_at:new Date().toISOString(),actor_ref:'',actor_name:null,basis:basis.trim()||'—',note:note.trim()||null,
+  from_location:fromIsLoc?fromLoc||null:null,to_location:n.to==='loc'||n.to==='repair'?toLoc||null:null,from_holder:fromIsHolder?fromH||null:null,to_holder:n.to==='holder'?toH||null:null,asset_uid:n.asset&&asset.trim()?asset.trim():null,reverses:null,compat_override:kind==='install'&&override,
+  lines:lines.filter(l=>l.unit_id||l.item_id).map((l,i)=>{const u=units.find(x=>x.unit_id===l.unit_id),it=r.items.find(x=>x.item_id===(u?.item_id??l.item_id));return {line_no:i+1,item_id:it?.item_id??'',item_name:u?.item_name??it?.name??'—',unit:it?.unit??'шт',unit_id:l.unit_id||null,serial:u?.serial??(l.serial.trim()||null),inventory_no:u?.inventory_no??(l.inventory_no.trim()||null),quantity:l.unit_id||it?.kind==='serial'?1:Number(l.quantity)||0}})};
  const valid=(!incompatible||override)&&basis.trim()&&lines.some(l=>l.unit_id||l.item_id)&&(!fromIsLoc||fromLoc)&&(!fromIsHolder||fromH)&&(!n.to||(n.to==='holder'?toH:toLoc))&&(!n.asset||/^[0-9a-f-]{36}$/.test(asset.trim()));
  return <div className="table-panel"><div className="table-toolbar"><h2>Складская операция</h2></div><div className="form-grid wh-form">
   <label>Вид<select value={kind} onChange={e=>{setKind(e.target.value as WOperation['kind']);setLines([{...blank}])}}>{Object.keys(need).filter(k=>k!=='write_off'||isAdmin).map(k=><option key={k} value={k}>{kindName[k as WMovement['kind']]}</option>)}</select></label>
@@ -117,7 +122,8 @@ function OperationForm({ref_:r,csrf,isAdmin,onFail,onDone}:{ref_:Ref;csrf:string
  </div>)}
  <button className="text-link" onClick={()=>setLines(ls=>[...ls,{...blank}])}>+ позиция</button></div>
  {incompatible?<div className="error" role="alert">Комплектующее не подходит к модели актива «{compat.find(c=>c.compatible===false)?.asset_model}» по каталогу. <label><input type="checkbox" checked={override} onChange={e=>setOverride(e.target.checked)}/> Установить под мою ответственность (отметка останется в журнале)</label></div>:null}
- <div className="wh-submit"><button className="button" disabled={!valid||busy} onClick={()=>void submit()}>{busy?'Проводим…':'Провести и сформировать акт'}</button><small className="muted">Операция попадает в журнал; исправление — только обратной операцией.</small></div>
+ <div className="wh-submit"><button className="button" disabled={!valid||busy} onClick={()=>void submit()}>{busy?'Проводим…':'Провести и сформировать акт'}</button><button className="text-button" aria-expanded={preview} onClick={()=>setPreview(!preview)}>{preview?'Скрыть предпросмотр':'Предпросмотр акта'}</button><small className="muted">Операция попадает в журнал; исправление — только обратной операцией.</small></div>
+ {preview?<div className="act-preview" aria-label="Предпросмотр акта"><span className="act-draft">Черновик — не проведено; номер акта присвоится при проведении</span><ActBody m={draft} r={r}/></div>:null}
  </div>;
 }
 

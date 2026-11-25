@@ -21,6 +21,13 @@ type Filter=Partial<Record<typeof filterKeys[number],string>>;
 const when=(v:string|null)=>v?new Date(v).toLocaleString('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):'—';
 const roleNames:Record<string,string>={accountable:'Ответственный',business_owner:'Бизнес-владелец',technical:'Технический ответственный',custodian:'Пользователь (хранитель)'};
 
+// «Представление» (макет 5): готовые наборы фильтров и свои, сохранённые в браузере.
+type View={name:string;filter:Filter;labels?:Record<string,string>};
+const presets:View[]=[{name:'Все хосты',filter:{}},{name:'Серверы без свежего сбора',filter:{class:'server',freshness:'stale'}},{name:'Неполные данные',filter:{freshness:'partial'}},{name:'Без ответственного',filter:{owner:'none'},labels:{owner:'резерв площадки'}},{name:'Вне систем',filter:{system:'none'},labels:{system:'вне систем'}},{name:'Нет сведений о сборе',filter:{freshness:'unknown'}}];
+function loadViews():View[]{try{const v=JSON.parse(localStorage.getItem('takt.hosts.views')??'[]');if(Array.isArray(v))return v.filter(x=>x&&typeof x.name==='string'&&x.filter&&typeof x.filter==='object')}catch{/* хранилище недоступно */}return []}
+const sameFilter=(a:Filter,b:Filter)=>{const k=(f:Filter)=>JSON.stringify(Object.entries(f).filter(([x,v])=>x!=='q'&&v).sort());return k(a)===k(b)};
+const age=(v:string|null)=>{if(!v)return '';const h=Math.floor((Date.now()-new Date(v).getTime())/3600000);return h<1?'':h<48?h+' ч':Math.floor(h/24)+' дн'};
+
 function loadCols():Col[]{try{const v=JSON.parse(localStorage.getItem('takt.hosts.cols')??'null');if(Array.isArray(v)&&v.every(x=>x in colNames))return v as Col[]}catch{/* хранилище недоступно */}return defaultCols}
 
 export function HostsScreen({csrf,canWrite,refresh,onRefresh,onOpenAsset,onOpenSystem,onExpired}:{onRefresh:()=>void;csrf:string;canWrite:boolean;refresh:number;onOpenAsset:(uid:string)=>void;onOpenSystem?:(uid:string)=>void;onExpired:()=>void}){
@@ -28,6 +35,7 @@ export function HostsScreen({csrf,canWrite,refresh,onRefresh,onOpenAsset,onOpenS
  const [sort,setSort]=useState('name'),[desc,setDesc]=useState(false),[offset,setOffset]=useState(0),[limit,setLimit]=useState<100|250|500>(100);
  const [by,setBy]=useState<TreeBy>('site'),[open,setOpen]=useState<Record<string,boolean>>({}),[cols,setCols]=useState<Col[]>(loadCols),[colMenu,setColMenu]=useState(false),[group,setGroup]=useState<''|'os'|'system'|'site'>('');
  const [sel,setSel]=useState<string[]>([]),[allByFilter,setAllByFilter]=useState(false),[n,setN]=useState(0),[note,setNote]=useState(''),[busy,setBusy]=useState(false),[actError,setActError]=useState<unknown>(null);
+ const [views,setViews]=useState<View[]>(loadViews),[addMenu,setAddMenu]=useState(false),[treeQ,setTreeQ]=useState('');
  const [assign,setAssign]=useState(false),[role,setRole]=useState('accountable'),[subject,setSubject]=useState(''),[ticket,setTicket]=useState(false);
  useEffect(()=>{const t=setTimeout(()=>{setFilter(f=>({...f,q:typed.trim()||undefined}));setOffset(0)},300);return()=>clearTimeout(t)},[typed]);
  const query:HostQuery={...filter,sort,dir:desc?'desc':'asc',offset,limit};
@@ -46,6 +54,10 @@ export function HostsScreen({csrf,canWrite,refresh,onRefresh,onOpenAsset,onOpenS
   if(by==='os'){f.os_family=k1;L.os_family=familyNames[k1]??k1;if(k2)f.os=k2,L.os=l2||'—'}
   setFilter(f);setLabels(L);setOffset(0);
  }
+ function applyView(v:View){setFilter({q:filter.q,...v.filter});setLabels(v.labels??{});setOffset(0)}
+ function saveViews(next:View[]){setViews(next);try{localStorage.setItem('takt.hosts.views',JSON.stringify(next))}catch{/* хранилище недоступно */}}
+ function saveView(){const name=window.prompt('Название представления (сохраняется в этом браузере)')?.trim();if(!name)return;const f=Object.fromEntries(Object.entries(filter).filter(([k,v])=>k!=='q'&&v)) as Filter;saveViews([...views.filter(v=>v.name!==name),{name,filter:f,labels}])}
+ const allViews=[...presets,...views];const curView=allViews.find(v=>sameFilter(v.filter,filter));
  function toggleCol(col:Col){const next=cols.includes(col)?cols.filter(x=>x!==col):[...cols,col];setCols(next);try{localStorage.setItem('takt.hosts.cols',JSON.stringify(next))}catch{/* хранилище недоступно */}}
  function sortBy(key:string){if(sort===key)setDesc(!desc);else{setSort(key);setDesc(false)}setOffset(0)}
  const target=()=>allByFilter?{filter:Object.fromEntries(Object.entries(filter).filter(([,v])=>v)) as Record<string,string>}:{asset_uids:sel};
@@ -53,11 +65,11 @@ export function HostsScreen({csrf,canWrite,refresh,onRefresh,onOpenAsset,onOpenS
  const items=page?.items??[];
  const chosenCount=allByFilter?Math.min(page?.total??0,1000):sel.length;
  const groups=useMemo(()=>{if(!group)return [['',items]] as [string,RegistryHost[]][];const m=new Map<string,RegistryHost[]>();for(const h of items){const k=group==='os'?(h.os||'ОС не определена'):group==='system'?(h.system_name||'вне систем'):(h.site_name||'без площадки');m.set(k,[...(m.get(k)??[]),h])}return [...m.entries()]},[items,group]);
- const chips=filterKeys.filter(k=>k!=='q'&&filter[k]).map(k=><span key={k} className="chip">{({site:'Площадка',segment:'Сегмент',class:'Тип',os_family:'ОС',os:'Версия ОС',owner:'Ответственный',team:'Команда',system:'Система',component:'Компонент',freshness:'Свежесть'} as Record<string,string>)[k]}: {labels[k]??(k==='freshness'?freshNames[filter[k]!]?.[0]:filter[k])} <button aria-label={'Убрать фильтр '+k} onClick={()=>set(k,undefined)}>×</button></span>);
+ const chips=filterKeys.filter(k=>k!=='q'&&filter[k]).map(k=><span key={k} className={'chip'+(k==='freshness'&&filter[k]==='stale'?' chip-warn':k==='freshness'&&filter[k]==='partial'?' chip-amber':'')}>{({site:'Площадка',segment:'Сегмент',class:'Тип',os_family:'ОС',os:'Версия ОС',owner:'Ответственный',team:'Команда',system:'Система',component:'Компонент',freshness:'Свежесть'} as Record<string,string>)[k]}: {labels[k]??(k==='freshness'?freshNames[filter[k]!]?.[0]:k==='class'?classNames[filter[k]!]??filter[k]:filter[k])} <button aria-label={'Убрать фильтр '+k} onClick={()=>set(k,undefined)}>×</button></span>);
  const th=(key:'name'|Col,label:string,cls='')=>{const s=sortOf[key];return <th className={cls} aria-sort={s&&sort===s?(desc?'descending':'ascending'):undefined}>{s?<button className="th-sort" onClick={()=>sortBy(s)}>{label}{sort===s?(desc?' ↓':' ↑'):''}</button>:label}</th>};
  const cell:Record<Col,(h:RegistryHost)=>ReactNode>={
   ip:h=><span className="mono">{h.ip||'—'}</span>,os:h=>h.os||<span className="muted">нет сведений</span>,class:h=>classNames[h.asset_class]??h.asset_class,site:h=><>{h.site_name}{h.segment?<small className="muted"> · {h.segment}</small>:null}</>,
-  freshness:h=>{const k=h.freshness==='fresh'&&h.sections_ok<h.sections_total?'partial':h.freshness;return <span className={'badge '+freshNames[k][1]}><i/>{freshNames[k][0]}</span>},
+  freshness:h=>{const k=h.freshness==='fresh'&&h.sections_ok<h.sections_total?'partial':h.freshness;const a=k==='fresh'?'':age(h.last_inventory_at);return <span className={'badge '+freshNames[k][1]}><i/>{freshNames[k][0]}{a?' · '+a:''}</span>},
   data:h=><span className={h.sections_total&&h.sections_ok<h.sections_total?'problem-text':''}>{h.sections_total?h.sections_ok+'/'+h.sections_total:'—'}</span>,
   sources:h=>h.sources.length?h.sources.map(s=>srcNames[s]??s).join(', '):<span className="muted">—</span>,
   owner:h=>h.site_fallback?<span className="amber-text" title="Назначена резервная команда площадки">{h.accountable_name||'резерв площадки'}</span>:h.accountable_name||<span className="muted">—</span>,
@@ -69,17 +81,26 @@ export function HostsScreen({csrf,canWrite,refresh,onRefresh,onOpenAsset,onOpenS
   <div className="hosts-grid">
    <aside className="hosts-tree panel" aria-label="Дерево группировки">
     <label className="tree-by">Дерево<select aria-label="Дерево группировки" value={by} onChange={e=>{setBy(e.target.value as TreeBy);setOpen({})}}>{(Object.keys(treeNames) as TreeBy[]).map(k=><option key={k} value={k}>{treeNames[k]}</option>)}</select></label>
+    <input type="search" className="tree-find" aria-label="Найти в дереве" placeholder="Найти в дереве" value={treeQ} onChange={e=>setTreeQ(e.target.value)}/>
     {treeError?<div className="error" role="alert">{errorMessage(treeError)}</div>:null}
     <div className="tree"><button className={'tree-item'+(Object.keys(filter).filter(k=>k!=='q'&&filter[k as keyof Filter]).length===0?' active':'')} onClick={()=>{setFilter({q:filter.q});setOffset(0)}}><span>Все хосты</span><span className="muted">{c?fmt(c.total):''}</span></button>
-     {(tree?.nodes??[]).map(n1=>{const l1=by==='os'?(familyNames[n1.label]??n1.label):by==='system'&&n1.key==='none'?'Вне систем':n1.label||(by==='owner'?'Без команды':'—');const active=(by==='site'&&filter.site===n1.key)||(by==='owner'&&filter.team===n1.key)||(by==='system'&&filter.system===n1.key)||(by==='os'&&filter.os_family===n1.key);return <div key={n1.key}>
-      <button className={'tree-item'+(active&&!filter.segment&&!filter.owner&&!filter.component&&!filter.os?' active':'')} onClick={()=>pickTree(n1.key,l1)}><span className="caret" role="button" aria-label={open[n1.key]?'Свернуть':'Развернуть'} onClick={e=>{e.stopPropagation();setOpen(o=>({...o,[n1.key]:!o[n1.key]}))}}>{open[n1.key]?'▾':'▸'}</span><span>{l1}</span><span className="muted">{fmt(n1.count)}</span></button>
-      {open[n1.key]?n1.children.map(n2=>{const l2=n2.label||(by==='site'?'без сегмента':by==='owner'?'—':by==='system'?(n1.key==='none'?'—':'без компонента'):'—');return <button key={n2.key} className={'tree-item child'+(active&&((by==='site'&&filter.segment===n2.key)||(by==='owner'&&filter.owner===n2.key)||(by==='system'&&filter.component===n2.key)||(by==='os'&&filter.os===n2.key))?' active':'')} onClick={()=>pickTree(n1.key,l1,n2.key,l2)}><span>{l2}</span><span className="muted">{fmt(n2.count)}</span></button>}):null}
+     {(tree?.nodes??[]).map(n1=>{const l1=by==='os'?(familyNames[n1.label]??n1.label):by==='system'&&n1.key==='none'?'Вне систем':n1.label||(by==='owner'?'Без команды':'—');
+      const tq=treeQ.trim().toLowerCase(),selfHit=!tq||l1.toLowerCase().includes(tq),kids=tq&&!selfHit?n1.children.filter(n2=>(n2.label||'').toLowerCase().includes(tq)):n1.children;if(tq&&!selfHit&&!kids.length)return null;const opened=open[n1.key]||(!!tq&&!selfHit);const active=(by==='site'&&filter.site===n1.key)||(by==='owner'&&filter.team===n1.key)||(by==='system'&&filter.system===n1.key)||(by==='os'&&filter.os_family===n1.key);return <div key={n1.key}>
+      <button className={'tree-item'+(active&&!filter.segment&&!filter.owner&&!filter.component&&!filter.os?' active':'')} onClick={()=>pickTree(n1.key,l1)}><span className="caret" role="button" aria-label={open[n1.key]?'Свернуть':'Развернуть'} onClick={e=>{e.stopPropagation();setOpen(o=>({...o,[n1.key]:!o[n1.key]}))}}>{opened?'▾':'▸'}</span><span>{l1}</span><span className="muted">{fmt(n1.count)}</span></button>
+      {opened?kids.map(n2=>{const l2=n2.label||(by==='site'?'без сегмента':by==='owner'?'—':by==='system'?(n1.key==='none'?'—':'без компонента'):'—');return <button key={n2.key} className={'tree-item child'+(active&&((by==='site'&&filter.segment===n2.key)||(by==='owner'&&filter.owner===n2.key)||(by==='system'&&filter.component===n2.key)||(by==='os'&&filter.os===n2.key))?' active':'')} onClick={()=>pickTree(n1.key,l1,n2.key,l2)}><span>{l2}</span><span className="muted">{fmt(n2.count)}</span></button>}):null}
      </div>})}</div>
    </aside>
    <section className="hosts-main">
-    <div className="systems-toolbar"><input className="toolbar-search" aria-label="Поиск хостов" placeholder="Имя, IP или ОС" value={typed} onChange={e=>setTyped(e.target.value)}/>{chips}
-     <select aria-label="Свежесть" value={filter.freshness??''} onChange={e=>set('freshness',e.target.value||undefined)}><option value="">+ Свежесть</option>{Object.entries(freshNames).map(([k,[l]])=><option key={k} value={k}>{l}</option>)}</select>
-     <span className="spacer"/>
+    <div className="systems-toolbar"><select className="view-select" aria-label="Представление" value={curView?.name??''} onChange={e=>{if(e.target.value==='+save'){saveView();return}if(e.target.value==='+del'){if(curView&&views.includes(curView))saveViews(views.filter(v=>v!==curView));return}const v=allViews.find(x=>x.name===e.target.value);if(v)applyView(v)}}>
+      {!curView?<option value="">Представление: свой фильтр</option>:null}{allViews.map(v=><option key={v.name} value={v.name}>Представление: {v.name}</option>)}<option value="+save">Сохранить текущий фильтр…</option>{curView&&views.includes(curView)?<option value="+del">Удалить «{curView.name}»</option>:null}</select>
+     {chips}
+     <span className="menu-anchor"><button className="chip add" aria-expanded={addMenu} onClick={()=>setAddMenu(!addMenu)}>+ Фильтр</button>{addMenu?<div className="popover filter-menu">
+      <label>Свежесть<select value={filter.freshness??''} onChange={e=>{set('freshness',e.target.value||undefined);setAddMenu(false)}}><option value="">любая</option>{Object.entries(freshNames).map(([k,[l]])=><option key={k} value={k}>{l}</option>)}</select></label>
+      <label>Тип<select value={filter.class??''} onChange={e=>{set('class',e.target.value||undefined);setAddMenu(false)}}><option value="">любой</option>{Object.entries(classNames).map(([k,l])=><option key={k} value={k}>{l}</option>)}</select></label>
+      <label>Ответственный<select value={filter.owner==='none'?'none':''} onChange={e=>{set('owner',e.target.value||undefined,'резерв площадки');setAddMenu(false)}}><option value="">любой</option><option value="none">не назначен</option></select></label>
+      <p className="muted small">Площадка, сегмент, система, ОС — выбором в дереве слева.</p></div>:null}</span>
+     <input className="toolbar-search" aria-label="Поиск хостов" placeholder="Имя, IP или ОС" value={typed} onChange={e=>setTyped(e.target.value)}/></div>
+     <div className="systems-toolbar"><span className="spacer"/>
      <select aria-label="Группировать" value={group} onChange={e=>setGroup(e.target.value as typeof group)}><option value="">без группировки</option><option value="os">Группировать: ОС</option><option value="system">Группировать: система</option><option value="site">Группировать: площадка</option></select>
      <span className="menu-anchor"><button className="button" aria-expanded={colMenu} onClick={()=>setColMenu(!colMenu)}>Колонки</button>{colMenu?<div className="popover right col-menu">{(Object.keys(colNames) as Col[]).map(k=><label key={k} className="inline-check"><input type="checkbox" checked={cols.includes(k)} onChange={()=>toggleCol(k)}/> {colNames[k]}</label>)}</div>:null}</span>
      <a className="button" href={api.hostsCSVURL(query)} download="hosts.csv">Выгрузить CSV</a></div>

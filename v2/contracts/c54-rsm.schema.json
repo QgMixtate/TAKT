@@ -3390,6 +3390,137 @@
     "items"
    ],
    "additionalProperties": false
+  },
+  "SourceOverview": {
+   "type": "object",
+   "properties": {
+    "source_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "hosts": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "targets": {
+     "type": "object",
+     "properties": {
+      "ssh": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "winrm": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "snmp": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "errors": {
+       "type": "integer",
+       "minimum": 0
+      },
+      "disabled": {
+       "type": "integer",
+       "minimum": 0
+      }
+     },
+     "required": [
+      "ssh",
+      "winrm",
+      "snmp",
+      "errors",
+      "disabled"
+     ],
+     "additionalProperties": false
+    },
+    "last_error": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "maxLength": 128
+    },
+    "last_error_target": {
+     "type": [
+      "string",
+      "null"
+     ],
+     "maxLength": 64
+    },
+    "last_collected_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "collected_by": {
+     "oneOf": [
+      {
+       "type": "null"
+      },
+      {
+       "type": "object",
+       "properties": {
+        "collector_id": {
+         "type": "string",
+         "format": "uuid"
+        },
+        "kind": {
+         "enum": [
+          "ssh",
+          "winrm",
+          "snmp"
+         ]
+        },
+        "address": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 45
+        }
+       },
+       "required": [
+        "collector_id",
+        "kind",
+        "address"
+       ],
+       "additionalProperties": false
+      }
+     ]
+    }
+   },
+   "required": [
+    "source_id",
+    "hosts",
+    "targets",
+    "last_error",
+    "last_error_target",
+    "last_collected_at",
+    "collected_by"
+   ],
+   "additionalProperties": false
+  },
+  "SourceOverviewList": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "maxItems": 100,
+     "items": {
+      "$ref": "#/$defs/SourceOverview"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
   }
  }
 }

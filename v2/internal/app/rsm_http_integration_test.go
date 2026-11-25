@@ -338,6 +338,21 @@ func TestC54RSMHTTP(t *testing.T) {
 	if ho.Name != "crm-db-01" || len(ho.Sections) != 12 || ho.Sections[0].Name != "identity" || ho.Sections[0].Status == "unknown" || len(ho.Bindings) != 1 || ho.Software < 1 {
 		t.Fatalf("host overview: %+v", ho)
 	}
+	// C53.07: сводка источника для «Что / сколько» — portable видит свои хосты, целей сбора нет
+	var so struct {
+		Items []struct {
+			SourceID    string          `json:"source_id"`
+			Hosts       int             `json:"hosts"`
+			CollectedBy json.RawMessage `json:"collected_by"`
+		} `json:"items"`
+	}
+	_ = json.Unmarshal(get("/api/v1/sources/overview?ids="+source+","+identifier.New(), "SourceOverviewList"), &so)
+	if len(so.Items) != 1 || so.Items[0].SourceID != source || so.Items[0].Hosts < 1 || string(so.Items[0].CollectedBy) != "null" {
+		t.Fatalf("sources overview: %+v", so)
+	}
+	if code, _, _ := b.request(t, "GET", "/api/v1/sources/overview?ids=bad", "", "", "", nil); code != 400 {
+		t.Fatalf("sources overview bad ids: %d", code)
+	}
 	get("/api/v1/assets/"+h2+"/tickets", "TicketList")
 	send("POST", "/api/v1/assets/"+h2+"/collect", `{}`, 200, "CollectResult")
 	var coll struct {
