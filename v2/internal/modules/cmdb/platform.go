@@ -220,7 +220,12 @@ SELECT $1,$2,x.ref,x.kind,x.name,NULLIF(x.bios->>0,''),NULLIF(x.serial,''),NULLI
   (SELECT i.asset_uid FROM assets.asset_identifiers i JOIN assets.assets a ON a.tenant_id=i.tenant_id AND a.asset_uid=i.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
    WHERE i.tenant_id=$1 AND i.kind IN ('bios_uuid','machine_uuid') AND i.valid_to IS NULL AND i.normalized_value IN (SELECT jsonb_array_elements_text(x.bios)) ORDER BY i.valid_from LIMIT 1),
   (SELECT i.asset_uid FROM assets.asset_identifiers i JOIN assets.assets a ON a.tenant_id=i.tenant_id AND a.asset_uid=i.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
-   WHERE i.tenant_id=$1 AND i.kind='serial' AND i.valid_to IS NULL AND x.serial<>'' AND lower(i.normalized_value)=lower(x.serial) ORDER BY i.valid_from LIMIT 1)),
+   WHERE i.tenant_id=$1 AND i.kind='serial' AND i.valid_to IS NULL AND x.serial<>'' AND lower(i.normalized_value)=lower(x.serial) ORDER BY i.valid_from LIMIT 1),
+  -- компьютер AD: по имени (FQDN или короткое) и только если такой актив единственный — слабый признак, без слияния
+  (SELECT CASE WHEN count(DISTINCT i.asset_uid)=1 THEN (array_agg(i.asset_uid))[1] END FROM assets.asset_identifiers i
+   JOIN assets.assets a ON a.tenant_id=i.tenant_id AND a.asset_uid=i.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
+   WHERE i.tenant_id=$1 AND x.kind='computer' AND x.hostname<>'' AND i.kind='hostname' AND i.valid_to IS NULL
+   AND i.normalized_value IN (x.hostname, split_part(x.hostname,'.',1)))),
  $3,$3
 FROM jsonb_to_recordset($4::jsonb) AS x(ref text,kind text,name text,bios jsonb,serial text,hostname text,macs jsonb,attrs jsonb)
 ON CONFLICT (tenant_id,instance_id,ref) DO UPDATE SET kind=excluded.kind,name=excluded.name,bios_uuid=excluded.bios_uuid,serial=excluded.serial,hostname=excluded.hostname,

@@ -18,6 +18,7 @@ import (
 
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/access"
 	accessport "github.com/QgMixtate/surveyscan/v2/internal/modules/access/port"
+	"github.com/QgMixtate/surveyscan/v2/internal/modules/cmdb"
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/responsibility"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/domain"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/identifier"
@@ -40,6 +41,8 @@ type DirectorySyncConfig struct {
 	CAFile       string `json:"ca_certificate_file,omitempty"`
 	UserFilter   string `json:"user_filter,omitempty"`  // по умолчанию (&(objectCategory=person)(objectClass=user))
 	GroupFilter  string `json:"group_filter,omitempty"` // по умолчанию — синхронизация команд выключена
+	// C57.02: компьютеры домена при полной синхронизации (снимок платформы «ad»); по умолчанию (objectClass=computer), «-» — выключено
+	ComputerFilter string `json:"computer_filter,omitempty"`
 	// Атрибуты (для совместимых каталогов; по умолчанию — AD)
 	GUIDAttribute    string `json:"guid_attribute,omitempty"`    // objectGUID (двоичный) или entryUUID (строка)
 	LoginAttribute   string `json:"login_attribute,omitempty"`   // sAMAccountName
@@ -88,7 +91,7 @@ func buildDirectorySync(cfg DirectorySyncConfig, password string, caPEM []byte) 
 	if _, e = ldap.ParseDN(cfg.BaseDN); e != nil {
 		return nil, errors.New("ldap_sync.base_dn is not a DN")
 	}
-	for _, f := range []string{cfg.UserFilter, cfg.GroupFilter} {
+	for _, f := range []string{cfg.UserFilter, cfg.GroupFilter, strings.TrimPrefix(cfg.ComputerFilter, "-")} {
 		if f != "" {
 			if _, e = ldap.CompileFilter(f); e != nil {
 				return nil, errors.New("ldap_sync filter is invalid")
@@ -326,6 +329,9 @@ func (r *Registry) syncLocked(ctx context.Context, d *DirectorySync, forceFull b
 		counters, e = r.applyDirectory(ctx, tenant, snapshot, &run)
 	}
 	if e == nil {
+		if since == nil { // компьютеры домена — только при полной синхронизации; сбой не роняет синхронизацию людей
+			_ = r.syncComputers(ctx, d)
+		}
 		return run, nil
 	}
 	run.Finished, run.Status = time.Now().UTC(), "failed"
@@ -593,4 +599,99 @@ func (d *DirectorySync) Authenticate(login, password string) (string, error) {
 		return "", ErrDirectoryLogin
 	}
 	return guid, nil
+}
+
+// adComputers — C57.02: компьютеры домена (только чтение): имя, FQDN, ОС, последний вход, отключён, OU.
+func (d *DirectorySync) adComputers() ([]cmdb.PlatformObject, bool, error) {
+	cfg := d.Config
+	filter := cfg.ComputerFilter
+	if filter == "-" {
+		return nil, false, nil
+	}
+	if filter == "" {
+		filter = "(objectClass=computer)"
+	}
+	c, e := d.connect()
+	if e != nil {
+		return nil, false, e
+	}
+	defer c.Close()
+	entries, e := d.search(c, cfg.BaseDN, ldap.ScopeWholeSubtree, filter, []string{cfg.GUIDAttribute, "cn", "dNSHostName", "operatingSystem", "operatingSystemVersion", "lastLogonTimestamp", "userAccountControl", "whenCreated"})
+	if e != nil {
+		return nil, false, e
+	}
+	truncated := false
+	if len(entries) > 20000 {
+		entries, truncated = entries[:20000], true
+	}
+	out := make([]cmdb.PlatformObject, 0, len(entries))
+	for _, en := range entries {
+		guid := d.guid(en)
+		if guid == "" {
+			continue
+		}
+		name := en.GetAttributeValue("cn")
+		attrs := map[string]any{}
+		if v := en.GetAttributeValue("operatingSystem"); v != "" {
+			attrs["os"] = v
+		}
+		if v := en.GetAttributeValue("operatingSystemVersion"); v != "" {
+			attrs["os_version"] = v
+		}
+		if v := en.GetAttributeValue("lastLogonTimestamp"); v != "" {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+				attrs["last_logon"] = time.Unix(n/10000000-11644473600, 0).UTC().Format(time.RFC3339)
+			}
+		}
+		if v := en.GetAttributeValue("userAccountControl"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				attrs["disabled"] = n&2 != 0
+			}
+		}
+		if dn := en.DN; dn != "" {
+			if _, ou, ok := strings.Cut(dn, ","); ok && len(ou) <= 1024 {
+				attrs["ou"] = ou
+			}
+		}
+		var host *string
+		if v := strings.ToLower(strings.TrimSpace(en.GetAttributeValue("dNSHostName"))); v != "" && len(v) <= 255 {
+			host = &v
+		}
+		if len(name) > 256 {
+			name = name[:256]
+		}
+		out = append(out, cmdb.PlatformObject{Ref: "ad:" + guid, Kind: "computer", Name: name, Hostname: host, MACs: []string{}, Attrs: attrs})
+	}
+	return out, truncated, nil
+}
+
+// syncComputers — снимок «ad» от центра (источник — сам центр: tenant). Полный, если список не урезан.
+func (r *Registry) syncComputers(ctx context.Context, d *DirectorySync) error {
+	objects, truncated, e := d.adComputers()
+	if e != nil || objects == nil {
+		return e
+	}
+	tenant := d.Config.TenantID
+	errs := []string{}
+	if truncated {
+		errs = append(errs, "computers:truncated")
+	}
+	s := cmdb.PlatformSnapshot{Major: 1, SnapshotID: identifier.New(), Tenant: tenant, Source: tenant, Generation: tenant, Platform: "ad",
+		Instance: d.Config.URL + "/" + d.Config.BaseDN, InstanceName: d.Config.BaseDN, CollectedAt: time.Now().UTC(), Complete: !truncated,
+		Objects: objects, Relations: []cmdb.PlatformRelation{}, Errors: errs}
+	if len(s.Instance) > 256 {
+		s.Instance = s.Instance[:256]
+	}
+	if len(s.InstanceName) > 256 {
+		s.InstanceName = s.InstanceName[:256]
+	}
+	tx, e := r.Pool.Begin(ctx)
+	if e != nil {
+		return e
+	}
+	defer tx.Rollback(ctx)
+	if _, e = r.CMDB.SavePlatformSnapshot(ctx, tx, s); e != nil {
+		return e
+	}
+	return tx.Commit(ctx)
 }

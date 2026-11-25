@@ -93,4 +93,13 @@ func TestC57PlatformSnapshotMatchRepeatAndRemoval(t *testing.T) {
 	if removed != nil {
 		t.Fatal("returned vm must be restored")
 	}
+	// компьютер AD: сопоставляется по имени (FQDN → короткое), только если актив с таким именем единственный
+	fqdn := "host-one.corp.example"
+	ad := cmdb.PlatformSnapshot{Major: 1, SnapshotID: identifier.New(), Tenant: tenant, Source: tenant, Generation: tenant, Platform: "ad", Instance: "ldaps://dc/DC=corp",
+		InstanceName: "DC=corp", CollectedAt: time.Now().UTC(), Complete: true, Errors: []string{}, Relations: []cmdb.PlatformRelation{},
+		Objects: []cmdb.PlatformObject{{Ref: "ad:1", Kind: "computer", Name: "HOST-ONE", Hostname: &fqdn, MACs: []string{}, Attrs: map[string]any{"os": "Windows Server 2022", "disabled": false}},
+			{Ref: "ad:2", Kind: "computer", Name: "GHOST", MACs: []string{}, Attrs: map[string]any{}}}}
+	if got := save(ad); got.Matched != 1 || got.Objects != 2 {
+		t.Fatalf("ad computers %+v", got)
+	}
 }
