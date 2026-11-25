@@ -62,6 +62,8 @@ try{
  await page.getByRole('navigation',{name:'Разделы'}).getByRole('button',{name:/^Схема сети/}).click();await page.locator('.network .tree-item').first().click();await expect(page.locator('.net-side')).toContainText('Аномалии');
  await page.getByRole('tab',{name:'L2 — коммутаторы'}).click();await expect(page.locator('.network')).toContainText('Связи L2');await page.getByRole('tab',{name:'Площадки'}).click();await expect(page.locator('.network')).toContainText('Площадки и сегменты');await page.getByRole('tab',{name:'L3 — подсети'}).click();
  checks.push('C53.05 network levels: subnet tree with passport and anomalies, L2 and sites views');
+ // C57: раздел «Платформы» — без снимков показывает, откуда они берутся
+ await page.getByRole('navigation',{name:'Разделы'}).getByRole('button',{name:/^Платформы/}).click();await expect(page.getByRole('heading',{name:'Платформ пока нет'})).toBeVisible();checks.push('C57 platforms view: empty state explains KVM by SSH and AD computers');
  // C51: «Обследования сети» — вкладки, подсеть из боковой панели, запуск, результат настоящего collector
  await page.getByRole('button',{name:/Обследования сети/}).click();await expect(page.getByRole('heading',{name:'Обследования сети.'})).toBeVisible();
  await page.getByRole('button',{name:'+ Новая подсеть'}).click();let drawer=page.getByRole('dialog',{name:'Новая подсеть'});
