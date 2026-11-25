@@ -132,3 +132,19 @@ func WinRMProblem(err error) string {
 	}
 	return ""
 }
+
+// HyperVOnce — C57.02: один сбор Hyper-V с WinRM-цели (тот же вход, что и инвентаризация; только чтение CIM).
+// Роли Hyper-V нет или нет прав — winrminv.ErrNoHyperV.
+func HyperVOnce(ctx context.Context, t WinRMTarget) (*winrminv.HyperVHost, error) {
+	if t.Password == nil {
+		return nil, errors.New("winrm target without password source")
+	}
+	run, err := winrminv.Connect(ctx, funcSecret(t.Password), winrminv.Target{Host: t.Host, Port: t.Port, User: t.User, PasswordAlias: "file", CAPEM: t.CAPEM, TLSServerName: t.ServerName, CertSHA256: t.CertSHA256, Kerberos: t.Kerberos}, winrminv.Policy{})
+	if err != nil {
+		return nil, err
+	}
+	if c, ok := run.(interface{ Close() }); ok {
+		defer c.Close()
+	}
+	return winrminv.CollectHyperV(ctx, run)
+}

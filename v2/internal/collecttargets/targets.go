@@ -322,7 +322,10 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 						break
 					}
 					target.Kerberos = true
+					hv, stopHV := context.WithCancel(ctx)
+					go c.hypervLoop(hv, t, target)
 					e = agent.RunWinRM12(ctx, cfg, target, report)
+					stopHV()
 					break
 				}
 				if t.CAPEM == nil && t.CertOrigin != nil && (*t.CertOrigin == "admin" || *t.CertOrigin == "domain_ca") {
@@ -351,7 +354,10 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 					target.CertSHA256 = fp
 					pinned = fp
 				}
+				hv, stopHV := context.WithCancel(ctx)
+				go c.hypervLoop(hv, t, target)
 				e = agent.RunWinRM12(ctx, cfg, target, report)
+				stopHV()
 			case "snmp":
 				// протоколы известны только вместе с ключами: первая выдача учётки — до запуска цикла
 				first, err := c.secret(ctx, t.ID)
@@ -437,6 +443,42 @@ func (c *Manager) kvmLoop(ctx context.Context, t machineTarget, hostKey string, 
 			telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_kvm_snapshot_rejected")
 		} else {
 			telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_kvm_snapshot_sent")
+		}
+		done()
+	}
+}
+
+// hypervLoop — C57.02: на WinRM-цели раз в период (не чаще 15 мин) пробует CIM Hyper-V; роль есть и права на чтение —
+// снимок платформы Hyper-V уходит центру с подписью collector. Нет роли — тихо, повтор через 6 ч.
+func (c *Manager) hypervLoop(ctx context.Context, t machineTarget, target agent.WinRMTarget) {
+	if c.Platform == nil {
+		return
+	}
+	period := time.Duration(max(t.Interval, 900)) * time.Second
+	wait := 60 * time.Second
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = period
+		host, e := agent.HyperVOnce(ctx, target)
+		if errors.Is(e, winrminv.ErrNoHyperV) {
+			wait = 6 * time.Hour
+			continue
+		}
+		if e != nil {
+			telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_hyperv_unavailable")
+			continue
+		}
+		id := t.ID
+		snap := winrminv.HyperVSnapshot(host, "winrm:"+net.JoinHostPort(t.Address, strconv.Itoa(t.Port)), &id, time.Now())
+		send, done := context.WithTimeout(ctx, time.Minute)
+		if e = c.Platform(send, snap); e != nil {
+			telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_hyperv_snapshot_rejected")
+		} else {
+			telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_hyperv_snapshot_sent")
 		}
 		done()
 	}
