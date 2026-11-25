@@ -11,6 +11,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/QgMixtate/surveyscan/v2/contracts"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/domain"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/identifier"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/wire"
@@ -136,7 +137,7 @@ func (s *MachineService) SubmitDiscovery(ctx context.Context, fp string, raw []b
 }
 
 // PlatformSignaturePrefix — домен подписи снимка платформы C57 (contracts/c57-platform.schema.json; C03 не меняется).
-const PlatformSignaturePrefix = "SURVEYSCAN-PLATFORM-V1\n"
+const PlatformSignaturePrefix = contracts.PlatformSignaturePrefix
 
 // VerifyPlatformSnapshot проверяет снимок платформы, подписанный ключом collector, в транзакции вызывающего: сумму,
 // подпись и что collector отправляет от своего имени. Возвращает полезную нагрузку для разбора модулем cmdb.

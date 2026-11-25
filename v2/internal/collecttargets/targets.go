@@ -66,7 +66,9 @@ type Manager struct {
 	CollectorSource string
 	CA              string
 	StateDir        string
-	set             targetSet
+	// Platform — C57: отправка снимка платформы (KVM по SSH и др.) с подписью collector; nil — не собирать.
+	Platform func(ctx context.Context, s contracts.PlatformSnapshot) error
+	set      targetSet
 }
 
 type targetRun struct {
@@ -297,7 +299,10 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 					}
 					target.HostKeySHA256 = fp
 				}
+				kvm, stopKVM := context.WithCancel(ctx)
+				go c.kvmLoop(kvm, t, target.HostKeySHA256, fetch)
 				e = agent.RunSSH12(ctx, cfg, target, report)
+				stopKVM()
 			case "winrm":
 				fetch := func(ctx context.Context) ([]byte, error) {
 					s, err := c.secret(ctx, t.ID)
@@ -394,4 +399,45 @@ func shortError(e error) string {
 		return "stage" + strconv.Itoa(int(st.Code))
 	}
 	return "failed"
+}
+
+// kvmLoop — C57.02: на SSH-цели раз в период (не чаще 15 мин) пробует `virsh --readonly`; есть libvirt и права на
+// чтение — снимок платформы KVM уходит центру с подписью collector. Нет libvirt — тихо, повтор через 6 ч.
+func (c *Manager) kvmLoop(ctx context.Context, t machineTarget, hostKey string, fetch func(context.Context) (sshlinux.Secret, error)) {
+	if c.Platform == nil || hostKey == "" {
+		return
+	}
+	period := time.Duration(max(t.Interval, 900)) * time.Second
+	wait := 45 * time.Second
+	addr := net.JoinHostPort(t.Address, strconv.Itoa(t.Port))
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		wait = period
+		secret, e := fetch(ctx)
+		if e != nil {
+			continue
+		}
+		host, e := sshlinux.CollectKVM(ctx, sshlinux.Target{Addr: addr, User: t.Username, HostKeySHA256: hostKey}, secret, sshlinux.Policy{TotalDeadline: 5 * time.Minute})
+		if errors.Is(e, sshlinux.ErrNoLibvirt) {
+			wait = 6 * time.Hour
+			continue
+		}
+		if e != nil {
+			telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_kvm_unavailable")
+			continue
+		}
+		id := t.ID
+		snap := sshlinux.KVMSnapshot(host, "ssh:"+addr, &id, time.Now())
+		send, done := context.WithTimeout(ctx, time.Minute)
+		if e = c.Platform(send, snap); e != nil {
+			telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_kvm_snapshot_rejected")
+		} else {
+			telemetry.Log(os.Stderr, "collector", "target_"+t.ID[:8]+"_kvm_snapshot_sent")
+		}
+		done()
+	}
 }

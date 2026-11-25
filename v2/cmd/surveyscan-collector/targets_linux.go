@@ -12,6 +12,6 @@ func wireTargets(relay *collector.Collector) {
 	if relay.Config.CredentialState == "" {
 		return // без каталога учётных данных (dev-режим без личности) целей нет
 	}
-	m := &collecttargets.Manager{Post: relay.MachinePost, Listen: relay.Config.Listen, CollectorSource: relay.Claims.Source, CA: relay.Config.CA, StateDir: relay.Config.CredentialState}
+	m := &collecttargets.Manager{Post: relay.MachinePost, Listen: relay.Config.Listen, CollectorSource: relay.Claims.Source, CA: relay.Config.CA, StateDir: relay.Config.CredentialState, Platform: relay.SubmitPlatform}
 	relay.TargetSync = m.Tick
 }

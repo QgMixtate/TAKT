@@ -135,3 +135,12 @@ PlatformSnapshot { schema_version, snapshot_id, tenant_id, origin (источн�
   платформы — в C57.02–03 через обычные наблюдения. Проверено: unit (UUID, проверка снимка), integration (подпись,
   чужой ключ, повтор, сопоставление по переставленному UUID, удаление и возврат ВМ, контракт ответов), весь integration
   internal/..., web smoke. Не проверено: на стенде; реальные коннекторы — C57.02+.
+- 2026-11-25: **C57.02, часть 1 — KVM по SSH.** Без новой настройки цели: на каждой SSH-цели collector раз в период
+  (не чаще 15 мин; без libvirt — повтор через 6 ч) выполняет только `virsh --readonly -c qemu:///system` (version,
+  nodeinfo, list --all --uuid, dumpxml/domstate по UUID, net-list, pool-list) и отправляет снимок платформы
+  (хост, ВМ, сети, пулы; связи runs_on / connected_to / uses_storage / located_in) с подписью collector. Неполный сбор
+  (ошибка dumpxml и т. п.) отправляется как неполный снимок — ВМ не помечаются удалёнными. UUID домена libvirt = SMBIOS
+  UUID гостя → сопоставление с активом агента/SSH. Учётке цели нужны права чтения libvirt (группа `libvirt` или
+  polkit только на чтение). Проверено: unit (dumpxml, nodeinfo, внешние XML-сущности не раскрываются, снимок,
+  сбор на поддельном SSH-сервере, отсутствие libvirt). Не проверено: живой KVM (стенд — по «да» пользователя).
+  Дальше: компьютеры AD по LDAP, обратный DNS в обследовании, Hyper-V через WinRM.
