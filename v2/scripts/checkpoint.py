@@ -44,7 +44,7 @@ def privatize(root):
         path.chmod(0o700 if path.is_dir() else 0o600)
 
 
-def pack(output, postgres, raft, states, quiesced):
+def pack(output, postgres, raft, states, quiesced, pg_online=False):
     require(quiesced, 'all selected application writers must be stopped/fenced before capture')
     require(not output.exists() and not output.is_symlink(), 'new checkpoint directory required')
     require(states and all(re.fullmatch('[a-z][a-z0-9-]{0,47}', label) for label in states), 'named state roots required')
@@ -73,6 +73,9 @@ def pack(output, postgres, raft, states, quiesced):
         manifest = {'format': 'surveyscan-offline-checkpoint-v1', 'checkpoint_id': str(uuid.uuid4()),
                     'completed_at': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
                     'writers_quiesced_by_operator': True, 'states': sorted(states), 'files': copied,
+                    # ISSUES №77: дамп PG снят до остановки писателей (pg_dump согласован сам по себе); Bao и файлы
+                    # состояния — при остановленных писателях. После восстановления центр догоняет PG по агентам/collector.
+                    'postgres_captured_online': bool(pg_online), 'postgres_completed_at': pg.get('completed_at'),
                     'scope': 'selected PG/Bao/application files; operator is responsible for complete coverage and separate custody',
                     'production_dr_validated': False}
         (root / 'checkpoint.json').write_text(json.dumps(manifest, sort_keys=True, indent=2) + '\n')
@@ -113,6 +116,7 @@ def main():
     build.add_argument('--bao-snapshot', required=True, type=Path)
     build.add_argument('--state', action='append', default=[], metavar='LABEL=DIR')
     build.add_argument('--writers-quiesced', action='store_true')
+    build.add_argument('--pg-online', action='store_true', help='дамп PG снят без остановки центра (ISSUES №77)')
     for command in ('verify', 'extract'):
         sub = commands.add_parser(command)
         sub.add_argument('--checkpoint', required=True, type=Path)
@@ -125,7 +129,7 @@ def main():
             label, path = item.split('=', 1)
             require(label not in states, 'duplicate state label')
             states[label] = Path(path)
-        result = pack(args.output, args.postgres, args.bao_snapshot, states, args.writers_quiesced)
+        result = pack(args.output, args.postgres, args.bao_snapshot, states, args.writers_quiesced, args.pg_online)
     elif args.command == 'verify':
         result = verify(args.checkpoint)
     else:
