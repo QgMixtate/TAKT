@@ -3493,6 +3493,35 @@
        "additionalProperties": false
       }
      ]
+    },
+    "problems": {
+     "type": "array",
+     "maxItems": 12,
+     "items": {
+      "type": "object",
+      "properties": {
+       "section": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64
+       },
+       "reason_code": {
+        "type": "string",
+        "minLength": 0,
+        "maxLength": 128
+       },
+       "hosts": {
+        "type": "integer",
+        "minimum": 1
+       }
+      },
+      "required": [
+       "section",
+       "reason_code",
+       "hosts"
+      ],
+      "additionalProperties": false
+     }
     }
    },
    "required": [
@@ -3502,7 +3531,8 @@
     "last_error",
     "last_error_target",
     "last_collected_at",
-    "collected_by"
+    "collected_by",
+    "problems"
    ],
    "additionalProperties": false
   },

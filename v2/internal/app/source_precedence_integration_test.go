@@ -137,6 +137,17 @@ func TestR027SourcePrecedenceSectionStatusAndSuccess12(t *testing.T) {
 			t.Fatalf("per-source status %s: %s, want %s", x.SourceID[:8], x.Status, want)
 		}
 	}
+	// №103: «Источники» показывают раздел, который агент не собрал, с кодом причины; у SSH-источника — ничего
+	ov, err := f.registry.SourcesOverview(f.ctx, f.identity, []string{agent.id, ssh.id})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, o := range ov.Items {
+		want := map[string]int{agent.id: 1, ssh.id: 0}[o.SourceID]
+		if len(o.Problems) != want || (want == 1 && (o.Problems[0].Section != "services" || o.Problems[0].ReasonCode != "SOURCE_UNAVAILABLE" || o.Problems[0].Hosts != 1)) {
+			t.Fatalf("source problems %s: %+v", o.SourceID[:8], o.Problems)
+		}
+	}
 	if st := state("os"); st.Status != "partial" || len(st.Sources) != 2 {
 		t.Fatalf("os: %+v", st)
 	}

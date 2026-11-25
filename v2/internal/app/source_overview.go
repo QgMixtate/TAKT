@@ -2,7 +2,8 @@ package app
 
 // C53.07 — «Источники» по макету: колонка «Что / сколько» и панель выбранного источника. Сводка по источникам
 // страницы: сколько хостов видно через источник, цели сбора collector (SSH/WinRM/SNMP, с ошибкой, отключены),
-// последняя ошибка, а для источника цели сбора — кто и по какому адресу его собирает. Только чтение.
+// последняя ошибка, а для источника цели сбора — кто и по какому адресу его собирает; разделы, которые источник
+// не смог собрать, с кодом причины (№103). Только чтение.
 
 import (
 	"context"
@@ -30,6 +31,14 @@ type SourceCollectedBy struct {
 	Address     string `json:"address"`
 }
 
+// SourceProblem — раздел профиля 1.2, который источник не смог собрать в последней попытке (ISSUES №103):
+// код причины из наблюдения и на скольких хостах.
+type SourceProblem struct {
+	Section    string `json:"section"`
+	ReasonCode string `json:"reason_code"`
+	Hosts      int    `json:"hosts"`
+}
+
 type SourceOverview struct {
 	SourceID        string             `json:"source_id"`
 	Hosts           int                `json:"hosts"`
@@ -38,6 +47,7 @@ type SourceOverview struct {
 	LastErrorTarget *string            `json:"last_error_target"`
 	LastCollectedAt *time.Time         `json:"last_collected_at"`
 	CollectedBy     *SourceCollectedBy `json:"collected_by"`
+	Problems        []SourceProblem    `json:"problems"`
 }
 
 type SourceOverviewList struct {
@@ -89,7 +99,35 @@ LEFT JOIN LATERAL (SELECT t.collector_id, t.kind, t.address FROM sources.remote_
 		if cid != nil && kind != nil && addr != nil {
 			o.CollectedBy = &SourceCollectedBy{CollectorID: *cid, Kind: *kind, Address: *addr}
 		}
+		o.Problems = []SourceProblem{}
 		out.Items = append(out.Items, o)
+	}
+	if e = rows.Err(); e != nil {
+		return out, e
+	}
+	rows.Close()
+	// последняя попытка раздела по каждому источнику; «недоступен» — с кодом причины из наблюдения
+	idx := map[string]int{}
+	for i, o := range out.Items {
+		idx[o.SourceID] = i
+	}
+	rows, e = tx.Query(ctx, `SELECT x.source_id::text,x.section_name,s.reason_code,count(DISTINCT x.asset_uid)
+FROM inventory.record_section_source_state12 x JOIN inventory.observation_sections s ON s.tenant_id=x.tenant_id AND s.observation_id=x.last_attempt_id AND s.section_name=x.section_name
+WHERE x.tenant_id=$1 AND x.source_id=ANY($2::uuid[]) AND x.last_status='unavailable'
+GROUP BY 1,2,3 ORDER BY 1,4 DESC,2 LIMIT 1000`, id.TenantID, ids)
+	if e != nil {
+		return out, e
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var src string
+		var p SourceProblem
+		if e = rows.Scan(&src, &p.Section, &p.ReasonCode, &p.Hosts); e != nil {
+			return out, e
+		}
+		if i, ok := idx[src]; ok && len(out.Items[i].Problems) < 12 {
+			out.Items[i].Problems = append(out.Items[i].Problems, p)
+		}
 	}
 	return out, rows.Err()
 }

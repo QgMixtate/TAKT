@@ -355,12 +355,28 @@ func TestC54RSMHTTP(t *testing.T) {
 			SourceID    string          `json:"source_id"`
 			Hosts       int             `json:"hosts"`
 			CollectedBy json.RawMessage `json:"collected_by"`
+			Problems    []struct {
+				Section string `json:"section"`
+				Hosts   int    `json:"hosts"`
+			} `json:"problems"`
 		} `json:"items"`
 	}
 	_ = json.Unmarshal(get("/api/v1/sources/overview?ids="+source+","+identifier.New(), "SourceOverviewList"), &so)
 	if len(so.Items) != 1 || so.Items[0].SourceID != source || so.Items[0].Hosts < 1 || string(so.Items[0].CollectedBy) != "null" {
 		t.Fatalf("sources overview: %+v", so)
 	}
+	// №103: «не собрано» — те же пары раздел/хост, что в последней попытке источника со статусом «недоступен»
+	var unavailable, listed int
+	if err := f.pool.QueryRow(ctx, "SELECT count(*) FROM inventory.record_section_source_state12 WHERE tenant_id=$1 AND source_id=$2 AND last_status='unavailable'", tenant, source).Scan(&unavailable); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range so.Items[0].Problems {
+		listed += p.Hosts
+	}
+	if so.Items[0].Problems == nil || listed != unavailable {
+		t.Fatalf("sources overview problems: %+v, unavailable %d", so.Items[0].Problems, unavailable)
+	}
+	t.Logf("source problems: %+v", so.Items[0].Problems)
 	if code, _, _ := b.request(t, "GET", "/api/v1/sources/overview?ids=bad", "", "", "", nil); code != 400 {
 		t.Fatalf("sources overview bad ids: %d", code)
 	}

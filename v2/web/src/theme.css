@@ -422,3 +422,6 @@ label.check,label.inline-check{display:inline-flex!important;flex-direction:row!
 tr.src-row{cursor:pointer}.src-panel{display:flex;flex-direction:column;gap:12px}.src-panel .panel{margin:0}.src-panel dl.kv{margin:10px 0}.src-panel .small{font-size:12px}
 .hosts-main .systems-toolbar .toolbar-search{min-width:160px;flex:1 1 160px}
 .row-head{display:flex;align-items:center;gap:8px}
+/* №105: таблица правил в «Привязка и правила» не шире панели; панель не прокручивается вбок при фокусе на «Снять» */
+.manage-box{overflow:clip}.manage-box .rsm-card>table{width:calc(100% - 44px);table-layout:auto}.manage-box .rsm-card>table td.mono{word-break:break-all}
+.panel:has(.manage-box){overflow:clip}
