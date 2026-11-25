@@ -1,3 +1,4 @@
+import {stateName} from './itsm';
 import {useEffect,useState,type ReactNode} from 'react';
 import {api,ApiError,errorMessage,type RSMChange,type RSMComponentCard,type RSMEnvKind,type RSMHostRow,type RSMOverview,type RSMProblems,type RSMSoftwarePage,type RSMSystemCard,type RSMTicketList,type Subject,type TicketKind} from './api';
 import {CritBadge,critLabel,problemsText} from './systems';
@@ -54,7 +55,7 @@ export function TicketsPanel({kind,id,onCreate,onExpired}:{kind:'systems'|'compo
  const [d,error]=useLive<RSMTicketList>(()=>kind==='assets'?api.assetTickets(id):api.rsmTickets(kind,id),[kind,id],onExpired);
  return <section className="panel wide"><header><h3>Обращения{d?' · '+fmt(d.items.length):''}</h3>{onCreate?<button className="button small right" onClick={onCreate}>Создать обращение</button>:null}</header>
   <Err e={error}/>{!d?<p className="muted pad">Загрузка…</p>:d.items.length===0?<p className="muted pad">Обращений нет. Обращения, связанные с системой или её хостами, появятся здесь.</p>:
-  <table className="panel-table"><thead><tr><th>Номер</th><th>Вид</th><th>Тема</th><th>Состояние</th><th>Создано</th></tr></thead><tbody>{d.items.map(t=><tr key={t.ticket_id} className={t.open?'':'muted'}><td className="mono-link">{t.number}</td><td>{ticketKind[t.kind]}</td><td>{t.title}</td><td>{t.open?<span className="pill pill-warn">{t.state}</span>:<span className="pill">{t.state}</span>}</td><td>{when(t.created_at)}</td></tr>)}</tbody></table>}
+  <table className="panel-table"><thead><tr><th>Номер</th><th>Вид</th><th>Тема</th><th>Состояние</th><th>Создано</th></tr></thead><tbody>{d.items.map(t=><tr key={t.ticket_id} className={t.open?'':'muted'}><td className="mono-link">{t.number}</td><td>{ticketKind[t.kind]}</td><td>{t.title}</td><td>{t.open?<span className="pill pill-warn">{stateName[t.state]?.[0]??t.state}</span>:<span className="pill">{stateName[t.state]?.[0]??t.state}</span>}</td><td>{when(t.created_at)}</td></tr>)}</tbody></table>}
  </section>;
 }
 

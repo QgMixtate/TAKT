@@ -115,6 +115,7 @@ type Movement struct {
 	FromHolder   *string        `json:"from_holder"`
 	ToHolder     *string        `json:"to_holder"`
 	Asset        *string        `json:"asset_uid"`
+	AssetName    string         `json:"asset_name,omitempty"`
 	Reverses     *string        `json:"reverses"`
 	Override     bool           `json:"compat_override"`
 	Lines        []MovementLine `json:"lines"`
@@ -544,7 +545,8 @@ WHERE l.tenant_id=$1 AND l.movement_id=$2 ORDER BY l.line_no`, tenant, id)
 type MovementFilter struct{ Unit, Holder, Location, Asset string }
 
 func (Store) Movements(ctx context.Context, tx pgx.Tx, tenant string, f MovementFilter, limit int) ([]Movement, error) {
-	rows, e := tx.Query(ctx, `SELECT m.movement_id::text,m.kind,m.act_no,m.occurred_at,m.actor_ref,m.basis,m.note,m.from_location::text,m.to_location::text,m.from_holder::text,m.to_holder::text,m.asset_uid::text,m.reverses::text,m.compat_override
+	rows, e := tx.Query(ctx, `SELECT m.movement_id::text,m.kind,m.act_no,m.occurred_at,m.actor_ref,m.basis,m.note,m.from_location::text,m.to_location::text,m.from_holder::text,m.to_holder::text,m.asset_uid::text,m.reverses::text,m.compat_override,
+COALESCE((SELECT h.name FROM cmdb.host_registry h WHERE h.tenant_id=m.tenant_id AND h.asset_uid=m.asset_uid),'')
 FROM warehouse.movements m WHERE m.tenant_id=$1
 AND ($2='' OR EXISTS(SELECT 1 FROM warehouse.movement_lines l WHERE l.tenant_id=m.tenant_id AND l.movement_id=m.movement_id AND l.unit_id::text=$2))
 AND ($3='' OR m.from_holder::text=$3 OR m.to_holder::text=$3)
@@ -556,7 +558,7 @@ ORDER BY m.occurred_at DESC, m.act_no DESC LIMIT $6`, tenant, f.Unit, f.Holder, 
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Movement, error) {
 		var m Movement
-		return m, r.Scan(&m.ID, &m.Kind, &m.ActNo, &m.At, &m.Actor, &m.Basis, &m.Note, &m.FromLocation, &m.ToLocation, &m.FromHolder, &m.ToHolder, &m.Asset, &m.Reverses, &m.Override)
+		return m, r.Scan(&m.ID, &m.Kind, &m.ActNo, &m.At, &m.Actor, &m.Basis, &m.Note, &m.FromLocation, &m.ToLocation, &m.FromHolder, &m.ToHolder, &m.Asset, &m.Reverses, &m.Override, &m.AssetName)
 	})
 }
 

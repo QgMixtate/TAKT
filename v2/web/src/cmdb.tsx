@@ -10,7 +10,7 @@ const criticalities:Record<string,string>={unknown:'Не задана',low:'Ни
 const kinds:Record<string,string>={agent:'Агент',collector:'Collector',portable:'Portable'};
 const time=(v:string)=>new Date(v).toLocaleString('ru-RU',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
 const bytes=(v:string|null)=>{if(!v)return '—';const n=Number(v);return Number.isFinite(n)&&n>1048576?(n/1073741824).toFixed(1)+' ГиБ':v};
-function Provenance({e}:{e:Evidence}){return <small className="provenance">{kinds[e.source_kind]??e.source_kind} · {time(e.collected_at)} · часы: {e.clock_quality==='trusted'?'доверенные':'не подтверждены'}<span className="mono"> · {e.source_id.slice(0,8)}</span></small>}
+function Provenance({e,names}:{e:Evidence;names?:Record<string,string>}){return <small className="provenance">{names?.[e.source_id]??kinds[e.source_kind]??e.source_kind} · {time(e.collected_at)} · часы: {e.clock_quality==='trusted'?'доверенные':'не подтверждены'}<span className="mono"> · {e.source_id.slice(0,8)}</span></small>}
 function useLoad<T>(load:()=>Promise<T>,deps:unknown[],onExpired:()=>void):[T|null,unknown,()=>void]{
  const [data,setData]=useState<T|null>(null),[error,setError]=useState<unknown>(null),[n,setN]=useState(0);
  useEffect(()=>{let live=true;setError(null);load().then(d=>{if(live)setData(d)}).catch(e=>{if(live){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}});return()=>{live=false}},[...deps,n]);
@@ -45,14 +45,14 @@ export function AssetClassBlock({asset,csrf,onExpired}:{asset:string;csrf:string
    :<button className="text-link retire-link" disabled={busy} onClick={()=>setRetiring(true)}>Вывести из учёта…</button>}</div>;
 }
 
-export function SoftwareTab({asset,onExpired}:{asset:string;onExpired:()=>void}){
+export function SoftwareTab({asset,onExpired,sourceNames}:{asset:string;onExpired:()=>void;sourceNames?:Record<string,string>}){
  const [items,setItems]=useState<Installation[]>([]),[next,setNext]=useState<string|null>(null),[filter,setFilter]=useState(''),[applied,setApplied]=useState(''),[error,setError]=useState<unknown>(null),[loading,setLoading]=useState(false);
  async function load(cursor:string|null){setLoading(true);setError(null);try{const p=await api.software(asset,applied,cursor);if(p.asset_uid!==asset)throw new ApiError(0,'INVALID_RESPONSE');setItems(x=>cursor?[...x,...p.items]:p.items);setNext(p.next_cursor)}catch(e){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}finally{setLoading(false)}}
  useEffect(()=>{void load(null)},[asset,applied]);
  return <div className="tab-body"><form className="tab-filter" onSubmit={e=>{e.preventDefault();setApplied(filter.trim())}}><input aria-label="Фильтр ПО" placeholder="Название или издатель…" value={filter} onChange={e=>setFilter(e.target.value)}/><button className="button small">Найти</button></form>
   {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
   {!items.length&&!loading&&!error?<p className="card-note">{applied?'Ничего не найдено.':'Сведений о ПО нет: раздел ещё не собирался или источник его не поддерживает.'}</p>:null}
-  <table className="mini-table"><thead><tr><th>Название</th><th>Версия</th><th>Издатель</th></tr></thead><tbody>{items.map(i=><tr key={i.record_key}><td>{i.name??'—'}<Provenance e={i.evidence}/></td><td>{i.version??'—'}</td><td>{i.publisher??'—'}</td></tr>)}</tbody></table>
+  <table className="mini-table"><thead><tr><th>Название</th><th>Версия</th><th>Издатель</th></tr></thead><tbody>{items.map(i=><tr key={i.record_key}><td>{i.name??'—'}<Provenance names={sourceNames} e={i.evidence}/></td><td>{i.version??'—'}</td><td>{i.publisher??'—'}</td></tr>)}</tbody></table>
   <small className="card-note">Показано: {items.length}{next?' · есть ещё':''}</small>
   {next?<button className="button small" disabled={loading} onClick={()=>void load(next)}>{loading?'Загружаем…':'Показать ещё'}</button>:null}
  </div>;

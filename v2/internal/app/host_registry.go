@@ -144,19 +144,20 @@ FROM assets.source_records r JOIN sources.sources s ON s.tenant_id=r.tenant_id A
 	rows.Close()
 	// №70: разделы профиля 1.2 (portable, SSH/WinRM, run12) — как в карточке: из 12 разделов собраны те, у кого
 	// последняя попытка дала данные; у активов только с 1.0 разделы берутся из a.Sections.
-	sections12OK := map[string]int{}
-	rows, e = tx.Query(ctx, `SELECT asset_uid::text,count(*) FILTER (WHERE last_status='partial') FROM inventory.record_section_state12 WHERE tenant_id=$1 AND asset_uid=ANY($2::uuid[]) GROUP BY asset_uid`, tenant, uids)
+	// «не поддерживается» и «не запрашивался» — не недостача (ISSUES №74): в знаменателе только ожидаемые разделы
+	sections12OK, sections12Total := map[string]int{}, map[string]int{}
+	rows, e = tx.Query(ctx, `SELECT asset_uid::text,count(*) FILTER (WHERE last_status='partial'),count(*) FILTER (WHERE last_status NOT IN ('unsupported','not_requested')) FROM inventory.record_section_state12 WHERE tenant_id=$1 AND asset_uid=ANY($2::uuid[]) GROUP BY asset_uid`, tenant, uids)
 	if e != nil {
 		return nil, nil, e
 	}
 	for rows.Next() {
 		var u string
-		var n int
-		if e = rows.Scan(&u, &n); e != nil {
+		var n, total int
+		if e = rows.Scan(&u, &n, &total); e != nil {
 			rows.Close()
 			return nil, nil, e
 		}
-		sections12OK[u] = n
+		sections12OK[u], sections12Total[u] = n, total
 	}
 	rows.Close()
 	previous, e := r.CMDB.HostRegistryClasses(ctx, tx, tenant, uids)
@@ -193,6 +194,10 @@ FROM assets.source_records r JOIN sources.sources s ON s.tenant_id=r.tenant_id A
 		row.OSFamily = osFamily(row.OS)
 		if row.Freshness != "fresh" && row.Freshness != "stale" {
 			row.Freshness = "unknown"
+			// №79: как в карточке и РСМ — сбор старше суток устарел, даже если источник не подтверждает свежесть (portable)
+			if a.LastInventory != nil && time.Since(*a.LastInventory) > 24*time.Hour {
+				row.Freshness = "stale"
+			}
 		}
 		if owner, ok := owners[a.UID]; ok {
 			o := owner
@@ -214,7 +219,7 @@ FROM assets.source_records r JOIN sources.sources s ON s.tenant_id=r.tenant_id A
 			}
 		}
 		if n, ok := sections12OK[a.UID]; ok && row.SectionsTotal == 0 {
-			row.SectionsTotal, row.SectionsOK = len(sections12), n
+			row.SectionsTotal, row.SectionsOK = sections12Total[a.UID], n
 		}
 		// класс: ручной важнее наблюдаемого; наблюдаемый — заново только при новой инвентаризации
 		manual, _, e := r.Assets.ManualClass(ctx, tx, tenant, a.UID)

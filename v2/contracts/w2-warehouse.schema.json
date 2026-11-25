@@ -422,6 +422,11 @@
       }
      ]
     },
+    "asset_name": {
+     "type": "string",
+     "maxLength": 256,
+     "description": "имя актива (для отображения); пусто — имя неизвестно"
+    },
     "reverses": {
      "oneOf": [
       {

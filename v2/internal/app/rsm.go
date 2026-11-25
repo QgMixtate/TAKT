@@ -71,7 +71,8 @@ UNION ALL SELECT jsonb_array_elements(value)->>'ip' FROM inventory.record_facts1
 	if e = rows.Err(); e != nil {
 		return f, e
 	}
-	if e = tx.QueryRow(ctx, "SELECT COALESCE(asset_class,'unknown') FROM assets.asset_business_fields WHERE tenant_id=$1 AND asset_uid=$2", tenant, uid).Scan(&f.Class); e != nil && !errors.Is(e, pgx.ErrNoRows) {
+	if e = tx.QueryRow(ctx, `SELECT COALESCE(NULLIF((SELECT b.asset_class FROM assets.asset_business_fields b WHERE b.tenant_id=$1 AND b.asset_uid=$2),''),
+NULLIF((SELECT h.asset_class FROM cmdb.host_registry h WHERE h.tenant_id=$1 AND h.asset_uid=$2),''),'unknown')`, tenant, uid).Scan(&f.Class); e != nil && !errors.Is(e, pgx.ErrNoRows) {
 		return f, e
 	}
 	rows, e = tx.Query(ctx, `SELECT DISTINCT value #>> '{}' FROM inventory.record_facts12 WHERE tenant_id=$1 AND asset_uid=$2 AND section_name='software' AND field_name='name' AND jsonb_typeof(value)='string' LIMIT 5000`, tenant, uid)
@@ -120,8 +121,8 @@ func ruleMatches(rule cmdb.Rule, f rsmFeatures) bool {
 				return true
 			}
 		}
-	case "asset_class":
-		return f.Class == rule.Pattern
+	case "asset_class": // класс оператора, иначе наблюдаемый (реестр хостов) — ISSUES №76
+		return strings.EqualFold(f.Class, strings.TrimSpace(rule.Pattern))
 	}
 	return false
 }

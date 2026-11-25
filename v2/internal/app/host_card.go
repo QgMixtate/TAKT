@@ -103,7 +103,9 @@ func (r *Registry) HostOverview(ctx context.Context, id accessport.Identity, uid
 		return out, e
 	}
 	out.IP = ips[uid]
-	_ = tx.QueryRow(ctx, `SELECT COALESCE((SELECT value #>> '{}' FROM inventory.record_facts12 WHERE tenant_id=$1 AND asset_uid=$2 AND section_name='network' AND field_name='mac' AND jsonb_typeof(value)='string' ORDER BY record_key LIMIT 1),
+	_ = tx.QueryRow(ctx, `SELECT COALESCE((SELECT m.value #>> '{}' FROM inventory.record_facts12 m LEFT JOIN inventory.record_facts12 n ON n.tenant_id=m.tenant_id AND n.asset_uid=m.asset_uid AND n.section_name='network' AND n.record_key=m.record_key AND n.field_name='name'
+WHERE m.tenant_id=$1 AND m.asset_uid=$2 AND m.section_name='network' AND m.field_name='mac' AND jsonb_typeof(m.value)='string' AND m.value #>> '{}' NOT IN ('','00:00:00:00:00:00')
+ORDER BY (COALESCE(n.value #>> '{}','') ~* '^(docker|br-|veth|virbr|cni|flannel|cali|tun|lo$|lxc|podman|vethernet)'),m.record_key LIMIT 1),
 (SELECT value FROM inventory.current_facts WHERE tenant_id=$1 AND asset_uid=$2 AND section_name='network' AND fact_key LIKE '%.mac' ORDER BY fact_key LIMIT 1),''),
 COALESCE((SELECT value #>> '{}' FROM inventory.record_facts12 WHERE tenant_id=$1 AND asset_uid=$2 AND section_name='identity' AND field_name='domain' AND jsonb_typeof(value)='string' LIMIT 1),
 (SELECT value FROM inventory.current_facts WHERE tenant_id=$1 AND asset_uid=$2 AND section_name='identity' AND fact_key='domain' LIMIT 1),''),
@@ -187,14 +189,16 @@ func hostHardware(ctx context.Context, tx pgx.Tx, tenant, uid string) (string, e
 		return "", e
 	}
 	vendor, model, cpus, mem := "", "", 0, int64(0)
+	// модель — из записи «system», затем «baseboard»; у «bios» в model лежит версия прошивки (ISSUES №82)
+	rank, best := map[string]int{"system": 3, "baseboard": 2, "bios": 1}, 0
 	for _, r := range recs {
 		switch r["kind"] {
 		case "bios", "system", "baseboard":
-			if vendor == "" {
-				vendor = r["vendor"]
-			}
-			if model == "" {
-				model = r["model"]
+			if rk := rank[r["kind"]]; rk > best && (r["model"] != "" || r["vendor"] != "") {
+				best, vendor, model = rk, r["vendor"], r["model"]
+				if r["kind"] == "bios" {
+					model = ""
+				}
 			}
 		case "cpu", "processor":
 			cpus++

@@ -109,6 +109,10 @@ func (s *MachineService) AuditPortableImport(ctx context.Context, tenant, actorR
 	if e = s.Audit.Record(ctx, tx, tenant, actorRef, "source.portable_imported", "source", source); e != nil {
 		return e
 	}
+	// загрузка пакета — единственный «контакт» носителя: время последней загрузки видно в Web (ISSUES №69)
+	if _, e = tx.Exec(ctx, `UPDATE sources.sources SET last_contact_at=GREATEST(COALESCE(last_contact_at,'-infinity'::timestamptz),clock_timestamp()) WHERE tenant_id=$1 AND source_id=$2 AND source_kind='portable'`, tenant, source); e != nil {
+		return e
+	}
 	return tx.Commit(ctx)
 }
 

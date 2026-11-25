@@ -130,7 +130,7 @@ function Journal({ref_:r,csrf,canWrite,onOpen,onReversed,onFail}:{ref_:Ref;csrf:
  return <div className="table-panel"><div className="table-toolbar"><h2>Журнал движений <span>{items?.length??'…'}</span></h2></div>
   {items&&items.length===0?<div className="empty"><span>▤</span><h3>Операций пока нет</h3></div>:<div className="table-scroll"><table><thead><tr><th>Акт</th><th>Операция</th><th>Когда</th><th>Откуда → куда</th><th>Основание</th><th/></tr></thead><tbody>{(items??[]).map(m=><tr key={m.movement_id}>
    <td className="mono">{m.act_no}</td><td>{kindName[m.kind]}</td><td className="time">{fmt(m.occurred_at)}</td>
-   <td>{m.from_location?locName(r,m.from_location):m.from_holder?subjName(r,m.from_holder):m.asset_uid&&m.kind==='remove'?'актив '+m.asset_uid.slice(0,8):'—'} → {m.to_location?locName(r,m.to_location):m.to_holder?subjName(r,m.to_holder):m.asset_uid&&m.kind==='install'?'актив '+m.asset_uid.slice(0,8):m.kind==='write_off'?'списано':'—'}</td>
+   <td>{m.from_location?locName(r,m.from_location):m.from_holder?subjName(r,m.from_holder):m.asset_uid&&m.kind==='remove'?(m.asset_name||'актив '+m.asset_uid.slice(0,8)):'—'} → {m.to_location?locName(r,m.to_location):m.to_holder?subjName(r,m.to_holder):m.asset_uid&&m.kind==='install'?(m.asset_name||'актив '+m.asset_uid.slice(0,8)):m.kind==='write_off'?'списано':'—'}</td>
    <td>{m.basis}{m.reverses?<small>сторно</small>:reversed.has(m.movement_id)?<small>сторнирован</small>:null}</td><td className="actions"><button className="button small" onClick={()=>onOpen(m.movement_id)}>Акт</button>{canWrite&&reversible.has(m.kind)&&!reversed.has(m.movement_id)?<button className="text-link" onClick={()=>void reverse(m)}>Сторно</button>:null}</td></tr>)}</tbody></table></div>}
  </div>;
 }
