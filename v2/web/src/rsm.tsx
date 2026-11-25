@@ -1,7 +1,7 @@
 import {useEffect,useState,type ReactNode} from 'react';
 import {SystemsScreen,ComponentsScreen} from './systems';
 import {SystemCardPage,ComponentCardPage} from './cards';
-import {Split,Strip} from './ui';
+import {Split,Strip,classRuleOptions} from './ui';
 import {SystemWizard} from './wizard';
 import {api,ApiError,errorMessage,type AssetRSM,type RSMColor,type RSMComponentDetail,type RSMEnvKind,type RSMImportResult,type RSMNodeState,type RSMOverview,type RSMProposal,type RSMReason,type RSMSystemDetail,type RSMUnassignedPage} from './api';
 
@@ -127,7 +127,7 @@ export function ComponentCard({id,csrf,canWrite,onBack,onOpenAsset,onExpired,emb
   {d.rules.length===0?<p className="muted">Правил нет.</p>:<table><tbody>{d.rules.map(r=><tr key={r.rule_id}><td>{ruleKinds[r.kind]??r.kind}</td><td className="mono">{r.pattern}</td><td>{r.mode==='auto'?'привязывать сразу':'предлагать оператору'}</td>{canWrite?<td className="actions"><button className="text-link" disabled={busy} onClick={()=>void act(()=>api.rsmRetireRule(r.rule_id,csrf),reload)}>Снять</button></td>:null}</tr>)}</tbody></table>}
   {canWrite?<form className="rsm-inline" onSubmit={e=>{e.preventDefault();void act(()=>api.rsmCreateRule(id,csrf,rule),()=>{setRule({...rule,pattern:''});setNote('Правило добавлено: новые хосты проверяются при приёме данных; для уже известных — «Применить правила ко всем хостам».');reload()})}}>
    <label>Правило<select value={rule.kind} onChange={e=>setRule({...rule,kind:e.target.value})}>{Object.entries(ruleKinds).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label>
-   <label>Образец<input value={rule.pattern} onChange={e=>setRule({...rule,pattern:e.target.value})} placeholder={rule.kind==='subnet'?'10.20.0.0/24':rule.kind==='software'?'1С:Предприятие':rule.kind==='asset_class'?'server':'msk1-app-*'}/></label>
+   <label>Образец{rule.kind==='asset_class'?<select value={rule.pattern} onChange={e=>setRule({...rule,pattern:e.target.value})}><option value="">класс…</option>{classRuleOptions.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>:<input value={rule.pattern} onChange={e=>setRule({...rule,pattern:e.target.value})} placeholder={rule.kind==='subnet'?'10.20.0.0/24':rule.kind==='software'?'1С:Предприятие':rule.kind==='asset_class'?'server':'msk1-app-*'}/>}</label>
    <label>Режим<select value={rule.mode} onChange={e=>setRule({...rule,mode:e.target.value})}><option value="propose">предлагать оператору</option><option value="auto">привязывать сразу</option></select></label>
    <button className="button small" disabled={busy||!rule.pattern.trim()}>Добавить правило</button></form>:null}
   {canWrite?<form className="rsm-inline" onSubmit={e=>{e.preventDefault();if(badUID||!uids.length)return;void act(async()=>{const r=await api.rsmBind(id,csrf,uids);setNote('Привязано: '+r.bound+(r.existing?', уже были: '+r.existing:'')+(r.missing?', не найдено: '+r.missing:''));setBulk('')},reload)}}>

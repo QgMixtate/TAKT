@@ -194,11 +194,19 @@ func hostHardware(ctx context.Context, tx pgx.Tx, tenant, uid string) (string, e
 	for _, r := range recs {
 		switch r["kind"] {
 		case "bios", "system", "baseboard":
-			if rk := rank[r["kind"]]; rk > best && (r["model"] != "" || r["vendor"] != "") {
-				best, vendor, model = rk, r["vendor"], r["model"]
-				if r["kind"] == "bios" {
-					model = ""
+			v, m := r["vendor"], r["model"]
+			if r["kind"] == "bios" {
+				// №89: у разных сборщиков в записи bios лежит то модель ПК («VMware Virtual Platform»), то версия прошивки
+				// («N.1.08ADA03») и производитель BIOS («American Megatrends»): версию и производителя BIOS не показываем
+				if !strings.Contains(strings.TrimSpace(m), " ") {
+					m = ""
 				}
+				if biosVendor(v) {
+					v = ""
+				}
+			}
+			if rk := rank[r["kind"]]; rk > best && (m != "" || v != "") {
+				best, vendor, model = rk, v, m
 			}
 		case "cpu", "processor":
 			cpus++
@@ -272,7 +280,10 @@ LEFT JOIN sources.sources src ON src.tenant_id=o.tenant_id AND src.source_id=o.s
 			rows.Close()
 			return nil, e
 		}
-		if cur, ok := by[h.Name]; !ok || (h.CollectedAt != nil && (cur.CollectedAt == nil || h.CollectedAt.After(*cur.CollectedAt))) {
+		// №88: раздел, собранный одним источником, не перекрывается более свежим «не поддерживается» другого источника
+		// (агент собрал 12 разделов, WinRM — 6): берём собранный, а среди собранных — самый свежий
+		got := func(x HostSection) bool { return x.Status == "ok" || x.Status == "partial" }
+		if cur, ok := by[h.Name]; !ok || (got(h) && !got(cur)) || (got(h) == got(cur) && h.CollectedAt != nil && (cur.CollectedAt == nil || h.CollectedAt.After(*cur.CollectedAt))) {
 			by[h.Name] = h
 		}
 	}
@@ -337,4 +348,14 @@ func (r *Registry) hostHandlers(h map[string]rsmRoute) {
 		}
 		registryJSON(w, out)
 	})}
+}
+
+func biosVendor(v string) bool {
+	l := strings.ToLower(v)
+	for _, b := range []string{"american megatrends", "ami", "phoenix", "insyde", "award", "seabios", "edk ii", "tianocore"} {
+		if strings.HasPrefix(l, b) {
+			return true
+		}
+	}
+	return false
 }

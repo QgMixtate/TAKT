@@ -29,3 +29,6 @@ export function useLoad<T>(load:()=>Promise<T>,deps:unknown[],onExpired:()=>void
  useEffect(()=>{let live=true;setError(null);load().then(d=>{if(live)setData(d)}).catch(e=>{if(live){setError(e);if(e instanceof ApiError&&e.status===401)onExpired()}});return()=>{live=false}},[...deps,n]);
  return [data,error,()=>setN(x=>x+1)];
 }
+
+// C57/№85: правило «класс актива» — класс и, при необходимости, семейство ОС («virtual_machine/windows»)
+export const classRuleOptions:[string,string][]=[['server','сервер (любая ОС)'],['server/windows','сервер Windows'],['server/linux','сервер Linux'],['virtual_machine','ВМ (любая ОС)'],['virtual_machine/windows','ВМ Windows'],['virtual_machine/linux','ВМ Linux'],['workstation','рабочая станция'],['workstation/windows','рабочая станция Windows'],['laptop','ноутбук'],['network','сетевое устройство'],['printer','принтер']];

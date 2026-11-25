@@ -29,6 +29,7 @@ type rsmFeatures struct {
 	Hostnames []string
 	Addresses []netip.Addr
 	Class     string
+	OSFamily  string
 	Software  []string
 }
 
@@ -72,7 +73,8 @@ UNION ALL SELECT jsonb_array_elements(value)->>'ip' FROM inventory.record_facts1
 		return f, e
 	}
 	if e = tx.QueryRow(ctx, `SELECT COALESCE(NULLIF((SELECT b.asset_class FROM assets.asset_business_fields b WHERE b.tenant_id=$1 AND b.asset_uid=$2),''),
-NULLIF((SELECT h.asset_class FROM cmdb.host_registry h WHERE h.tenant_id=$1 AND h.asset_uid=$2),''),'unknown')`, tenant, uid).Scan(&f.Class); e != nil && !errors.Is(e, pgx.ErrNoRows) {
+NULLIF((SELECT h.asset_class FROM cmdb.host_registry h WHERE h.tenant_id=$1 AND h.asset_uid=$2),''),'unknown'),
+COALESCE((SELECT h.os_family FROM cmdb.host_registry h WHERE h.tenant_id=$1 AND h.asset_uid=$2),'unknown')`, tenant, uid).Scan(&f.Class, &f.OSFamily); e != nil && !errors.Is(e, pgx.ErrNoRows) {
 		return f, e
 	}
 	rows, e = tx.Query(ctx, `SELECT DISTINCT value #>> '{}' FROM inventory.record_facts12 WHERE tenant_id=$1 AND asset_uid=$2 AND section_name='software' AND field_name='name' AND jsonb_typeof(value)='string' LIMIT 5000`, tenant, uid)
@@ -121,8 +123,9 @@ func ruleMatches(rule cmdb.Rule, f rsmFeatures) bool {
 				return true
 			}
 		}
-	case "asset_class": // класс оператора, иначе наблюдаемый (реестр хостов) — ISSUES №76
-		return strings.EqualFold(f.Class, strings.TrimSpace(rule.Pattern))
+	case "asset_class": // класс оператора, иначе наблюдаемый (реестр хостов) — ISSUES №76; «класс/семейство ОС» — №85
+		class, family, _ := strings.Cut(strings.TrimSpace(rule.Pattern), "/")
+		return strings.EqualFold(f.Class, class) && (family == "" || strings.EqualFold(f.OSFamily, family))
 	}
 	return false
 }
@@ -199,7 +202,7 @@ func (r *Registry) applyRSMRules(ctx context.Context, tenant, actor string, asse
 		batch := assets
 		if assets == nil {
 			batch = nil
-			rows, e := tx.Query(ctx, "SELECT asset_uid::text FROM assets.assets WHERE tenant_id=$1 AND merged_into IS NULL AND asset_uid::text>$2 ORDER BY asset_uid LIMIT 500", tenant, after)
+			rows, e := tx.Query(ctx, "SELECT asset_uid::text FROM assets.assets WHERE tenant_id=$1 AND merged_into IS NULL AND retired_at IS NULL AND asset_uid::text>$2 ORDER BY asset_uid LIMIT 500", tenant, after)
 			if e != nil {
 				tx.Rollback(ctx)
 				return out, e
@@ -293,7 +296,7 @@ func (r *Registry) BulkBind(ctx context.Context, id accessport.Identity, compone
 		}
 		seen[uid] = true
 		var alive bool
-		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM assets.assets WHERE tenant_id=$1 AND asset_uid=$2 AND merged_into IS NULL)", id.TenantID, uid).Scan(&alive); e != nil {
+		if e = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM assets.assets WHERE tenant_id=$1 AND asset_uid=$2 AND merged_into IS NULL AND retired_at IS NULL)", id.TenantID, uid).Scan(&alive); e != nil {
 			return out, e
 		}
 		if !alive {
@@ -312,6 +315,11 @@ func (r *Registry) BulkBind(ctx context.Context, id accessport.Identity, compone
 			return out, e
 		}
 		out.Bound++
+	}
+	if out.Bound > 0 { // ISSUES №84: ручная привязка — в журнал аудита (объект — компонент)
+		if e = r.Audit.Record(ctx, tx, id.TenantID, id.UserID, "cmdb.rsm_bound", "rsm_component", component); e != nil {
+			return out, e
+		}
 	}
 	return out, tx.Commit(ctx)
 }

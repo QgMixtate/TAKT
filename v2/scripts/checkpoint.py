@@ -22,7 +22,7 @@ from release import digest, read_json, require
 MAX_BYTES = max(1, min(1024, int(os.environ.get('SURVEYSCAN_CHECKPOINT_MAX_GIB', '64')))) * 1024 * 1024 * 1024
 
 
-def files(root):
+def files(root, known=None):
     require(root.is_dir() and not root.is_symlink(), 'regular directory required')
     result = {}
     size = 0
@@ -34,7 +34,10 @@ def files(root):
         if stat.S_ISREG(mode):
             size += path.stat().st_size
             require(size <= MAX_BYTES and len(result) < 20000, 'checkpoint exceeds bound (SURVEYSCAN_CHECKPOINT_MAX_GIB)')
-            result[name] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
+            if known and name in known and known[name]['bytes'] == path.stat().st_size:
+                result[name] = dict(known[name])  # сумма из описания компонента; verify пересчитает её
+            else:
+                result[name] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
     return result
 
 
@@ -52,20 +55,29 @@ def pack(output, postgres, raft, states, quiesced, pg_online=False):
     pg = read_json(postgres / 'backup.json')
     require(pg.get('format') == 'surveyscan-pg-backup-v1', 'PG component backup required')
     for source in (postgres, *states.values()):
-        files(source)  # Validate source before copying; never follow symlinks into private custody.
+        # Validate source before copying; never follow symlinks into private custody. Дамп при --pg-online не хешируется
+        # здесь (№86): его сумма — в описании pg_backup, проверка — verify после запуска центра.
+        files(source, known={'postgres.dump': {'bytes': pg.get('bytes'), 'sha256': pg.get('sha256')}} if pg_online and source == postgres else None)
         require(not output.absolute().is_relative_to(source.resolve()), 'output must be outside selected state roots')
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='.checkpoint-', dir=output.parent) as temp:
         root = Path(temp) / 'checkpoint'
         payload = root / 'payload'
         payload.mkdir(parents=True)
-        shutil.copytree(postgres, payload / 'postgres', symlinks=True)
+        if pg_online and os.stat(postgres).st_dev == os.stat(payload).st_dev:
+            # ISSUES №86: дамп снят до остановки писателей — переносится переименованием (секунды вместо минут при
+            # остановленном центре); сумма дампа — из его описания pg_backup; полную проверку делает verify после запуска
+            os.rename(postgres, payload / 'postgres')
+            archive = payload / 'postgres/postgres.dump'
+            require(archive.is_file() and archive.stat().st_size == pg.get('bytes'), 'PG archive mismatch')
+        else:
+            shutil.copytree(postgres, payload / 'postgres', symlinks=True)
+            archive = payload / 'postgres/postgres.dump'
+            require(digest(archive) == pg.get('sha256') and archive.stat().st_size == pg.get('bytes'), 'PG archive mismatch')
         shutil.copyfile(raft, payload / 'bao.snapshot')
         for label, source in states.items():
             shutil.copytree(source, payload / 'state' / label, symlinks=True)
-        copied = files(payload)
-        archive = payload / 'postgres/postgres.dump'
-        require(digest(archive) == pg.get('sha256') and archive.stat().st_size == pg.get('bytes'), 'PG archive mismatch')
+        copied = files(payload, known={'postgres/postgres.dump': {'bytes': pg.get('bytes'), 'sha256': pg.get('sha256')}} if pg_online else None)
         require(digest(payload / 'bao.snapshot') == digest(raft), 'snapshot changed during copy')
         for label, source in states.items():
             require(files(payload / 'state' / label) == files(source), 'state changed while copying')
