@@ -31,4 +31,4 @@ export function useLoad<T>(load:()=>Promise<T>,deps:unknown[],onExpired:()=>void
 }
 
 // C57/№85: правило «класс актива» — класс и, при необходимости, семейство ОС («virtual_machine/windows»)
-export const classRuleOptions:[string,string][]=[['server','сервер (любая ОС)'],['server/windows','сервер Windows'],['server/linux','сервер Linux'],['virtual_machine','ВМ (любая ОС)'],['virtual_machine/windows','ВМ Windows'],['virtual_machine/linux','ВМ Linux'],['workstation','рабочая станция'],['workstation/windows','рабочая станция Windows'],['laptop','ноутбук'],['network','сетевое устройство'],['printer','принтер']];
+export const classRuleOptions:[string,string][]=[['server','сервер (любая ОС)'],['server/windows','сервер Windows'],['server/linux','сервер Linux'],['virtual_machine','ВМ (любая ОС)'],['virtual_machine/windows','ВМ Windows'],['virtual_machine/linux','ВМ Linux'],['workstation','рабочая станция'],['workstation/windows','рабочая станция Windows'],['workstation/linux','рабочая станция Linux'],['network_device','сетевое устройство'],['printer','принтер']];

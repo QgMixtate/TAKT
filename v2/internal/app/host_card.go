@@ -248,11 +248,12 @@ func itoa(n int) string {
 }
 
 // hostSections — разделы профиля: по каждому разделу последний сбор (источник, время, состояние) — 1.2 и 1.0.
+// №88/№96: и среди источников 1.2 собранный раздел важнее более свежего «не поддерживается» другого источника.
 func hostSections(ctx context.Context, tx pgx.Tx, tenant, uid string) ([]HostSection, error) {
 	by := map[string]HostSection{}
 	rows, e := tx.Query(ctx, `SELECT DISTINCT ON (x.section_name) x.section_name,x.source_id::text,s.source_kind,(SELECT r.kind FROM sources.remote_targets r WHERE r.tenant_id=s.tenant_id AND r.agent_source_id=s.source_id LIMIT 1),x.collected_at,x.last_status
 FROM inventory.record_section_source_state12 x JOIN sources.sources s ON s.tenant_id=x.tenant_id AND s.source_id=x.source_id
-WHERE x.tenant_id=$1 AND x.asset_uid=$2 ORDER BY x.section_name,x.collected_at DESC`, tenant, uid)
+WHERE x.tenant_id=$1 AND x.asset_uid=$2 ORDER BY x.section_name,(x.last_status IN ('ok','partial')) DESC,x.collected_at DESC`, tenant, uid)
 	if e != nil {
 		return nil, e
 	}

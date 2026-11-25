@@ -136,6 +136,17 @@ func TestC54RSMHTTP(t *testing.T) {
 	}
 	_ = json.Unmarshal(send("POST", "/api/v1/rsm/components/"+comp.ID+"/rules", `{"kind":"hostname_glob","pattern":"crm-app-*","mode":"propose"}`, 201, "Rule"), &rule)
 	send("POST", "/api/v1/rsm/components/"+comp.ID+"/rules", `{"kind":"ad_ou","pattern":"OU=x"}`, 422, "")
+	// ISSUES №95: образец «класс/семейство ОС» принимается; класс не из справочника — 422
+	var classRule struct {
+		ID      string `json:"rule_id"`
+		Pattern string `json:"pattern"`
+	}
+	_ = json.Unmarshal(send("POST", "/api/v1/rsm/components/"+comp.ID+"/rules", `{"kind":"asset_class","pattern":"virtual_machine/windows"}`, 201, "Rule"), &classRule)
+	if classRule.Pattern != "virtual_machine/windows" {
+		t.Fatalf("class rule: %+v", classRule)
+	}
+	send("POST", "/api/v1/rsm/components/"+comp.ID+"/rules", `{"kind":"asset_class","pattern":"laptop"}`, 422, "")
+	send("POST", "/api/v1/rsm/rules/"+classRule.ID+"/retire", `{}`, 200, "RuleRetired")
 
 	h1, h2, loose := host("crm-app-01"), host("crm-db-01"), host("orphan-01")
 	var proposals struct {

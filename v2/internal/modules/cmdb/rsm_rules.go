@@ -18,6 +18,9 @@ import (
 
 var assetClasses = map[string]bool{"server": true, "workstation": true, "network_device": true, "printer": true, "virtual_machine": true, "unknown": true}
 
+// osFamilies — семейства ОС реестра хостов для образца «класс/семейство» (ISSUES №85, №95).
+var osFamilies = map[string]bool{"windows": true, "linux": true, "macos": true, "network": true, "other": true}
+
 type Rule struct {
 	ID          string     `json:"rule_id"`
 	ComponentID string     `json:"component_id"`
@@ -31,7 +34,7 @@ type Rule struct {
 }
 
 // NormalizeRulePattern проверяет и приводит образец правила: подсеть — CIDR; маска имени — символы имени хоста и
-// * ?; ПО — подстрока названия; класс — из справочника классов. OU каталога пока не собирается ни одним источником —
+// * ?; ПО — подстрока названия; класс — из справочника классов, при необходимости с семейством ОС через «/». OU каталога пока не собирается ни одним источником —
 // правило ad_ou отклоняется, чтобы не создавать правило, которое никогда не сработает.
 func NormalizeRulePattern(kind, pattern string) (string, bool) {
 	p := strings.TrimSpace(pattern)
@@ -55,8 +58,10 @@ func NormalizeRulePattern(kind, pattern string) (string, bool) {
 		return p, true
 	case "software":
 		return p, true
-	case "asset_class":
-		return p, assetClasses[p]
+	case "asset_class": // «класс» или «класс/семейство ОС» (virtual_machine/windows)
+		p = strings.ToLower(p)
+		class, family, slash := strings.Cut(p, "/")
+		return p, assetClasses[class] && (!slash || osFamilies[family])
 	}
 	return "", false
 }
