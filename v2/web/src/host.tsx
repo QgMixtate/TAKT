@@ -1,5 +1,5 @@
-import {useEffect,useLayoutEffect,useRef,useState,type ReactNode} from 'react';
-import {api,ApiError,errorMessage,type Asset,type HostOverview,type InventoryDetail} from './api';
+import {Fragment,useEffect,useLayoutEffect,useRef,useState,type ReactNode} from 'react';
+import {api,ApiError,errorMessage,type Asset,type AssetPlatform,type HostOverview,type InventoryDetail} from './api';
 import {TicketDialog,TicketsPanel} from './cards';
 import {SoftwareTab,ComponentsTab,RelationsTab,AssetClassBlock} from './cmdb';
 import {AssignmentsTab} from './ownership';
@@ -8,6 +8,7 @@ import {PresenceBlock} from './presence';
 import {AssetWarehouseBlock} from './warehouse';
 import {Inventory12} from './inventory12';
 import {AssetRSMBlock} from './rsm';
+import {useLoad} from './ui';
 
 // C53.03 — карточка хоста по макету C53-mockups/9: шапка (состояние данных, «в сети», разделы), кнопки «Создать
 // обращение», «Открыть на схеме», «Собрать сейчас», показатели, вкладки Обзор / Разделы / ПО / Сеть / Пользователи /
@@ -81,7 +82,7 @@ export function HostCardPage({asset:a,inventory,csrf,canWrite,onClose,onOpenAsse
     </section>
     <section className="panel"><header><h3>Разделы профиля</h3><input className="panel-filter" placeholder="Фильтр по разделам" aria-label="Фильтр по разделам" value={sq} onChange={e=>setSq(e.target.value)}/></header>{d?sectionsTable(sq):<p className="muted pad">Загрузка…</p>}</section>
    </div>
-   <div className="card-col">{sourcesPanel}
+   <div className="card-col">{sourcesPanel}<PlatformPanel asset={a.asset_uid} onExpired={onExpired}/>
     <section className="panel"><header><h3>История</h3><input className="panel-filter" placeholder="Фильтр" aria-label="Фильтр истории" value={hq} onChange={e=>setHq(e.target.value)}/><button className="link" onClick={()=>setTab('history')}>вся →</button></header>
      {history.length===0?<p className="muted pad">Событий нет.</p>:<table className="panel-table"><thead><tr><th>Когда</th><th>Что</th></tr></thead><tbody>{history.filter(h=>!hq||h.text.toLowerCase().includes(hq.toLowerCase())).slice(0,6).map((h,i)=><tr key={i}><td>{when(h.at)}</td><td>{h.text}</td></tr>)}</tbody></table>}
     </section>
@@ -103,4 +104,19 @@ export function HostCardPage({asset:a,inventory,csrf,canWrite,onClose,onOpenAsse
   {ticket?<TicketDialog csrf={csrf} title={name+': '} assetUid={a.asset_uid} onClose={()=>setTicket(false)} onCreated={num=>{setTicket(false);setNote('Создано обращение '+num);setN(x=>x+1)}} onExpired={onExpired}/>:null}
   {note?<p className="rsm-note" role="status">{note} <button className="link" onClick={()=>setNote('')}>скрыть</button></p>:null}
  </section>;
+}
+
+// C57: где этот хост в платформах виртуализации, BMC и каталогах (снимки от collector): путь и выделенные ресурсы.
+const platformName:Record<string,string>={kvm:'KVM',vsphere:'VMware',ovirt:'zVirt / oVirt',redfish:'Redfish (BMC)',ad:'Active Directory',hyperv:'Hyper-V',proxmox:'Proxmox'};
+const objKind:Record<string,string>={datacenter:'ЦОД',cluster:'кластер',host:'хост',vm:'ВМ',datastore:'хранилище',network:'сеть',pool:'пул',chassis:'шасси',bmc:'BMC',computer:'компьютер AD'};
+const relName:Record<string,string>={runs_on:'работает на',member_of:'входит в',uses_storage:'хранится в',connected_to:'подключена к',located_in:'находится в',managed_by:'управляется'};
+const attrName:Record<string,string>={vcpu:'vCPU',memory_mb:'RAM, МБ',power:'питание',state:'состояние',cpus:'CPU',version:'версия',os:'ОС гостя',disks_gb:'диски, ГБ',snapshots:'снимков',model:'модель',vendor:'производитель'};
+function PlatformPanel({asset,onExpired}:{asset:string;onExpired:()=>void}){
+ const [d]=useLoad<AssetPlatform|null>(()=>api.assetPlatform(asset).catch(()=>null),[asset],onExpired);
+ if(!d||!d.items.length)return null;
+ return <section className="panel"><header><h3>Платформа</h3></header><div className="pad">{d.items.map(it=><div key={it.object.instance_id+it.object.ref} className="platform-item">
+  <p><b>{platformName[it.object.platform]??it.object.platform}</b> · {it.object.instance_name} · {objKind[it.object.kind]??it.object.kind} «{it.object.name}»{it.object.removed_at?<span className="pill pill-bad"> удалена из платформы {when(it.object.removed_at)}</span>:null}</p>
+  {it.links.length?<ul className="plain-list">{it.links.map((l,i)=><li key={i}>{l.direction==='out'?relName[l.type]??l.type:'← '+(relName[l.type]??l.type)} {objKind[l.object.kind]??l.object.kind} <b>{l.object.name}</b></li>)}</ul>:null}
+  <dl className="kv">{Object.entries(it.object.attrs).filter(([,v])=>v!==null&&v!=='').slice(0,10).map(([k,v])=><Fragment key={k}><dt>{attrName[k]??k}</dt><dd>{String(v)}</dd></Fragment>)}</dl>
+  <small className="muted">в снимке {when(it.object.last_seen)}</small></div>)}</div></section>;
 }

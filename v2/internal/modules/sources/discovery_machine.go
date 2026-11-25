@@ -134,3 +134,51 @@ func (s *MachineService) SubmitDiscovery(ctx context.Context, fp string, raw []b
 	}
 	return out, tx.Commit(ctx)
 }
+
+// PlatformSignaturePrefix — домен подписи снимка платформы C57 (contracts/c57-platform.schema.json; C03 не меняется).
+const PlatformSignaturePrefix = "SURVEYSCAN-PLATFORM-V1\n"
+
+// VerifyPlatformSnapshot проверяет снимок платформы, подписанный ключом collector, в транзакции вызывающего: сумму,
+// подпись и что collector отправляет от своего имени. Возвращает полезную нагрузку для разбора модулем cmdb.
+func (s *MachineService) VerifyPlatformSnapshot(ctx context.Context, tx pgx.Tx, fp string, raw []byte) (json.RawMessage, MachineActor, error) {
+	var signed SignedDiscoveryResult
+	if e := strict(raw, &signed); e != nil {
+		return nil, MachineActor{}, e
+	}
+	var head struct {
+		Tenant     string `json:"tenant_id"`
+		Source     string `json:"source_id"`
+		Generation string `json:"generation_id"`
+	}
+	if e := json.Unmarshal(signed.Payload, &head); e != nil || !identifier.Valid(head.Tenant) || !identifier.Valid(head.Source) || !identifier.Valid(head.Generation) {
+		return nil, MachineActor{}, domain.Invalid
+	}
+	canonical, e := wire.Canonical(signed.Payload)
+	if e != nil {
+		return nil, MachineActor{}, domain.Invalid
+	}
+	sum := sha256.Sum256(canonical)
+	if signed.Digest != hex.EncodeToString(sum[:]) {
+		return nil, MachineActor{}, domain.Invalid
+	}
+	actor, e := s.collectorActor(ctx, tx, fp)
+	if e != nil {
+		return nil, actor, e
+	}
+	if actor.Tenant != head.Tenant || actor.Source != head.Source || actor.Generation != head.Generation {
+		return nil, actor, domain.Unauthorized
+	}
+	var public []byte
+	e = tx.QueryRow(ctx, `SELECT public_key FROM sources.ingest_bindings WHERE tenant_id=$1 AND source_id=$2 AND generation_id=$3 AND key_id=$4 AND active LIMIT 1 FOR SHARE`, head.Tenant, head.Source, head.Generation, signed.KeyID).Scan(&public)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return nil, actor, domain.Unauthorized
+	}
+	if e != nil {
+		return nil, actor, e
+	}
+	signature, e := base64.RawURLEncoding.Strict().DecodeString(signed.Signature)
+	if e != nil || len(public) != ed25519.PublicKeySize || !ed25519.Verify(public, append([]byte(PlatformSignaturePrefix), canonical...), signature) {
+		return nil, actor, domain.Invalid
+	}
+	return signed.Payload, actor, nil
+}

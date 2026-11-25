@@ -49,6 +49,7 @@ func NewHTTP(auth *access.HTTP, health http.Handler, registry ...*Registry) (htt
 			mux.HandleFunc("POST /api/v1/machine/inventory-capabilities", registry[0].Machine.inventoryCapabilities)
 			mux.HandleFunc("POST /api/v1/machine/discovery-jobs", registry[0].Machine.discoveryMachine)
 			mux.HandleFunc("POST /api/v1/machine/discovery-results", registry[0].Machine.discoveryMachine)
+			mux.HandleFunc("POST /api/v1/machine/platform-snapshots", registry[0].platformMachine)
 			mux.HandleFunc("POST /api/v1/machine/collect-targets", registry[0].collectMachine)
 			for _, op := range []string{"grant", "secret", "report", "hostkey", "tlscert"} {
 				mux.HandleFunc("POST /api/v1/machine/collect-targets/{target_id}/"+op, registry[0].collectMachine)

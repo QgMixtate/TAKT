@@ -657,6 +657,67 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if err != nil || k != 0 {
 		t.Fatal("schedule must respect the period", k, err)
 	}
+	// C57.01: снимок платформы от того же collector — подпись его ключом, чужой ключ — отказ, повтор — без дублей
+	c57, err := os.ReadFile("../../contracts/c57-platform.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc57, _ := jsonschema.UnmarshalJSON(strings.NewReader(string(c57)))
+	if err = compiler.AddResource("urn:surveyscan:c57:platform:1:0", doc57); err != nil {
+		t.Fatal(err)
+	}
+	valid57 := func(def string, raw []byte) {
+		t.Helper()
+		schema, err := compiler.Compile("urn:surveyscan:c57:platform:1:0#/$defs/" + def)
+		if err != nil {
+			t.Fatal(err)
+		}
+		instance, err := jsonschema.UnmarshalJSON(strings.NewReader(string(raw)))
+		if err != nil || schema.Validate(instance) != nil {
+			t.Fatalf("%s violates contract: %v %s", def, schema.Validate(instance), raw)
+		}
+	}
+	snapshotID := identifier.New()
+	platformBody := func(key ed25519.PrivateKey) []byte {
+		payload, _ := json.Marshal(map[string]any{"major": 1, "snapshot_id": snapshotID, "tenant_id": tenant, "source_id": collector, "generation_id": enrolled.GenerationID,
+			"target_id": nil, "platform": "kvm", "instance": "kvm01.example", "instance_name": "kvm01", "collected_at": time.Now().UTC().Format(time.RFC3339Nano), "complete": true,
+			"objects": []map[string]any{{"ref": "host", "kind": "host", "name": "kvm01", "bios_uuid": nil, "serial": nil, "hostname": "kvm01.example", "macs": []string{}, "attrs": map[string]any{"cpus": 8}},
+				{"ref": "vm-web", "kind": "vm", "name": "web", "bios_uuid": "4c4c4544-0042-3110-8030-b4c04f4e3332", "serial": nil, "hostname": nil, "macs": []string{"52:54:00:12:34:56"}, "attrs": map[string]any{"state": "running", "vcpu": 2}}},
+			"relations": []map[string]any{{"from": "vm-web", "type": "runs_on", "to": "host"}}, "errors": []string{}})
+		canonical, _ := wire.Canonical(payload)
+		sum := sha256.Sum256(canonical)
+		sig := ed25519.Sign(key, append([]byte(sources.PlatformSignaturePrefix), canonical...))
+		body, _ := json.Marshal(map[string]any{"payload": json.RawMessage(payload), "payload_sha256": hex.EncodeToString(sum[:]), "key_id": enrolled.KeyID, "signature": base64.RawURLEncoding.EncodeToString(sig)})
+		valid57("SignedPlatformSnapshot", body)
+		return body
+	}
+	if code, _ := post("/api/v1/machine/platform-snapshots", platformBody(foreign)); code != 400 {
+		t.Fatalf("snapshot signed by another key: %d", code)
+	}
+	code, raw = post("/api/v1/machine/platform-snapshots", platformBody(signKey))
+	valid57("PlatformSnapshotResult", raw)
+	if code != 200 || !strings.Contains(string(raw), `"duplicate":false`) || !strings.Contains(string(raw), `"objects":2`) {
+		t.Fatalf("snapshot %d %s", code, raw)
+	}
+	if code, raw = post("/api/v1/machine/platform-snapshots", platformBody(signKey)); code != 200 || !strings.Contains(string(raw), `"duplicate":true`) {
+		t.Fatalf("repeat %d %s", code, raw)
+	}
+	instances := call("view51", "GET", "/api/v1/platforms", "", 200)
+	valid57("PlatformInstancePage", instances)
+	var ip struct {
+		Items []struct {
+			ID string `json:"instance_id"`
+		} `json:"items"`
+	}
+	if json.Unmarshal(instances, &ip) != nil || len(ip.Items) != 1 {
+		t.Fatalf("instances %s", instances)
+	}
+	valid57("PlatformObjectPage", call("view51", "GET", "/api/v1/platforms/"+ip.Items[0].ID+"/objects?kind=vm", "", 200))
+	unmatched := call("view51", "GET", "/api/v1/platforms/"+ip.Items[0].ID+"/objects?unmatched=true", "", 200)
+	if !strings.Contains(string(unmatched), `"total":2`) {
+		t.Fatalf("unmatched hosts and vms %s", unmatched)
+	}
+	call("view51", "GET", "/api/v1/platforms/"+ip.Items[0].ID+"/objects?kind=bogus", "", 422)
 }
 
 // C51.03 (A): учётки сбора — вводит только администратор, секрет уходит в хранилище секретов и нигде не

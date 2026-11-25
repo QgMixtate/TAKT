@@ -83,6 +83,10 @@ export type OrgOverview={tenant_id:string;members:Record<string,string[]>;assets
 export type RegistryHost={asset_uid:string;name:string;ip:string;os:string;os_family:'windows'|'linux'|'macos'|'network'|'other'|'unknown';asset_class:string;site_id:string;site_name:string;segment:string;accountable_id:string|null;accountable_name:string;team_name:string;site_fallback:boolean;system_uid:string|null;system_name:string;component_name:string;sections_ok:number;sections_total:number;sources:string[];freshness:'fresh'|'stale'|'unknown';last_inventory_at:string|null;created_at:string;computed_at:string};
 export type HostCounters={total:number;fresh:number;partial:number;stale:number;unknown:number;without_owner:number;new_7d:number;computed_at:string|null};
 export type HostRegistryPage={items:RegistryHost[];total:number;offset:number;limit:100|250|500;counters:HostCounters};
+export type PlatformKind='kvm'|'vsphere'|'ovirt'|'redfish'|'ad'|'hyperv'|'proxmox';
+export type PlatformObjectView={instance_id:string;platform:PlatformKind;instance_name:string;ref:string;kind:'datacenter'|'cluster'|'host'|'vm'|'datastore'|'network'|'pool'|'chassis'|'bmc'|'computer';name:string;asset_uid:string|null;attrs:Record<string,string|number|boolean|null>;first_seen:string;last_seen:string;removed_at:string|null};
+export type PlatformInstance={instance_id:string;platform:PlatformKind;instance:string;name:string;last_snapshot_at:string|null;last_complete_at:string|null;objects:Record<string,number>;matched:number;unmatched:number;removed:number;errors:string[]};
+export type AssetPlatform={asset_uid:string;items:{object:PlatformObjectView;links:{type:string;direction:'out'|'in';object:PlatformObjectView}[]}[]};
 export type HostTreeNode={key:string;label:string;count:number;children:HostTreeNode[]};
 export type HostTree={by:'site'|'owner'|'system'|'os';nodes:HostTreeNode[]};
 export type HostBulkResult={hosts:number;applied:number;unchanged:number;requested:number;agents:number;no_target:number};
@@ -250,6 +254,9 @@ export const api={
  assetTickets:(uid:string)=>call<RSMTicketList>('/api/v1/assets/'+encodeURIComponent(uid)+'/tickets','RSMTicketList'),
  assetCollect:(uid:string,csrf:string)=>call<RSMCollectResult>('/api/v1/assets/'+encodeURIComponent(uid)+'/collect','RSMCollectResult',{method:'POST',body:'{}',headers:{'X-CSRF-Token':csrf}}),
  hostOverview:(uid:string)=>call<HostOverview>('/api/v1/assets/'+encodeURIComponent(uid)+'/overview','RSMHostOverview'),
+ assetPlatform:(uid:string)=>call<AssetPlatform>('/api/v1/assets/'+encodeURIComponent(uid)+'/platform','AssetPlatform'),
+ platforms:()=>call<{items:PlatformInstance[]}>('/api/v1/platforms','PlatformInstancePage'),
+ platformObjects:(id:string,f:{kind?:string;q?:string;unmatched?:boolean;offset?:number})=>call<{items:PlatformObjectView[];total:number}>('/api/v1/platforms/'+encodeURIComponent(id)+'/objects?limit=200'+(f.kind?'&kind='+f.kind:'')+(f.q?'&q='+encodeURIComponent(f.q):'')+(f.unmatched?'&unmatched=true':'')+(f.offset?'&offset='+f.offset:''),'PlatformObjectPage'),
  rsmComposition:(uid:string,q:string,env:string,problems:boolean)=>{const p=new URLSearchParams();if(q)p.set('q',q);if(env)p.set('env',env);if(problems)p.set('problems','true');const s=p.toString();return call<RSMComposition>('/api/v1/rsm/systems/'+encodeURIComponent(uid)+'/composition'+(s?'?'+s:''),'RSMComposition')},
  rsmSystem:(uid:string)=>call<RSMSystemDetail>('/api/v1/rsm/systems/'+encodeURIComponent(uid),'RSMSystemDetail'),
  rsmPatchSystem:(uid:string,csrf:string,body:{revision:string;direction_uid?:string;business_owner?:string;maintenance_window?:string;it_subject_id?:string;on_call?:string;backup_subject_id?:string})=>call<RSMSystem>('/api/v1/rsm/systems/'+encodeURIComponent(uid),'RSMSystem',{method:'PATCH',body:JSON.stringify(body),headers:{'X-CSRF-Token':csrf}}),

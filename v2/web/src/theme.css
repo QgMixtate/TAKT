@@ -397,3 +397,4 @@ label.check,label.inline-check{display:inline-flex!important;flex-direction:row!
 .greet{margin:0 0 12px}.greet h2{font-family:var(--head);font-size:20px;margin:0 0 2px}.greet p{margin:0;font-size:13px}
 .content .button.primary{width:auto;padding:7px 14px;font-size:13px;margin-top:8px;border-radius:6px}.desk-grid input{height:30px}
 .wizard-table td:last-child{white-space:nowrap;text-align:right}.wizard-table .form-row>*{flex:1 1 120px;min-width:0}
+.platform-item{padding:4px 0 10px;border-bottom:1px solid var(--line-2);margin-bottom:8px}.platform-item:last-child{border:0;margin:0}.platform-item p{margin:0 0 6px}

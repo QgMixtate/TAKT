@@ -1,0 +1,608 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "urn:surveyscan:c57:platform:1:0",
+ "title": "Коннекторы платформ (C57, decisions/C57-platform-connectors.md): снимок платформы от collector и Web API (отдельно от C03)",
+ "$defs": {
+  "PlatformObject": {
+   "type": "object",
+   "properties": {
+    "ref": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "kind": {
+     "enum": [
+      "datacenter",
+      "cluster",
+      "host",
+      "vm",
+      "datastore",
+      "network",
+      "pool",
+      "chassis",
+      "bmc",
+      "computer"
+     ]
+    },
+    "name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "bios_uuid": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 64
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "serial": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 128
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "hostname": {
+     "oneOf": [
+      {
+       "type": "string",
+       "maxLength": 255
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "macs": {
+     "type": "array",
+     "maxItems": 32,
+     "items": {
+      "type": "string",
+      "maxLength": 32
+     }
+    },
+    "attrs": {
+     "type": "object",
+     "maxProperties": 64,
+     "propertyNames": {
+      "pattern": "^[a-z][a-z0-9_]{0,47}$"
+     },
+     "additionalProperties": {
+      "oneOf": [
+       {
+        "type": "string",
+        "maxLength": 1024
+       },
+       {
+        "type": "number"
+       },
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    }
+   },
+   "required": [
+    "ref",
+    "kind",
+    "name",
+    "bios_uuid",
+    "serial",
+    "hostname",
+    "macs",
+    "attrs"
+   ],
+   "additionalProperties": false
+  },
+  "PlatformRelation": {
+   "type": "object",
+   "properties": {
+    "from": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "type": {
+     "enum": [
+      "runs_on",
+      "member_of",
+      "uses_storage",
+      "connected_to",
+      "located_in",
+      "managed_by"
+     ]
+    },
+    "to": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "from",
+    "type",
+    "to"
+   ],
+   "additionalProperties": false
+  },
+  "PlatformSnapshot": {
+   "type": "object",
+   "properties": {
+    "major": {
+     "const": 1
+    },
+    "snapshot_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "tenant_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "source_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "generation_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "target_id": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "platform": {
+     "enum": [
+      "kvm",
+      "vsphere",
+      "ovirt",
+      "redfish",
+      "ad",
+      "hyperv",
+      "proxmox"
+     ]
+    },
+    "instance": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    },
+    "instance_name": {
+     "type": "string",
+     "maxLength": 256
+    },
+    "collected_at": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "complete": {
+     "type": "boolean"
+    },
+    "objects": {
+     "type": "array",
+     "maxItems": 20000,
+     "items": {
+      "$ref": "#/$defs/PlatformObject"
+     }
+    },
+    "relations": {
+     "type": "array",
+     "maxItems": 50000,
+     "items": {
+      "$ref": "#/$defs/PlatformRelation"
+     }
+    },
+    "errors": {
+     "type": "array",
+     "maxItems": 32,
+     "items": {
+      "type": "string",
+      "maxLength": 64
+     }
+    }
+   },
+   "required": [
+    "major",
+    "snapshot_id",
+    "tenant_id",
+    "source_id",
+    "generation_id",
+    "target_id",
+    "platform",
+    "instance",
+    "instance_name",
+    "collected_at",
+    "complete",
+    "objects",
+    "relations",
+    "errors"
+   ],
+   "additionalProperties": false
+  },
+  "SignedPlatformSnapshot": {
+   "type": "object",
+   "properties": {
+    "payload": {
+     "$ref": "#/$defs/PlatformSnapshot"
+    },
+    "payload_sha256": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    },
+    "key_id": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 128
+    },
+    "signature": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 256
+    }
+   },
+   "required": [
+    "payload",
+    "payload_sha256",
+    "key_id",
+    "signature"
+   ],
+   "additionalProperties": false
+  },
+  "PlatformSnapshotResult": {
+   "type": "object",
+   "properties": {
+    "snapshot_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "instance_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "duplicate": {
+     "type": "boolean"
+    },
+    "objects": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "matched": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "removed": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "snapshot_id",
+    "instance_id",
+    "duplicate",
+    "objects",
+    "matched",
+    "removed"
+   ],
+   "additionalProperties": false
+  },
+  "PlatformInstance": {
+   "type": "object",
+   "properties": {
+    "instance_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "platform": {
+     "enum": [
+      "kvm",
+      "vsphere",
+      "ovirt",
+      "redfish",
+      "ad",
+      "hyperv",
+      "proxmox"
+     ]
+    },
+    "instance": {
+     "type": "string"
+    },
+    "name": {
+     "type": "string"
+    },
+    "last_snapshot_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "last_complete_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "objects": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer",
+      "minimum": 0
+     }
+    },
+    "matched": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "unmatched": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "removed": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "errors": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "instance_id",
+    "platform",
+    "instance",
+    "name",
+    "last_snapshot_at",
+    "last_complete_at",
+    "objects",
+    "matched",
+    "unmatched",
+    "removed",
+    "errors"
+   ],
+   "additionalProperties": false
+  },
+  "PlatformInstancePage": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/PlatformInstance"
+     }
+    }
+   },
+   "required": [
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  "PlatformObjectView": {
+   "type": "object",
+   "properties": {
+    "instance_id": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "platform": {
+     "enum": [
+      "kvm",
+      "vsphere",
+      "ovirt",
+      "redfish",
+      "ad",
+      "hyperv",
+      "proxmox"
+     ]
+    },
+    "instance_name": {
+     "type": "string"
+    },
+    "ref": {
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "datacenter",
+      "cluster",
+      "host",
+      "vm",
+      "datastore",
+      "network",
+      "pool",
+      "chassis",
+      "bmc",
+      "computer"
+     ]
+    },
+    "name": {
+     "type": "string"
+    },
+    "asset_uid": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "uuid"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "attrs": {
+     "type": "object",
+     "maxProperties": 64,
+     "propertyNames": {
+      "pattern": "^[a-z][a-z0-9_]{0,47}$"
+     },
+     "additionalProperties": {
+      "oneOf": [
+       {
+        "type": "string",
+        "maxLength": 1024
+       },
+       {
+        "type": "number"
+       },
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "first_seen": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "last_seen": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "removed_at": {
+     "oneOf": [
+      {
+       "type": "string",
+       "format": "date-time"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "instance_id",
+    "platform",
+    "instance_name",
+    "ref",
+    "kind",
+    "name",
+    "asset_uid",
+    "attrs",
+    "first_seen",
+    "last_seen",
+    "removed_at"
+   ],
+   "additionalProperties": false
+  },
+  "PlatformObjectPage": {
+   "type": "object",
+   "properties": {
+    "items": {
+     "type": "array",
+     "items": {
+      "$ref": "#/$defs/PlatformObjectView"
+     }
+    },
+    "total": {
+     "type": "integer",
+     "minimum": 0
+    }
+   },
+   "required": [
+    "items",
+    "total"
+   ],
+   "additionalProperties": false
+  },
+  "PlatformLink": {
+   "type": "object",
+   "properties": {
+    "type": {
+     "enum": [
+      "runs_on",
+      "member_of",
+      "uses_storage",
+      "connected_to",
+      "located_in",
+      "managed_by"
+     ]
+    },
+    "direction": {
+     "enum": [
+      "out",
+      "in"
+     ]
+    },
+    "object": {
+     "$ref": "#/$defs/PlatformObjectView"
+    }
+   },
+   "required": [
+    "type",
+    "direction",
+    "object"
+   ],
+   "additionalProperties": false
+  },
+  "AssetPlatform": {
+   "type": "object",
+   "properties": {
+    "asset_uid": {
+     "type": "string",
+     "format": "uuid"
+    },
+    "items": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "object": {
+        "$ref": "#/$defs/PlatformObjectView"
+       },
+       "links": {
+        "type": "array",
+        "items": {
+         "$ref": "#/$defs/PlatformLink"
+        }
+       }
+      },
+      "required": [
+       "object",
+       "links"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "asset_uid",
+    "items"
+   ],
+   "additionalProperties": false
+  }
+ }
+}
