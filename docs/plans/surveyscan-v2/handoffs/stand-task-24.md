@@ -15,8 +15,7 @@ KVM видна в «Платформах» и в карточке хоста.
 запускает копия от root. Без «да» — не трогать, в отчёте пометить «ждёт решения».
 
 ## 1. Сборка
-Коммит выкладки — последний `develop`, у которого зелёные surveyscan-v2, surveyscan-web, surveyscan-boot (не раньше
-коммита с исправлениями №84–93). **Миграций 76** (новая 0075 — `cmdb.platform_*`). Rust-агенты и portable не трогать. Collector тоже
+Коммит выкладки — последний `develop`, у которого зелёные surveyscan-v2, surveyscan-web, surveyscan-boot (не раньше `67ddd87`). **Миграций 76** (новая 0075 — `cmdb.platform_*`). Rust-агенты и portable не трогать. Collector тоже
 обновить (KVM собирает collector). `npm run generate` обязателен (контракт c57).
 
 ## 2. Обновление
