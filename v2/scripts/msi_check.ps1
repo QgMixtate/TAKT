@@ -35,7 +35,12 @@ foreach ($c in $components) {
   if ($r.Code -eq 0) { Fail "$name — установка с недоступным адресом прошла" }
   if (Svc $c.Service) { Fail "$name — служба осталась после отката" }
   if (Test-Path $exe) { Fail "$name — программа осталась после отката" }
-  if (Select-String -Path $r.Log -Pattern $secret -SimpleMatch -Quiet) { Fail "$name — код регистрации в журнале msiexec" }
+  $leaks = Select-String -Path $r.Log -Pattern $secret -SimpleMatch
+  if ($leaks) {
+    # где утёк код — строки журнала с замаскированным значением (тестовый код случайный, но не печатаем и его)
+    $leaks | Select-Object -First 5 | ForEach-Object { Write-Host ($_.Line.Replace($secret, '<REG_CODE>')) }
+    Fail "$name — код регистрации в журнале msiexec ($(@($leaks).Count) строк)"
+  }
   $checks.Add("$name MSI: failed registration rolls back (exit $($r.Code)): no service, no program files; REG_CODE hidden in the verbose msiexec log")
 
   # 2. тихая установка без кода — служба установлена (LocalSystem, автозапуск), не запущена

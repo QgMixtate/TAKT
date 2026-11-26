@@ -66,6 +66,14 @@ def windows(kind, dist, version, out):
     if p.returncode != 0 or not msi.is_file():
         sys.stderr.write(p.stdout + p.stderr)
         raise SystemExit(f'wixl {kind}: код {p.returncode}')
+    # wixl не поддерживает HideTarget: командная строка регистрации (с REG_CODE) не должна попадать в журнал msiexec —
+    # флаг msidbCustomActionTypeHideTarget (0x2000) ставится в таблицу CustomAction после сборки
+    q = subprocess.run([os.environ.get('MSIBUILD', 'msibuild'), str(msi), '-q',
+                        "UPDATE `CustomAction` SET `Type` = 11282 WHERE `Action` = 'Register'"], capture_output=True, text=True, timeout=120)
+    t = subprocess.run(['msiinfo', 'export', str(msi), 'CustomAction'], capture_output=True, text=True, timeout=120)
+    if q.returncode != 0 or not any(l.startswith('Register\t11282\t') for l in t.stdout.splitlines()):
+        sys.stderr.write(q.stdout + q.stderr + t.stdout)
+        raise SystemExit(f'msibuild {kind}: HideTarget не установлен')
     with zipfile.ZipFile(out / f'{name}_{version}_windows_x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
         info = zipfile.ZipInfo(f'{name}.exe', date_time=(2026, 1, 1, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED
