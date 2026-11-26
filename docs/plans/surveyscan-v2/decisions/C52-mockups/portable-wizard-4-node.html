@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Макет: мастер portable в стиле ТАКТ</title>
+<style>
+:root{--navy:#0F1A2B;--navy2:#17253b;--mag:#D6157A;--blue:#1E7BB0;--bg:#F3F5F9;--card:#fff;--line:#E2E6EE;--fg:#0F1A2B;--muted:#5B6678;--ok:#1F8A4C;--warn:#B7791F;--bad:#C53030}
+*{box-sizing:border-box}body{margin:0;font:13px/1.45 Inter,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+.app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+aside{background:var(--navy);color:#C9D2E0;padding:18px 14px;display:flex;flex-direction:column;gap:18px}
+.logo{display:flex;align-items:center;gap:10px;padding:0 6px}.mark{width:36px;height:36px;border:2px solid var(--mag);border-radius:9px;position:relative;display:grid;place-items:center;color:#fff;font:700 19px Manrope,Inter,sans-serif}.mark:after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--mag)}
+.logo b{display:block;color:#fff;font:700 17px Manrope,Inter,sans-serif;letter-spacing:.2px}.logo small{display:block;font-size:9.5px;letter-spacing:3px;color:#8D9AB0}
+.grp{font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:#6F7E96;padding:0 8px}
+.steps{display:flex;flex-direction:column;gap:2px}.st{display:flex;gap:10px;align-items:center;padding:8px;border-radius:8px;color:#C9D2E0}
+.st i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px Inter;border:1.5px solid #3A4A64;font-style:normal}
+.st.done i{background:var(--ok);border-color:var(--ok);color:#fff}.st.on{background:var(--navy2);color:#fff;box-shadow:inset 3px 0 0 var(--mag)}.st.on i{border-color:var(--mag);color:#fff}
+.st span small{display:block;color:#7D8BA2;font-size:11px}
+.media{margin-top:auto;background:var(--navy2);border-radius:10px;padding:10px 12px;font-size:11.5px;color:#9FACC0}.media b{color:#fff;font-weight:600}
+main{padding:18px 24px;display:flex;flex-direction:column;gap:14px}
+.top{display:flex;align-items:center;gap:12px}.top h1{margin:0;font:700 20px Manrope,Inter,sans-serif}.chip{padding:3px 9px;border-radius:999px;font-size:11.5px;background:#E8F4EC;color:var(--ok);font-weight:600}.chip.k{background:#EAF2F8;color:var(--blue)}
+.top .sp{flex:1}.btn{border-radius:8px;padding:8px 14px;font:600 13px Inter;border:1px solid var(--line);background:#fff;color:var(--fg)}.btn.p{background:var(--mag);border-color:var(--mag);color:#fff}
+.kpis{display:flex;background:#fff;border:1px solid var(--line);border-radius:10px}.kpi{flex:1;padding:10px 14px;border-right:1px solid var(--line)}.kpi:last-child{border:0}.kpi b{display:block;font:700 19px Manrope,Inter}.kpi span{color:var(--muted);font-size:11.5px}.kpi.sel{box-shadow:inset 0 -2px 0 var(--mag)}
+.grid{display:grid;grid-template-columns:1fr 320px;gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px}.card h3{margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font:700 14px Manrope,Inter;display:flex;gap:8px;align-items:center}.card h3 .sp{flex:1}
+.flt{display:flex;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line)}.flt input{flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit}.flt .f{border:1px solid var(--line);border-radius:7px;padding:6px 9px;color:var(--muted)}
+table{width:100%;border-collapse:collapse}th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:left;padding:7px 10px;background:#FAFBFC;border-bottom:1px solid var(--line)}td{padding:0 10px;height:33px;border-bottom:1px solid #EEF1F5;white-space:nowrap}.da .btn{white-space:nowrap}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}.cb{width:14px;height:14px;border:1.5px solid #AEB7C6;border-radius:3px;display:inline-block;vertical-align:middle}.cb.on{background:var(--mag);border-color:var(--mag)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.g{background:var(--ok)}.y{background:var(--warn)}.r{background:var(--bad)}.n{background:#AEB7C6}
+.bar{height:6px;background:#E8ECF2;border-radius:3px;overflow:hidden;width:90px;display:inline-block;vertical-align:middle}.bar i{display:block;height:100%;background:var(--blue)}
+.side{display:flex;flex-direction:column;gap:14px}.pad{padding:12px 14px}.row{display:flex;justify-content:space-between;padding:4px 0}.row span{color:var(--muted)}
+.big{height:8px;background:#E8ECF2;border-radius:4px;overflow:hidden;margin:6px 0 10px}.big i{display:block;height:100%;width:62%;background:linear-gradient(90deg,var(--blue),var(--mag))}
+.log{background:var(--navy);color:#C9D2E0;border-radius:0 0 10px 10px;padding:10px 12px;font:11.5px/1.6 ui-monospace,Consolas,monospace;height:150px;overflow:hidden}.log b{color:#7FD1A1;font-weight:400}.log em{color:#F2B84B;font-style:normal}
+.note{font-size:11.5px;color:var(--muted)}
+</style><style>
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#EEF1F5;color:var(--muted)}.pill.g{background:#E8F4EC;color:var(--ok)}.pill.y{background:#FDF3E1;color:var(--warn)}.pill.r{background:#FCEBEB;color:var(--bad)}
+.wrap{display:grid;grid-template-columns:1fr 560px;gap:14px}
+tr.selrow td{background:#FBE7F1}tr.selrow td:first-child{box-shadow:inset 3px 0 0 var(--mag)}
+.drawer{background:#fff;border:1px solid var(--line);border-radius:10px;display:flex;flex-direction:column}
+.dh{padding:12px 16px;border-bottom:1px solid var(--line)}.dh h2{margin:0;font:700 17px Manrope,Inter}.dh .meta{color:var(--muted);font-size:12px;margin-top:2px}
+.tabs{display:flex;gap:18px;padding:0 16px;border-bottom:1px solid var(--line)}.tabs span{padding:9px 0;color:var(--muted);font-weight:600}.tabs span.on{color:var(--fg);box-shadow:inset 0 -2px 0 var(--mag)}
+.chain{display:flex;padding:12px 16px;gap:0;border-bottom:1px solid var(--line)}.ch{flex:1;text-align:center;font-size:11.5px;color:var(--muted);position:relative}.ch b{display:block;width:22px;height:22px;margin:0 auto 4px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:11px}
+.ch.cg b{background:var(--ok)}.ch.cy b{background:var(--warn)}.ch.cr b{background:var(--bad)}.ch.cn b{background:#C9D1DD}
+.ch:not(:last-child):after{content:"";position:absolute;top:11px;left:calc(50% + 14px);right:calc(-50% + 14px);height:2px;background:#DDE2EA}
+.sec td{height:30px}.sec td:nth-child(3){white-space:normal}
+.why{margin:12px 16px;border:1px solid #F3C9C9;background:#FFF7F7;border-radius:8px;padding:10px 12px}.why b{color:var(--bad)}
+.fix{margin:0 16px 12px;border:1px solid #CFE3F0;background:#F5FAFD;border-radius:8px;padding:10px 12px}.fix b{color:var(--blue)}
+.raw{margin:0 16px 12px;background:var(--navy);color:#C9D2E0;border-radius:8px;padding:9px 11px;font:11.5px/1.55 ui-monospace,Consolas,monospace}
+.da{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--line);margin-top:auto}
+</style><style>
+.crumb{color:var(--muted);font-size:12.5px}.crumb a{color:var(--blue);text-decoration:none}
+.hero{display:flex;gap:16px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 18px}
+.hero h1{margin:0;font:700 22px Manrope,Inter}.hero .meta{color:var(--muted);font-size:12.5px;margin-top:3px}
+.score{margin-left:auto;text-align:right}.score b{font:700 26px Manrope,Inter;color:var(--warn)}.score span{display:block;color:var(--muted);font-size:11.5px}
+.g2{display:grid;grid-template-columns:1fr 420px;gap:14px}
+.secs td{height:38px}.secs td:nth-child(4){white-space:normal;color:var(--muted)}
+tr.badrow td{background:#FFF7F7}tr.badrow td:first-child{box-shadow:inset 3px 0 0 var(--bad)}
+.kv{display:grid;grid-template-columns:130px 1fr;gap:6px 10px;padding:12px 16px;font-size:12.5px}.kv span{color:var(--muted)}
+.nav2{display:flex;gap:8px;margin-left:12px}
+</style></head><body><div class="app"><aside>
+ <div class="logo"><div class="mark">т</div><div><b>такт</b><small>PORTABLE</small></div></div>
+ <div class="grp">Аудит площадки</div>
+ <div class="steps">
+  <div class="st done"><i>✓</i><span>Подготовка<small>источник и ключ центра</small></span></div>
+  <div class="st done"><i>✓</i><span>Обследование сети<small>3 подсети · 412 узлов</small></span></div>
+  <div class="st done"><i>✓</i><span>Профили учёток<small>3 профиля · 4 правила</small></span></div>
+  <div class="st on"><i>4</i><span>Узлы и сбор<small>собрано 401 / 412</small></span></div>
+  <div class="st"><i>5</i><span>Пакет<small>шифрование ключом центра</small></span></div>
+ </div>
+ <div class="media"><b>Носитель E:\audit-msk-01</b><br>Свободно 14,2 ГБ · пакет ~38 МБ<br>Только 127.0.0.1 · пароли не пишутся на диск</div>
+</aside><main>
+<div class="top"><div class="crumb"><a>Узлы и сбор</a> › <a>Частично · нет прав (15)</a> › sql-01</div><span class="sp"></span>
+<div class="nav2"><button class="btn">← пред.</button><span class="note" style="align-self:center">1 из 15</span><button class="btn">след. →</button></div></div>
+<div class="hero"><div><h1>sql-01 · 10.20.1.21</h1><div class="meta">Windows Server 2019 Standard · домен CORP · профиль win-domain (правило 1) · сбор 26.11 14:32, 48 с</div></div>
+<div class="chain" style="border:0;flex:1;max-width:560px;margin-left:24px"><div class="ch cg"><b>✓</b>порт 5985</div><div class="ch cg"><b>✓</b>вход Kerberos</div><div class="ch cg"><b>✓</b>шифрование</div><div class="ch cy"><b>!</b>сбор</div><div class="ch cg"><b>✓</b>в пакете</div></div>
+<div class="score"><b>11 / 12</b><span>разделов собрано</span></div></div>
+<div class="g2"><div class="card"><h3>Разделы<span class="sp"></span><span class="note">12 разделов C15 1.2</span></h3>
+<table class="secs"><tr><th>Раздел</th><th>Итог</th><th>Время</th><th>Подробно</th></tr>
+<tr><td>ОС</td><td><span class="pill g">собрано</span></td><td>1,2 с</td><td>Windows Server 2019 17763.6532</td></tr>
+<tr><td>Железо</td><td><span class="pill g">собрано</span></td><td>2,8 с</td><td>Dell R640 · 2× Xeon Gold 6230 · 256 ГБ</td></tr>
+<tr><td>Диски</td><td><span class="pill g">собрано</span></td><td>1,9 с</td><td>4 тома · 3,6 ТБ</td></tr>
+<tr><td>Сеть</td><td><span class="pill g">собрано</span></td><td>0,9 с</td><td>2 адаптера · 10.20.1.21, 10.21.1.21</td></tr>
+<tr><td>Программы</td><td><span class="pill g">собрано</span></td><td>6,4 с</td><td>реестр Uninstall: 214 записей</td></tr>
+<tr><td>Обновления</td><td><span class="pill g">собрано</span></td><td>3,1 с</td><td>37 KB · последнее 12.11</td></tr>
+<tr><td>Службы</td><td><span class="pill g">собрано</span></td><td>2,2 с</td><td>186 служб</td></tr>
+<tr><td>Локальные пользователи и группы</td><td><span class="pill g">собрано</span></td><td>1,4 с</td><td>Administrators: 4</td></tr>
+<tr class="badrow"><td><b>Журналы безопасности</b></td><td><span class="pill r">нет прав</span></td><td>0,3 с</td><td>чтение журнала Security отклонено (0x80070005)</td></tr>
+<tr><td>Антивирус</td><td><span class="pill g">собрано</span></td><td>0,8 с</td><td>Defender · сигнатуры 25.11</td></tr>
+<tr><td>Открытые порты</td><td><span class="pill g">собрано</span></td><td>1,1 с</td><td>14 портов</td></tr>
+<tr><td>Автозагрузка</td><td><span class="pill g">собрано</span></td><td>0,7 с</td><td>9 записей</td></tr></table></div>
+<div class="side">
+<div class="card"><div class="why" style="margin:14px 16px 10px"><b>Почему не собрано</b><div style="margin-top:4px">Учётке CORP\svc-audit запрещено читать журнал Security. Остальные разделы — в пакете; этот будет помечен «нет прав», а не «пусто».</div></div>
+<div class="fix" style="margin:0 16px 14px"><b>Что сделать</b><div style="margin-top:4px">Добавить CORP\svc-audit в «Event Log Readers» (на узле или GPO) и повторить. Тот же случай — ещё на 14 узлах.</div></div>
+<div class="da" style="padding-top:12px"><button class="btn p">Повторить узел</button><button class="btn">Повторить 15 таких</button></div></div>
+<div class="card"><h3>Подключение</h3><div class="kv"><span>Адрес</span><b class="mono">10.20.1.21:5985 (HTTP)</b><span>Вход</span><b>Kerberos · CORP\svc-audit</b><span>Шифрование</span><b>Kerberos wrap (AES-256)</b><span>Обнаружен</span><b>обследование 26.11 14:05</b><span>Попыток</span><b>1 · без перебора учёток</b></div></div>
+<div class="card"><h3>Журнал узла<span class="sp"></span><span class="note">копировать</span></h3><div class="raw" style="margin:12px 16px">14:32:01 connect 10.20.1.21:5985 ok<br>14:32:02 auth kerberos ok<br>14:32:41 section=security_log<br>Get-WinEvent: Access is denied (0x80070005)<br>code=SECTION_ACCESS_DENIED attempt=1/1<br>14:32:49 done 11/12</div></div>
+</div></div></main></div></body></html>

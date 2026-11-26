@@ -57,27 +57,14 @@ tr.selrow td{background:#FBE7F1}tr.selrow td:first-child{box-shadow:inset 3px 0 
  <div class="media"><b>Носитель E:\audit-msk-01</b><br>Свободно 14,2 ГБ · пакет ~38 МБ<br>Только 127.0.0.1 · пароли не пишутся на диск</div>
 </aside><main><div class="top"><h1>Узлы и сбор</h1><span class="chip k">Площадка «Москва, ЦОД-1»</span><span class="sp"></span><button class="btn">Повторить неудачные (28)</button><button class="btn p">Собрать выбранные</button></div>
 <div class="kpis"><div class="kpi"><b>412</b><span>найдено</span></div><div class="kpi"><b class="ok">384</b><span>собрано полностью</span></div><div class="kpi sel"><b class="warn">17</b><span>частично</span></div><div class="kpi"><b class="bad">11</b><span>не собрано</span></div><div class="kpi"><b style="color:#7D8BA2">94</b><span>доступа нет</span></div></div>
-<div class="wrap"><div class="card"><h3>Узлы с проблемами<span class="sp"></span><span class="note">28 · сгруппировано по причине</span></h3>
-<table><tr><th>Адрес</th><th>Имя</th><th>Итог</th><th>Причина</th></tr>
-<tr><td colspan="4" style="background:#FAFBFC;font-weight:600;height:28px">Нет прав на раздел · 15</td></tr>
-<tr class="selrow"><td class="mono">10.20.1.21</td><td>sql-01</td><td><span class="pill y">11 / 12</span></td><td class="note">журналы безопасности</td></tr>
-<tr><td class="mono">10.20.4.77</td><td>fs-02</td><td><span class="pill y">11 / 12</span></td><td class="note">журналы безопасности</td></tr>
-<tr><td colspan="4" style="background:#FAFBFC;font-weight:600;height:28px">Вход отклонён · 7</td></tr>
-<tr><td class="mono">10.20.1.40</td><td>—</td><td><span class="pill r">0 / 12</span></td><td class="note">SSH: ключ не принят</td></tr>
-<tr><td class="mono">10.20.1.63</td><td>ws-buh-07</td><td><span class="pill r">0 / 12</span></td><td class="note">WinRM 401</td></tr>
-<tr><td colspan="4" style="background:#FAFBFC;font-weight:600;height:28px">Таймаут / обрыв · 4</td></tr>
-<tr><td class="mono">10.30.2.14</td><td>app-erp-5</td><td><span class="pill y">7 / 12</span></td><td class="note">обрыв на «Программы»</td></tr>
-<tr><td colspan="4" style="background:#FAFBFC;font-weight:600;height:28px">Не хватает утилиты · 2</td></tr>
-<tr><td class="mono">10.30.6.3</td><td>gw-legacy</td><td><span class="pill y">10 / 12</span></td><td class="note">нет dmidecode, lsblk</td></tr></table></div>
-<div class="drawer"><div class="dh"><h2>sql-01 · 10.20.1.21</h2><div class="meta">Windows Server 2019 · профиль win-domain (правило 1) · CORP\svc-audit · сбор 26.11 14:32, 48 с</div></div>
-<div class="tabs"><span class="on">Разделы</span><span>Журнал узла</span><span>Подключение</span></div>
-<div class="chain"><div class="ch cg"><b>✓</b>порт 5985</div><div class="ch cg"><b>✓</b>вход Kerberos</div><div class="ch cg"><b>✓</b>шифрование</div><div class="ch cy"><b>!</b>сбор 11/12</div><div class="ch cg"><b>✓</b>в пакете</div></div>
-<table class="sec"><tr><th>Раздел</th><th>Итог</th><th>Подробно</th></tr>
-<tr><td>ОС, железо, сеть</td><td><span class="pill g">собрано</span></td><td class="note">WMI: Win32_OperatingSystem, Win32_ComputerSystem…</td></tr>
-<tr><td>Программы, обновления</td><td><span class="pill g">собрано</span></td><td class="note">реестр Uninstall: 214 записей; KB: 37</td></tr>
-<tr><td>Службы, локальные админы</td><td><span class="pill g">собрано</span></td><td class="note">186 служб; группа Administrators: 4</td></tr>
-<tr><td><b>Журналы безопасности</b></td><td><span class="pill r">нет прав</span></td><td class="note">чтение журнала Security отклонено</td></tr></table>
-<div class="why"><b>Почему не собрано</b><div style="margin-top:4px">Учётке CORP\svc-audit запрещено читать журнал Security на этом узле. Остальные 11 разделов собраны и попадут в пакет; раздел будет помечен как «нет прав», а не «пусто».</div></div>
-<div class="fix"><b>Что сделать</b><div style="margin-top:4px">Добавить CORP\svc-audit в группу «Event Log Readers» (на узле или GPO) и нажать «Повторить узел». Тот же случай — ещё на 14 узлах.</div></div>
-<div class="raw">14:32:41 winrm 10.20.1.21:5985 section=security_log<br>Get-WinEvent: Access is denied (0x80070005)<br>code=SECTION_ACCESS_DENIED attempt=1/1</div>
-<div class="da"><button class="btn p">Повторить узел</button><button class="btn">Повторить 15 таких</button><button class="btn">Диагностика</button></div></div></div></main></div></body></html>
+<div class="card"><h3>Узлы с проблемами<span class="sp"></span><span class="note">28 · сгруппировано по причине · строка открывает страницу узла</span></h3><table><tr><th>Адрес</th><th>Имя</th><th>Итог</th><th>Причина</th><th>Что сделать</th><th></th></tr>
+<tr><td colspan="6" style="background:#FAFBFC;font-weight:600;height:28px">Нет прав на раздел · 15</td></tr>
+<tr><td class="mono">10.20.1.21</td><td>sql-01</td><td><span class="pill y">11 / 12</span></td><td class="note">журналы безопасности</td><td class="note">учётку — в Event Log Readers</td><td style="color:var(--blue)">›</td></tr>
+<tr><td class="mono">10.20.4.77</td><td>fs-02</td><td><span class="pill y">11 / 12</span></td><td class="note">журналы безопасности</td><td class="note">учётку — в Event Log Readers</td><td style="color:var(--blue)">›</td></tr>
+<tr><td colspan="6" style="background:#FAFBFC;font-weight:600;height:28px">Вход отклонён · 7</td></tr>
+<tr><td class="mono">10.20.1.40</td><td>—</td><td><span class="pill r">0 / 12</span></td><td class="note">SSH: ключ не принят</td><td class="note">проверить authorized_keys</td><td style="color:var(--blue)">›</td></tr>
+<tr><td class="mono">10.20.1.63</td><td>ws-buh-07</td><td><span class="pill r">0 / 12</span></td><td class="note">WinRM 401</td><td class="note">пароль / учётка отключена</td><td style="color:var(--blue)">›</td></tr>
+<tr><td colspan="6" style="background:#FAFBFC;font-weight:600;height:28px">Таймаут / обрыв · 4</td></tr>
+<tr><td class="mono">10.30.2.14</td><td>app-erp-5</td><td><span class="pill y">7 / 12</span></td><td class="note">обрыв на «Программы»</td><td class="note">повторить; проверить сеть</td><td style="color:var(--blue)">›</td></tr>
+<tr><td colspan="6" style="background:#FAFBFC;font-weight:600;height:28px">Не хватает утилиты · 2</td></tr>
+<tr><td class="mono">10.30.6.3</td><td>gw-legacy</td><td><span class="pill y">10 / 12</span></td><td class="note">нет dmidecode, lsblk</td><td class="note">поставить util-linux, dmidecode</td><td style="color:var(--blue)">›</td></tr></table></div></main></div></body></html>
