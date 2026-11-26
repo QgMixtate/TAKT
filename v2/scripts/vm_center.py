@@ -242,6 +242,8 @@ def main():
     p.add_argument('--persistent', action='store_true', help='постоянный стенд: БД, CA, ключи OpenBao и регистрации агентов сохраняются между перезапусками (обновление центра без переподключения агентов)')
     p.add_argument('--state', default=str(ROOT / '.local/vm-center-state'), help='каталог постоянного стенда (секреты, 0700; не публиковать)')
     p.add_argument('--backup-marker', default=None, help='файл метки резервной копии (запоминается в постоянном стенде)')
+    p.add_argument('--release-dir', default=None, help='C52.04: каталог выпуска с installers/ (раздача из Web; запоминается)')
+    p.add_argument('--release-public-key', default=None, help='C52.04: открытый ключ выпуска (PEM) — центр проверяет подпись manifest (запоминается)')
     p.add_argument('--setup-issuer', action='store_true', help='ISSUES №111: один раз создать токен выдачи токена центра (нужен root-токен на ВМ) и выйти')
     args = p.parse_args()
     if args.selftest:
@@ -429,6 +431,15 @@ def persistent(args):
     if marker:
         os.environ['SURVEYSCAN_V2_BACKUP_MARKER'] = marker
         print('метка резервной копии:', marker, flush=True)
+    # C52.04: файлы установки для Web — каталог выпуска и ключ подписи запоминаются, как метка копии
+    for key, env, value in (('release_dir', 'SURVEYSCAN_V2_RELEASE_DIR', args.release_dir), ('release_public_key', 'SURVEYSCAN_V2_RELEASE_PUBLIC_KEY_FILE', args.release_public_key)):
+        value = value and str(Path(value).absolute())
+        if value and settings.get(key) != value:
+            settings[key] = value
+            settings_file.write_text(json.dumps(settings))
+        if settings.get(key):
+            os.environ[env] = settings[key]
+            print(env + ':', settings[key], flush=True)
     ensure_integrations(settings['config'])
     fresh_token(settings['config'], state)
     renew_server_certificate(settings)
