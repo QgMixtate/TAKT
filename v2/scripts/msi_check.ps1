@@ -15,7 +15,12 @@ function Msi($action, $file, [string[]]$props) {
   $p = Start-Process msiexec.exe -ArgumentList $argv -Wait -PassThru
   return @{ Code = $p.ExitCode; Log = $log }
 }
-function Tail($r) { if (Test-Path $r.Log) { Get-Content $r.Log -Tail 40 | ForEach-Object { Write-Host "  | $_" } } else { Write-Host "  (нет журнала $($r.Log))" } }
+function Tail($r) {
+  if (-not (Test-Path $r.Log)) { Write-Host "  (нет журнала $($r.Log))"; return }
+  # первое действие, вернувшее ошибку, и что было перед ним
+  Select-String -Path $r.Log -Pattern 'Return value 3|CustomAction .* returned actual error|Error 1[0-9]{3}' -Context 12,2 | Select-Object -First 2 | ForEach-Object {
+    $_.Context.PreContext + $_.Line + $_.Context.PostContext | ForEach-Object { Write-Host "  | $_" } }
+}
 function Svc($name) { Get-CimInstance Win32_Service -Filter "Name='$name'" }
 
 $components = @(
