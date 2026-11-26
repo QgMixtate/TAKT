@@ -142,6 +142,15 @@ def build(version, dist, out, with_windows=True, only_windows=False):
         produced.append(tarball(kind, binary, version, out, mtime))
         if with_windows:
             windows(kind, dist, version, out)
+    # Rust-portable — один файл без установки (C52.03): кладётся рядом с пакетами для раздачи из Web
+    for rel, target in (('rust/linux/surveyscan-portable', f'surveyscan-portable_{version}_linux_amd64'),
+                        ('rust/windows/surveyscan-portable.exe', f'surveyscan-portable_{version}_windows_x64.exe')):
+        src = dist / rel
+        if with_windows or not only_windows and not rel.endswith('.exe'):
+            if src.is_file():
+                shutil.copyfile(src, out / target)
+            else:
+                print(f'нет {src}: portable не войдёт в набор', file=sys.stderr)
     sums = []
     for f in sorted(out.iterdir()):
         if f.is_file() and f.name != 'SHA256SUMS':

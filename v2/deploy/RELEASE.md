@@ -98,6 +98,10 @@ Rollback symlink после миграции БД не считается без
 python3 scripts/release.py build --version X.Y.Z --output OUT --search search/target/release/surveyscan-search
 ```
 
+Файлы установки (C52.04): `make build rust packages` и `release.py build … --installers .dist/packages` — MSI, deb, rpm,
+архивы и Rust-portable кладутся в `payload/installers/` с `index.json` и входят в подписанный manifest; принимаются только
+известные имена текущей версии (Go-агент в Web не раздаётся). Центр раздаёт их из Web («Установка» → «Скачать»).
+
 `release.py` требует совпадения версии и ревизии с остальными компонентами; SPDX включает записи `Cargo.lock`
 (имя, версия, источник, контрольная сумма). Выпуск без `--search` по-прежнему допустим (поиск — точный режим).
 

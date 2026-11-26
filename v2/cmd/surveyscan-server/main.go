@@ -5,10 +5,12 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"github.com/QgMixtate/surveyscan/v2/internal/installers"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -173,6 +175,11 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
+	// C52.04: файлы установки из выпуска, который сейчас работает (каталог выпуска — родитель bin/ этого бинарника
+	// или SURVEYSCAN_V2_RELEASE_DIR); подпись manifest — ключом SURVEYSCAN_V2_RELEASE_PUBLIC_KEY_FILE, если задан
+	if e := loadInstallers(registry); e != nil {
+		return e
+	}
 	machineListen := ""
 	var machineTLS *tls.Config
 	if path := os.Getenv("SURVEYSCAN_V2_MACHINE_CONFIG"); path != "" {
@@ -289,4 +296,35 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+func loadInstallers(registry *app.Registry) error {
+	dir := os.Getenv("SURVEYSCAN_V2_RELEASE_DIR")
+	if dir == "" {
+		exe, e := os.Executable()
+		if e != nil {
+			return nil
+		}
+		dir = filepath.Dir(filepath.Dir(exe))
+	}
+	var key []byte
+	if path := os.Getenv("SURVEYSCAN_V2_RELEASE_PUBLIC_KEY_FILE"); path != "" {
+		b, e := os.ReadFile(path)
+		if e != nil {
+			return fmt.Errorf("release public key unreadable")
+		}
+		key = b
+	}
+	if _, e := os.Stat(filepath.Join(dir, "release-manifest.json")); e != nil {
+		return nil // запуск не из выпуска (разработка): файлов установки нет
+	}
+	c, e := installers.Load(dir, key)
+	if e != nil {
+		registry.InstallersError = "RELEASE_VERIFICATION_FAILED"
+		fmt.Println("файлы установки недоступны: " + e.Error())
+		return nil
+	}
+	registry.Installers = c
+	fmt.Printf("файлы установки: выпуск %s, %d файлов, подпись проверена центром: %v\n", c.Version, len(c.Files), c.SignatureVerified)
+	return nil
 }

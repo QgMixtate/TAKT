@@ -1,8 +1,8 @@
 import {useEffect,useState} from 'react';
-import {api,ApiError,errorMessage,type PortableScope,type RegistrationCode,type Source} from './api';
+import {api,ApiError,errorMessage,type InstallerList,type PortableScope,type RegistrationCode,type Source} from './api';
 
 // C52.01: установка на площадке — код регистрации (показывается один раз) и отпечаток центра; готовые команды для
-// collector (Linux/Windows) и агента (Linux/Windows, MSI для GPO). Файлы установки — раздел «Скачать» (C52.04).
+// collector (Linux/Windows) и агента (Linux/Windows, MSI для GPO). Файлы установки — из подписанного выпуска центра (C52.04).
 const stateName:Record<RegistrationCode['state'],[string,string]>={active:['действует','state-ok'],exhausted:['исчерпан','state-pending'],expired:['истёк','state-unavailable'],revoked:['отозван','state-unavailable']};
 const time=(v:string)=>new Date(v).toLocaleString('ru-RU');
 
@@ -20,13 +20,16 @@ export function InstallPanel({csrf,sources,onExpired,embedded}:{csrf:string;sour
  async function revoke(id:string){if(!window.confirm('Отозвать код? Новые установки по нему будут отклонены; уже установленные продолжат работать.'))return;setBusy(true);try{await api.revokeRegistrationCode(csrf,id);setN(x=>x+1)}catch(e){fail(e)}finally{setBusy(false)}}
  const code=created?.code??'КОД',f=created?.center_fingerprint??fp;
  const commands=created?(created.source_kind==='collector'?[
-  ['Linux (deb/rpm или архив)',`sudo SURVEYSCAN_REGISTRATION_CODE=${code} surveyscan-collector register --center ${centerURL} --fingerprint ${f} \\\n  --dir /etc/surveyscan-collector --state /var/lib/surveyscan-collector\nsudo systemctl enable --now surveyscan-collector`],
-  ['Windows (MSI, тихая установка; установщики — со следующим выпуском C52)',`msiexec /i surveyscan-collector.msi /qn CENTER_URL=${centerURL} REG_CODE=${code} CENTER_FINGERPRINT=${f}`]]:[
-  ['Linux (deb/rpm или архив)',`sudo SURVEYSCAN_REGISTRATION_CODE=${code} surveyscan-agent register --collector ${collectorURL} --fingerprint ${f} \\\n  --config /etc/surveyscan-agent/agent.json --state /var/lib/surveyscan-agent\nsudo systemctl enable --now surveyscan-agent`],
-  ['Windows (MSI, тихая установка или GPO; установщики — со следующим выпуском C52)',`msiexec /i surveyscan-agent.msi /qn COLLECTOR_URL=${collectorURL} REG_CODE=${code} CENTER_FINGERPRINT=${f}`]]):[];
+  ['Linux (пакет deb/rpm установлен; код — вводом, не в истории команд)',`echo ${code} | sudo surveyscan-collector-setup --center ${centerURL} --fingerprint ${f}`],
+  ['Linux, массово (Ansible и т. п.): /etc/surveyscan-collector/register.env до или после установки пакета',`CENTER_URL=${centerURL}\nCENTER_FINGERPRINT=${f}\nREG_CODE=${code}`],
+  ['Windows (MSI, тихая установка)',`msiexec /i surveyscan-collector_*_windows_x64.msi /qn CENTER_URL=${centerURL} REG_CODE=${code} CENTER_FINGERPRINT=${f}`]]:[
+  ['Linux (пакет deb/rpm установлен; код — вводом, не в истории команд)',`echo ${code} | sudo surveyscan-agent-setup --collector ${collectorURL} --fingerprint ${f}`],
+  ['Linux, массово (Ansible и т. п.): /etc/surveyscan-agent/register.env до или после установки пакета',`COLLECTOR_URL=${collectorURL}\nCENTER_FINGERPRINT=${f}\nREG_CODE=${code}`],
+  ['Windows (MSI, тихая установка или GPO)',`msiexec /i surveyscan-agent_*_windows_x64.msi /qn COLLECTOR_URL=${collectorURL} REG_CODE=${code} CENTER_FINGERPRINT=${f}`]]):[];
  return <section className={embedded?'install-panel embedded':'table-panel install-panel'}><div className="table-toolbar"><h2>Установка {embedded?'по коду':<span>коды регистрации</span>}</h2>{embedded?null:<button className="button small" aria-expanded={open} onClick={()=>setOpen(!open)}>{open?'Свернуть':'Открыть'}</button>}</div>{embedded?<p className="muted">Код показывается один раз; в центре хранится только его хеш.</p>:null}
   {open?<div className="portable-body">
    {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
+   <DownloadsPanel onExpired={onExpired}/>
    <p className="panel-note">Отпечаток центра (проверяется при установке): <span className="mono">{fp||'—'}</span></p>
    <div className="wh-form" aria-label="Новый код регистрации">
     <label>Что ставим<select aria-label="Вид установки" value={kind} onChange={e=>setKind(e.target.value as 'collector'|'agent')}><option value="collector">collector площадки</option><option value="agent">агент на ПК/сервер</option></select></label>
@@ -42,7 +45,7 @@ export function InstallPanel({csrf,sources,onExpired,embedded}:{csrf:string;sour
     {created.source_kind==='collector'?<label>Адрес центра для collector<input aria-label="Адрес центра" className="mono" value={centerURL} onChange={e=>setCenterURL(e.target.value)}/></label>:<label>Адрес collector площадки<input aria-label="Адрес collector" className="mono" value={collectorURL} onChange={e=>setCollectorURL(e.target.value)}/></label>}
     {commands.map(([t,c])=><div key={t}><p className="panel-note">{t}:</p><pre className="mono cmd">{c}</pre></div>)}
     <button className="text-link" onClick={()=>setCreated(null)}>Скрыть код</button></div>:null}
-   <div className="table-scroll"><table><thead><tr><th>Создан</th><th>Что</th><th>Площадка</th><th>Установок</th><th>Действует до</th><th>Состояние</th><th>Комментарий</th><th><span className="sr-only">Действия</span></th></tr></thead><tbody>{items.map(c=><tr key={c.code_id}>
+   <div className="table-scroll"><table aria-label="Коды регистрации"><thead><tr><th>Создан</th><th>Что</th><th>Площадка</th><th>Установок</th><th>Действует до</th><th>Состояние</th><th>Комментарий</th><th><span className="sr-only">Действия</span></th></tr></thead><tbody>{items.map(c=><tr key={c.code_id}>
     <td className="time">{time(c.created_at)}</td><td>{c.source_kind==='collector'?'collector':'агент'+(c.inventory_platform?(c.inventory_platform.startsWith('windows')?' (Windows)':' (Linux)'):'')}</td><td>{siteName(c.site_id)}</td>
     <td><button className="text-link" onClick={()=>void api.registrationUses(c.code_id).then(p=>setUsesOf({id:c.code_id,items:p.items})).catch(fail)}>{c.used} из {c.max_uses}</button></td>
     <td className="time">{time(c.expires_at)}</td><td><span className={'badge '+stateName[c.state][1]}><i/>{stateName[c.state][0]}</span></td><td>{c.comment||'—'}</td>
@@ -50,4 +53,27 @@ export function InstallPanel({csrf,sources,onExpired,embedded}:{csrf:string;sour
    {usesOf?<div className="map-notice" role="status">Установки по коду: {usesOf.items.length?usesOf.items.map(u=>u.hostname+' ('+time(u.registered_at)+')').join(', '):'пока нет'} <button className="text-link" onClick={()=>setUsesOf(null)}>скрыть</button></div>:null}
   </div>:null}
  </section>;
+}
+
+// C52.04: файлы установки выпуска, который работает в центре — администратор и оператор; скачивание — в аудите.
+const componentName:Record<string,string>={agent:'Агент',collector:'Collector',portable:'Portable (без установки)'};
+const formatHint:Record<string,string>={msi:'MSI — тихая установка, GPO',zip:'архив .exe',deb:'Debian, Ubuntu, Astra',rpm:'RHEL, Rocky, Alma, РЕД ОС, Альт','tar.gz':'архив для любого Linux',exe:'один файл, на флешку',bin:'один файл'};
+const reasonText:Record<string,string>={RELEASE_NOT_INSTALLED:'Центр запущен не из выпуска — файлов установки нет.',RELEASE_VERIFICATION_FAILED:'Файлы выпуска не прошли проверку подписи — раздача отключена, см. журнал центра.',NO_INSTALLERS_IN_RELEASE:'В выпуске нет файлов установки.'};
+const size=(n:number)=>n>=1048576?(n/1048576).toFixed(1).replace('.',',')+' МБ':Math.ceil(n/1024)+' КБ';
+
+export function DownloadsPanel({onExpired}:{onExpired:()=>void}){
+ const [list,setList]=useState<InstallerList|null>(null),[error,setError]=useState<unknown>(null),[os,setOs]=useState<'windows'|'linux'>('windows');
+ useEffect(()=>{api.installers().then(setList).catch(e=>{setError(e);if(e instanceof ApiError&&e.status===401)onExpired()})},[]);
+ const files=(list?.files??[]).filter(f=>f.os===os);
+ return <div className="downloads" aria-label="Файлы установки">
+  <div className="table-toolbar"><h3>Скачать</h3>{list?.release_version?<span className="muted">выпуск {list.release_version} · {list.signature_verified?<span className="state-ok">подпись выпуска проверена центром</span>:<span className="state-pending">подпись проверяется при установке выпуска (ключ центру не задан)</span>}</span>:null}
+   <div className="seg-tabs" style={{marginBottom:0,marginLeft:"auto"}} role="group" aria-label="ОС">{(['windows','linux'] as const).map(o=><button key={o} className={os===o?'active':''} aria-pressed={os===o} onClick={()=>setOs(o)}>{o==='windows'?'Windows':'Linux'}</button>)}</div></div>
+  {error?<div className="error" role="alert">{errorMessage(error)}</div>:null}
+  {list&&!list.available?<p className="panel-note">{reasonText[list.reason??'NO_INSTALLERS_IN_RELEASE']}</p>:null}
+  {files.length?<div className="table-scroll"><table><thead><tr><th>Что</th><th>Формат</th><th>Размер</th><th>SHA-256</th><th><span className="sr-only">Скачать</span></th></tr></thead><tbody>{files.map(f=><tr key={f.name}>
+   <td>{componentName[f.component]}</td><td>{f.format.toUpperCase()} <span className="muted">· {formatHint[f.format]}</span></td><td>{size(f.bytes)}</td>
+   <td className="mono" title={f.sha256}>{f.sha256.slice(0,12)}…{f.sha256.slice(-6)}</td>
+   <td><a className="button small" href={'/api/v1/installers/'+encodeURIComponent(f.name)} download={f.name}>Скачать</a></td></tr>)}</tbody></table></div>:null}
+  {list?.available?<p className="muted">Файлы раздаёт центр из подписанного выпуска (не из интернета); перед отдачей SHA-256 сверяется с manifest выпуска. Windows-файлы без подписи Authenticode: при ручном запуске SmartScreen может предупредить — сверьте SHA-256.</p>:null}
+ </div>;
 }

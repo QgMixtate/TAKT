@@ -198,3 +198,19 @@ windows-2022) → **04.3** файлы выпуска в подписанном �
 - Проверка: workflow `installers.yml` — сборка на Linux, `scripts/msi_check.ps1` на чистой Windows Server 2022: откат
   при ошибке регистрации без кода в журнале, установка без кода, обновление с сохранением регистрации, удаление,
   `REMOVE_DATA=1`, брандмауэр. Сквозная регистрация с центром через MSI — стенд (C52-08, win-ar).
+
+### 04.3 — файлы выпуска и скачивание из Web (2026-11-26)
+- Выпуск: `release.py build --installers .dist/packages` — MSI, zip, deb, rpm, tar.gz агента и collector и Rust-portable
+  (Linux, Windows) в `payload/installers/` с `index.json`; всё — в подписанном manifest; только известные имена текущей
+  версии (Go-агент не раздаётся, решение 3а).
+- Центр (`internal/installers`): каталог выпуска — родитель `bin/` сервера или `SURVEYSCAN_V2_RELEASE_DIR`; подпись
+  manifest — ключом `SURVEYSCAN_V2_RELEASE_PUBLIC_KEY_FILE` (если задан); каждый файл перед отдачей сверяется по размеру
+  и SHA-256 с manifest (подменённый на диске — 409 `INSTALLER_INTEGRITY_FAILED`).
+- API (контракт c52-registration: `InstallerList`, `InstallerFile`): `GET /api/v1/installers`,
+  `GET /api/v1/installers/{имя}` — право `installers:download` (администратор и оператор, только сессия); скачивание —
+  аудит `installer.downloaded` до отдачи. Миграций нет.
+- Web «Установка» → «Скачать»: файлы по ОС (Windows/Linux), формат, размер, SHA-256, «Скачать»; оператор видит только
+  «Скачать»; команды под пакеты (`…-setup`, `register.env`, MSI).
+- Проверено: unit (каталог: подпись, подмена, чужой ключ, файл вне manifest), integration TestC52InstallersDownload
+  (права, аудит, подмена → 409, контракт), release_smoke (выпуск с файлами, отказ чужой версии/имени), web smoke
+  (скачивание MSI через центр, SHA-256 = manifest).

@@ -152,6 +152,29 @@ def main():
             assert str(e) == 'release version is revoked', e
         checks.append('signed revocation list: foreign key and tampering refused, list only grows, updater refuses to prepare a revoked release')
         # Duplicate keys must not select a different version/path interpretation between parsers.
+        # C52.04: файлы установки входят в подписанный выпуск; неизвестный файл и чужая версия — отказ
+        packs = work / 'installers'
+        packs.mkdir()
+        for name in (f'surveyscan-agent_{version}_windows_x64.msi', f'surveyscan-collector_{version.replace("-", "~")}-1_amd64.deb',
+                     f'surveyscan-portable_{version}_windows_x64.exe', 'SHA256SUMS'):
+            (packs / name).write_bytes(os.urandom(256))
+        with_installers = work / 'bundle-installers'
+        release.build(with_installers, version, release.ROOT / '.dist', release.ROOT / 'web/dist', Path(os.environ['GO']), installers=packs)
+        release.sign(with_installers, key)
+        signed = release.verify(with_installers, public)
+        index = json.loads((with_installers / 'payload/installers/index.json').read_text())
+        assert {f['name'] for f in index['files']} == {n for n in os.listdir(packs) if n != 'SHA256SUMS'} and 'installers/index.json' in signed['files']
+        assert all(signed['files']['installers/' + f['name']]['sha256'] == release.digest(packs / f['name']) for f in index['files'])
+        staged = work / 'stage-installers'
+        release.install(with_installers, public, staged)
+        assert (staged / 'opt/surveyscan/releases' / version / 'installers/index.json').is_file()
+        assert (staged / 'opt/surveyscan/releases' / version / 'release-manifest.json').is_file()
+        (packs / f'surveyscan-agent_9.9.9_windows_x64.msi').write_bytes(b'x')
+        refused(lambda: release.build(work / 'bad-version', version, release.ROOT / '.dist', release.ROOT / 'web/dist', Path(os.environ['GO']), installers=packs))
+        (packs / f'surveyscan-agent_9.9.9_windows_x64.msi').unlink()
+        (packs / 'surveyscan-agent-go.exe').write_bytes(b'x')
+        refused(lambda: release.build(work / 'bad-name', version, release.ROOT / '.dist', release.ROOT / 'web/dist', Path(os.environ['GO']), installers=packs))
+        checks.append('C52.04 installers (MSI, deb, portable) ship inside the signed release with index.json, staged next to release-manifest; foreign version or unknown file refused')
         (bundle / 'manifest.json').write_bytes(b'{"format":1,"format":2}')
         (bundle / 'manifest.sig').unlink()
         release.sign(bundle, key)

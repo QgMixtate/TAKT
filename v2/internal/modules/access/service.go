@@ -396,7 +396,7 @@ func allowed(id port.Identity, action string) bool {
 	switch action {
 	case "assets:read", "sources:read", "jobs:read", "auth:self", "warehouse:read", "itsm:read":
 		return true
-	case "assets:write", "jobs:write", "warehouse:write", "itsm:write":
+	case "assets:write", "jobs:write", "warehouse:write", "itsm:write", "installers:download": // C52.04: скачивание установщиков
 		return id.Role == "admin" || id.Role == "operator"
 	case "sources:admin", "warehouse:admin", "itsm:admin": // склад: каталог, места, списание — администратор (W2, C41.03 п. 8)
 		return id.Role == "admin"

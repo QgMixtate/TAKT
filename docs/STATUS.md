@@ -5,9 +5,9 @@
 
 ## Коротко
 
-- **Сейчас:** **C52.04** (установщики) — 04.1 deb/rpm и 04.2 MSI сделаны и проверены в CI (контейнеры 8 дистрибутивов,
-  systemd на раннере, чистая Windows Server 2022); макеты мастера portable утверждены (версия 2). Дальше 04.3 — файлы выпуска
-  и скачивание из Web, затем 04.4 — стенд. [C52, разделы C52.08 и 04.2](plans/surveyscan-v2/decisions/C52-rust-agents-and-installers.md).
+- **Сейчас:** **C52.04** (установщики) — 04.1 deb/rpm, 04.2 MSI и 04.3 скачивание из Web сделаны и проверены (CI:
+  контейнеры 8 дистрибутивов, systemd на раннере, чистая Windows Server 2022; integration и браузер); макеты мастера
+  portable утверждены (версия 2). Дальше 04.4 — стенд (MSI на win-ar, deb collector, portable с флешки, Astra) и мастер. [C52, разделы C52.08 и 04.2](plans/surveyscan-v2/decisions/C52-rust-agents-and-installers.md).
   C53/C54 приняты пользователем 26.11 ([что принято](plans/surveyscan-v2/decisions/C53-C54-acceptance.md)).
 - **Как работаем (25.11):** один чат — один этап, этапы поочерёдно; стартовые сообщения —
   [handoffs/chat-starts.md](plans/surveyscan-v2/handoffs/chat-starts.md).
@@ -115,8 +115,8 @@ awm.local: Ubuntu 24.04 (10.170.108.2, центр `vm_center.py --persistent`, c
 1. ~~C53/C54~~ — **приняты 26.11**. Хвосты отдельными задачами: срок хранения сырых наблюдений (ISSUES №87,
    предложено 30 дней), модель оборудования по WinRM (№99), удалить отозванный `root-negative-test-token` из каталога
    состояния стенда (№115).
-2. **C52.04:** ~~deb/rpm~~, ~~MSI~~ (26.11, CI); дальше — файлы выпуска и скачивание из Web (04.3), стенд (04.4: MSI на win-ar,
-   deb collector, portable с флешки, Astra); веб-мастер Rust-portable по утверждённым макетам (версия 2).
+2. **C52.04:** ~~deb/rpm~~, ~~MSI~~, ~~скачивание из Web~~ (26.11); дальше — стенд (04.4: MSI на win-ar, deb collector,
+   portable с флешки, Astra); веб-мастер Rust-portable по утверждённым макетам (версия 2).
 3. **C57** ([проект](plans/surveyscan-v2/decisions/C57-platform-connectors.md) принят 25.11, C57.01–02 сделаны): дальше
    vSphere, zVirt/oVirt, Redfish, обратный DNS; вместе с C55 / перед ним.
    **C55:** мониторинг здоровья, включая инфраструктурные объекты (стойки, шасси, кластеры, СХД).

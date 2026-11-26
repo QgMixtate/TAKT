@@ -263,7 +263,39 @@ def sbom(payload, versions, go):
             'packages': packages, 'relationships': relationships}
 
 
-def build(output, version, distribution, web, go, search=None):
+# C52.04: файлы установки (scripts/packages.py) — только известные имена текущей версии; Go-агент в Web не раздаётся
+INSTALLER_PATTERNS = [
+    (r'surveyscan-(agent|collector)_(?P<v>[^_]+)_linux_amd64\.tar\.gz', 'linux', 'amd64', 'tar.gz'),
+    (r'surveyscan-(agent|collector)_(?P<v>[^_]+)-1_amd64\.deb', 'linux', 'amd64', 'deb'),
+    (r'surveyscan-(agent|collector)-(?P<v>[^_]+)-1\.x86_64\.rpm', 'linux', 'amd64', 'rpm'),
+    (r'surveyscan-(agent|collector)_(?P<v>[^_]+)_windows_x64\.msi', 'windows', 'x64', 'msi'),
+    (r'surveyscan-(agent|collector)_(?P<v>[^_]+)_windows_x64\.zip', 'windows', 'x64', 'zip'),
+    (r'surveyscan-(portable)_(?P<v>[^_]+)_linux_amd64', 'linux', 'amd64', 'bin'),
+    (r'surveyscan-(portable)_(?P<v>[^_]+)_windows_x64\.exe', 'windows', 'x64', 'exe'),
+]
+
+
+def installers_index(source, version):
+    """Описание файлов установки для центра: компонент, ОС, формат; версия в имени — версия выпуска."""
+    require(source.is_dir() and not source.is_symlink(), 'installers directory required')
+    files = []
+    for path in sorted(source.iterdir()):
+        if path.name == 'SHA256SUMS':
+            continue
+        require(path.is_file() and not path.is_symlink(), 'regular installer files required')
+        for pattern, os_, arch, fmt in INSTALLER_PATTERNS:
+            m = re.fullmatch(pattern, path.name)
+            if m:
+                require(m.group('v') in (version, version.replace('-', '~')), 'installer version differs from the release')
+                files.append({'name': path.name, 'component': m.group(1), 'os': os_, 'arch': arch, 'format': fmt})
+                break
+        else:
+            require(False, 'unknown installer file')
+    require(files, 'no installer files')
+    return {'format': 'surveyscan-installers-v1', 'files': files}
+
+
+def build(output, version, distribution, web, go, search=None, installers=None):
     require(VERSION.fullmatch(version) is not None, 'semantic version required')
     require(not output.exists() and not output.is_symlink(), 'new output directory required')
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -312,6 +344,12 @@ def build(output, version, distribution, web, go, search=None):
             require(source.is_dir() and not source.is_symlink() and not any(p.is_symlink() for p in source.rglob('*')),
                     'regular artifact directories required')
             shutil.copytree(source, payload / name)
+        if installers is not None:
+            index = installers_index(installers, version)
+            (payload / 'installers').mkdir()
+            for item in index['files']:
+                shutil.copyfile(installers / item['name'], payload / 'installers' / item['name'])
+            write_json(payload / 'installers' / 'index.json', index)
         for path in payload.rglob('*'):
             path.chmod(0o755 if path.is_dir() or path.parent.name == 'bin' else 0o644)
         payload.chmod(0o755)
@@ -396,6 +434,7 @@ def main():
     p.add_argument('--web', type=Path, default=ROOT / 'web/dist')
     p.add_argument('--go', type=Path, default=Path(os.environ.get('GO', 'go')))
     p.add_argument('--search', type=Path, help='optional surveyscan-search binary (C29)')
+    p.add_argument('--installers', type=Path, help='C52.04: каталог scripts/packages.py (deb, rpm, MSI, архивы, portable)')
     p = commands.add_parser('revoke')
     p.add_argument('--output', required=True, type=Path)
     p.add_argument('--key', required=True, type=Path)
@@ -409,7 +448,7 @@ def main():
             p.add_argument('--root', required=True, type=Path)
     args = parser.parse_args()
     if args.command == 'build':
-        result = build(args.output, args.version, args.dist, args.web, args.go, args.search)
+        result = build(args.output, args.version, args.dist, args.web, args.go, args.search, args.installers)
     elif args.command == 'revoke':
         result = revoke(args.output, args.key, args.revoke, args.previous)
     elif args.command == 'sign':

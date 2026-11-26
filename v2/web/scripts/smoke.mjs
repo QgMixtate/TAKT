@@ -1,4 +1,5 @@
 import {readFileSync,writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {chromium,expect} from '@playwright/test';
 const config=JSON.parse(readFileSync(process.argv[2]));const browser=await chromium.launch({headless:true,executablePath:process.env.SURVEYSCAN_CHROMIUM||undefined});const checks=[],errors=[],external=[];
 try{
@@ -151,9 +152,16 @@ try{
  await page.getByRole('tab',{name:'Очередь'}).click();checks.push('C50 SLA in the Web: queue shows ticket SLA, admin saves business hours and targets');
  // C52.01 установка по коду: администратор создаёт код collector — код показан один раз с командами, затем отзывает
  await page.getByRole('button',{name:'Источники',exact:true}).click();const inst=page.locator('section',{has:page.getByRole('heading',{name:/Установка/})});
- await inst.getByLabel('Комментарий к коду').fill('Smoke: площадка');await inst.getByRole('button',{name:'Создать код'}).click();await expect(inst.getByRole('status')).toContainText(/Код: SSR-[0-9A-Z]{5}-/);await expect(inst).toContainText('surveyscan-collector register');
- await inst.getByRole('button',{name:'Скрыть код'}).click();await expect(inst.locator('tbody')).toContainText('действует');page.once('dialog',d=>void d.accept());await inst.getByRole('button',{name:'Отозвать'}).first().click();await expect(inst.locator('tbody')).toContainText('отозван');
+ await inst.getByLabel('Комментарий к коду').fill('Smoke: площадка');await inst.getByRole('button',{name:'Создать код'}).click();await expect(inst.getByRole('status')).toContainText(/Код: SSR-[0-9A-Z]{5}-/);await expect(inst).toContainText('surveyscan-collector-setup');await expect(inst).toContainText('msiexec /i surveyscan-collector_');
+ await inst.getByRole('button',{name:'Скрыть код'}).click();await expect(inst.getByRole('table',{name:'Коды регистрации'}).locator('tbody')).toContainText('действует');page.once('dialog',d=>void d.accept());await inst.getByRole('button',{name:'Отозвать'}).first().click();await expect(inst.getByRole('table',{name:'Коды регистрации'}).locator('tbody')).toContainText('отозван');
  checks.push('C52 install in the Web: registration code created once with install commands and centre fingerprint, then revoked');
+ // C52.04: файл установки из выпуска центра — скачивается из Web, байты совпадают с SHA-256 из подписанного manifest
+ if(config.installer){const dl=page.getByLabel('Файлы установки');await expect(dl).toContainText('выпуск '+config.installer.version);await expect(dl).toContainText('Collector');
+  const [download]=await Promise.all([page.waitForEvent('download'),dl.getByRole('link',{name:'Скачать'}).first().click()]);
+  if(download.suggestedFilename()!==config.installer.name)throw new Error('download name '+download.suggestedFilename());
+  const sha=createHash('sha256').update(readFileSync(await download.path())).digest('hex');if(sha!==config.installer.sha256)throw new Error('downloaded installer differs from the release manifest');
+  await dl.getByRole('button',{name:'Linux'}).click();await expect(dl).toContainText('DEB');
+  checks.push('C52.04 downloads in the Web: release installers listed by OS with size and SHA-256, MSI downloaded through the centre matches the release manifest');}
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');
  await page.getByRole('navigation',{name:'Разделы'}).getByRole('button',{name:/^Хосты/}).click();await page.locator('.asset-link').first().click();await expect(page.getByRole('dialog')).toBeVisible();
  const revoked=await context.request.delete(config.origin+'/api/v1/auth/session',{headers:{Origin:config.origin,'X-CSRF-Token':authSession.csrf_token}});if(!revoked.ok())throw new Error('session revocation failed');

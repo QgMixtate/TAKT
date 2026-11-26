@@ -301,6 +301,104 @@
     "center_fingerprint"
    ],
    "additionalProperties": false
+  },
+  "InstallerFile": {
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "name",
+    "component",
+    "os",
+    "arch",
+    "format",
+    "bytes",
+    "sha256"
+   ],
+   "properties": {
+    "name": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9][A-Za-z0-9._~+-]{0,159}$"
+    },
+    "component": {
+     "enum": [
+      "agent",
+      "collector",
+      "portable"
+     ]
+    },
+    "os": {
+     "enum": [
+      "linux",
+      "windows"
+     ]
+    },
+    "arch": {
+     "enum": [
+      "amd64",
+      "x64"
+     ]
+    },
+    "format": {
+     "enum": [
+      "deb",
+      "rpm",
+      "tar.gz",
+      "msi",
+      "zip",
+      "exe",
+      "bin"
+     ]
+    },
+    "bytes": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "sha256": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    }
+   }
+  },
+  "InstallerList": {
+   "description": "C52.04: файлы установки из подписанного выпуска, который работает в центре (GET /api/v1/installers)",
+   "type": "object",
+   "additionalProperties": false,
+   "required": [
+    "available",
+    "signature_verified",
+    "files"
+   ],
+   "properties": {
+    "available": {
+     "type": "boolean"
+    },
+    "reason": {
+     "enum": [
+      "RELEASE_NOT_INSTALLED",
+      "RELEASE_VERIFICATION_FAILED",
+      "NO_INSTALLERS_IN_RELEASE"
+     ]
+    },
+    "release_version": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 64
+    },
+    "manifest_sha256": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{64}$"
+    },
+    "signature_verified": {
+     "type": "boolean"
+    },
+    "files": {
+     "type": "array",
+     "maxItems": 64,
+     "items": {
+      "$ref": "#/$defs/InstallerFile"
+     }
+    }
+   }
   }
  }
 }

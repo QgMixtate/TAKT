@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"github.com/QgMixtate/surveyscan/v2/contracts"
+	"github.com/QgMixtate/surveyscan/v2/internal/installers"
 	access "github.com/QgMixtate/surveyscan/v2/internal/modules/access/port"
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/assets"
 	"github.com/QgMixtate/surveyscan/v2/internal/modules/audit"
@@ -30,6 +31,8 @@ type EventSink interface {
 type Registry struct {
 	inventoryProtocol *wire.InventoryDecoder
 	Machine           *MachineAPI
+	Installers        *installers.Catalog // C52.04: файлы установки выпуска (nil — выпуск не установлен или не прочитан)
+	InstallersError   string              // причина, по которой файлы установки недоступны (код для Web)
 	Pool              *pgxpool.Pool
 	Auth              access.Authorizer
 	Sources           sourceport.Reader

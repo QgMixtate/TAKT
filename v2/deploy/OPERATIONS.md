@@ -282,7 +282,29 @@ Match User scanprobe Address 10.170.108.2
    оборвалось после регистрации, повторить `enroll --grant-file <state>/registration-grant.json`.
 5. В списке кодов: «N из M» — установки (имена машин), «Отозвать» — новые установки по коду отклоняются, уже
    установленные работают. Создание и отзыв — в аудите (`source.registration_code_*`).
-Установщики MSI/deb/rpm и скачивание файлов из Web — следующие этапы C52 (Rust-агент и portable — C52.02–C52.03).
+
+## 16. Пакеты и скачивание из Web (C52.04) [CI: контейнеры 8 дистрибутивов, systemd на раннере, Windows Server 2022, браузер; на стенде — не проверено]
+
+1. **Скачать:** «Источники данных» → «Установка» → **«Скачать»** (администратор и оператор): файлы выпуска, который
+   работает в центре — агент (Rust) и collector: MSI и zip (Windows x64), deb, rpm, tar.gz (Linux amd64), portable
+   одним файлом. Центр отдаёт файл, только если его SHA-256 совпадает с подписанным manifest выпуска; каждое
+   скачивание — в аудите (`installer.downloaded`). Подпись manifest центр проверяет ключом
+   `SURVEYSCAN_V2_RELEASE_PUBLIC_KEY_FILE` (открытый Ed25519 PEM выпуска); без ключа в Web — «подпись проверяется при
+   установке выпуска». Файлы кладёт в выпуск `release.py build --installers .dist/packages` (`make packages`).
+2. **Linux (deb/rpm):** `sudo apt install ./surveyscan-agent_*.deb` (или `dnf install ./…rpm`), затем
+   `echo <код> | sudo surveyscan-agent-setup --collector https://<collector>:8443 --fingerprint <отпечаток>` — регистрация
+   и запуск службы. Массово (Ansible): `/etc/surveyscan-agent/register.env` (`COLLECTOR_URL`, `CENTER_FINGERPRINT`,
+   `REG_CODE`; пример — `/usr/share/surveyscan-agent/register.env.example`) до или после установки пакета — служба
+   `surveyscan-agent-register` регистрирует один раз и удаляет файл с кодом. Collector — так же
+   (`surveyscan-collector-setup --center https://<центр>`, `CENTER_URL`, `LISTEN`). Служба не запускается до регистрации;
+   обновление пакета сохраняет регистрацию; `apt purge` удаляет регистрацию, ключи и очередь.
+3. **Windows (MSI, тихо или GPO):** `msiexec /i surveyscan-agent_<версия>_windows_x64.msi /qn COLLECTOR_URL=https://<collector>:8443
+   CENTER_FINGERPRINT=<отпечаток> REG_CODE=<код>`; collector — `CENTER_URL=…` (и `LISTEN=0.0.0.0:8443`). Ошибка
+   регистрации (неверный отпечаток, код, нет связи) — установка откатывается; код в журнал msiexec не пишется.
+   Без `REG_CODE` служба ставится, но не запускается: позже `surveyscan-agent register …` и `surveyscan-agent start-service
+   --config "%ProgramData%\SurveyScan\agent\config.json"`. Удаление оставляет регистрацию в `%ProgramData%\SurveyScan`;
+   `msiexec /x … REMOVE_DATA=1` — удаляет и её. Файлы без подписи Authenticode (решение C52.05): при ручном запуске
+   SmartScreen может предупредить — сверьте SHA-256 из Web; для GPO предупреждения нет.
 
 ## Что ещё не проверено независимо (C33.04)
 Установка «с нуля» по этому документу оператором, не писавшим его; восстановление на стенде пользователя;
