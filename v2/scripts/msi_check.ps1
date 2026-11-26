@@ -78,7 +78,7 @@ foreach ($c in $components) {
   Set-Content -Path (Join-Path $data 'state\marker') -Value 'state' -Encoding ascii
   $before = (Get-Item $exe).LastWriteTimeUtc
   $r = Msi '/i' $msi2 @()
-  if ($r.Code -ne 0) { Fail "$name — обновление: $($r.Code) (журнал $($r.Log))" }
+  if ($r.Code -ne 0) { Tail $r; Fail "$name — обновление: $($r.Code) (журнал $($r.Log))" }
   $products = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq "SurveyScan $($c.Dir)" }
   if (@($products).Count -ne 1) { Fail "$name — после обновления продуктов: $(@($products).Count)" }
   if (-not (Select-String -Path $config -Pattern 'marker' -Quiet) -or -not (Test-Path (Join-Path $data 'state\marker'))) { Fail "$name — обновление потеряло регистрацию" }
@@ -88,7 +88,7 @@ foreach ($c in $components) {
   # 4. удаление — служба и программа удалены, данные остаются
   Stop-Service $c.Service -ErrorAction SilentlyContinue
   $r = Msi '/x' $msi2 @()
-  if ($r.Code -ne 0) { Fail "$name — удаление: $($r.Code)" }
+  if ($r.Code -ne 0) { Tail $r; Fail "$name — удаление: $($r.Code)" }
   if (Svc $c.Service) { Fail "$name — служба осталась после удаления" }
   if (Test-Path $exe) { Fail "$name — программа осталась после удаления" }
   if (-not (Test-Path $config)) { Fail "$name — удаление без REMOVE_DATA стёрло регистрацию" }
@@ -96,10 +96,10 @@ foreach ($c in $components) {
 
   # 5. повторная установка подхватывает регистрацию; удаление с REMOVE_DATA=1 — данные удалены
   $r = Msi '/i' $msi2 @()
-  if ($r.Code -ne 0) { Fail "$name — повторная установка: $($r.Code)" }
+  if ($r.Code -ne 0) { Tail $r; Fail "$name — повторная установка: $($r.Code)" }
   Stop-Service $c.Service -ErrorAction SilentlyContinue
   $r = Msi '/x' $msi2 @('REMOVE_DATA=1')
-  if ($r.Code -ne 0) { Fail "$name — удаление с REMOVE_DATA: $($r.Code)" }
+  if ($r.Code -ne 0) { Tail $r; Fail "$name — удаление с REMOVE_DATA: $($r.Code)" }
   if (Test-Path $data) { Fail "$name — REMOVE_DATA=1 оставил данные" }
   $checks.Add("$name MSI: uninstall removes service and program, keeps registration; REMOVE_DATA=1 removes registration, keys and queue")
 }

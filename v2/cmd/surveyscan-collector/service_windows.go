@@ -42,14 +42,16 @@ func runServiceCommand(args []string) (bool, error) {
 		fmt.Println("service_started")
 		return true, nil
 	}
-	relay, e := collector.Load(*path)
-	if e != nil {
-		return true, e
-	}
-	wireTargets(relay)
+	// конфигурация читается уже внутри службы: SCM сначала получает ответ диспетчера, иначе запуск (MSI, Start-Service)
+	// завершается ошибкой без причины; ошибка конфигурации — код завершения службы
 	return true, winservice.Run(*name, func(ctx context.Context) error {
-		if err := relay.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-			return err
+		relay, err := collector.Load(*path)
+		if err != nil {
+			return &winservice.StageError{Code: 1, Err: err}
+		}
+		wireTargets(relay)
+		if err = relay.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			return &winservice.StageError{Code: 2, Err: err}
 		}
 		return nil
 	})
