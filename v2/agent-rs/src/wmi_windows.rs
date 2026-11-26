@@ -165,7 +165,7 @@ pub fn protection() -> (Vec<Value>, Option<Failure>) {
         }
         Ok(Value::Object(row))
     });
-    rows.extend(antivirus);
+    rows.extend(crate::inventory12::unique_by_name(antivirus)); // №122: повторные регистрации одного антивируса
     let first = fw_err.or(def_err).or(av_err);
     if rows.is_empty() && first.is_none() {
         return (rows, Some(Failure::Data));

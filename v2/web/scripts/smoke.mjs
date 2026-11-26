@@ -157,9 +157,9 @@ try{
  checks.push('C52 install in the Web: registration code created once with install commands and centre fingerprint, then revoked');
  // C52.04: файл установки из выпуска центра — скачивается из Web, байты совпадают с SHA-256 из подписанного manifest
  if(config.installer){const dl=page.getByLabel('Файлы установки');await expect(dl).toContainText('выпуск '+config.installer.version);await expect(dl).toContainText('Collector');
-  const [download]=await Promise.all([page.waitForEvent('download'),dl.getByRole('link',{name:'Скачать'}).first().click()]);
+  const [download]=await Promise.all([page.waitForEvent('download'),dl.getByRole('button',{name:'Скачать'}).first().click()]);
   if(download.suggestedFilename()!==config.installer.name)throw new Error('download name '+download.suggestedFilename());
-  const sha=createHash('sha256').update(readFileSync(await download.path())).digest('hex');if(sha!==config.installer.sha256)throw new Error('downloaded installer differs from the release manifest');
+  const sha=createHash('sha256').update(readFileSync(await download.path())).digest('hex');if(sha!==config.installer.sha256)throw new Error('downloaded installer differs from the release manifest');await expect(dl.getByRole('status').first()).toContainText('SHA-256 совпал');
   await dl.getByRole('button',{name:'Linux'}).click();await expect(dl).toContainText('DEB');
   checks.push('C52.04 downloads in the Web: release installers listed by OS with size and SHA-256, MSI downloaded through the centre matches the release manifest');}
  const storage=await page.evaluate(()=>({local:localStorage.length,session:sessionStorage.length}));if(storage.local||storage.session)throw new Error('credentials in browser storage');checks.push('no tokens or credentials in web storage');

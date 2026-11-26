@@ -25,6 +25,14 @@ pub struct Offer {
 pub const MAXIMUM: Offer = Offer { canonical_bytes: 512 << 10, signed_bytes: 576 << 10, batch_bytes: 768 << 10, records: 100 };
 
 /// Пересечение предложений; каждое должно быть самосогласованным (canonical < signed < batch).
+/// ISSUES №122: SecurityCenter2 хранит несколько регистраций одного антивируса (одинаковый displayName, разный
+/// productState); ключ записи protection в центре — kind+provider+name, дубль отклоняет всё наблюдение.
+/// Оставляется первая запись каждого имени (порядок WMI).
+pub fn unique_by_name(rows: Vec<Value>) -> Vec<Value> {
+    let mut seen = std::collections::HashSet::new();
+    rows.into_iter().filter(|r| seen.insert(r.get("name").and_then(Value::as_str).unwrap_or_default().to_string())).collect()
+}
+
 pub fn negotiate(offers: &[Offer]) -> Result<Offer, String> {
     let mut out = MAXIMUM;
     for o in offers {
@@ -220,5 +228,22 @@ impl Client {
         let (p, _) = self.cached_profile12()?.ok_or("no cached inventory profile")?;
         let limits = negotiate(&[own, limits_of(&p["config"]["inventory12_limits"])?, MAXIMUM])?;
         Ok((p, limits))
+    }
+}
+
+#[cfg(test)]
+mod unique_tests {
+    use serde_json::json;
+    #[test]
+    fn duplicate_antivirus_registrations_keep_first() {
+        let rows = vec![
+            json!({"kind": "antivirus", "name": "Kaspersky", "state": "reported_product_state:266240"}),
+            json!({"kind": "antivirus", "name": "Kaspersky", "state": "reported_product_state:262144"}),
+            json!({"kind": "antivirus", "name": "Windows Defender"}),
+        ];
+        let out = super::unique_by_name(rows);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0]["state"], "reported_product_state:266240");
+        assert_eq!(out[1]["name"], "Windows Defender");
     }
 }

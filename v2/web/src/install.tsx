@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {api,ApiError,errorMessage,type InstallerList,type PortableScope,type RegistrationCode,type Source} from './api';
+import {api,ApiError,errorMessage,type InstallerFile,type InstallerList,type PortableScope,type RegistrationCode,type Source} from './api';
 
 // C52.01: установка на площадке — код регистрации (показывается один раз) и отпечаток центра; готовые команды для
 // collector (Linux/Windows) и агента (Linux/Windows, MSI для GPO). Файлы установки — из подписанного выпуска центра (C52.04).
@@ -61,8 +61,26 @@ const formatHint:Record<string,string>={msi:'MSI — тихая установк
 const reasonText:Record<string,string>={RELEASE_NOT_INSTALLED:'Центр запущен не из выпуска — файлов установки нет.',RELEASE_VERIFICATION_FAILED:'Файлы выпуска не прошли проверку подписи — раздача отключена, см. журнал центра.',NO_INSTALLERS_IN_RELEASE:'В выпуске нет файлов установки.'};
 const size=(n:number)=>n>=1048576?(n/1048576).toFixed(1).replace('.',',')+' МБ':Math.ceil(n/1024)+' КБ';
 
+// №118: прямой переход по ссылке Chrome не скачивает с сайта с самоподписанным сертификатом («проблема с сетью») —
+// файл берётся запросом страницы, SHA-256 сверяется в браузере с подписанным списком, затем сохраняется.
+async function sha256Hex(b:ArrayBuffer){if(!crypto?.subtle)return null;const d=await crypto.subtle.digest('SHA-256',b);return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,'0')).join('')}
+
 export function DownloadsPanel({onExpired}:{onExpired:()=>void}){
  const [list,setList]=useState<InstallerList|null>(null),[error,setError]=useState<unknown>(null),[os,setOs]=useState<'windows'|'linux'>('windows');
+ const [state,setState]=useState<Record<string,string>>({});
+ async function download(f:InstallerFile){
+  setState(s=>({...s,[f.name]:'скачивается…'}));
+  try{
+   const r=await fetch('/api/v1/installers/'+encodeURIComponent(f.name),{credentials:'same-origin',headers:{Accept:'application/octet-stream'}});
+   if(r.status===401){onExpired();return}
+   if(!r.ok){setState(s=>({...s,[f.name]:r.status===409?'файл на сервере не совпал с подписанным выпуском — раздача отклонена':'ошибка '+r.status}));return}
+   const body=await r.arrayBuffer(),sum=await sha256Hex(body);
+   if(sum!==null&&sum!==f.sha256){setState(s=>({...s,[f.name]:'SHA-256 не совпал — файл не сохранён'}));return}
+   const url=URL.createObjectURL(new Blob([body],{type:'application/octet-stream'})),a=document.createElement('a');
+   a.href=url;a.download=f.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+   setState(s=>({...s,[f.name]:sum===null?'сохранён (SHA-256 сверьте вручную)':'сохранён, SHA-256 совпал'}));
+  }catch{setState(s=>({...s,[f.name]:'нет связи с центром'}))}
+ }
  useEffect(()=>{api.installers().then(setList).catch(e=>{setError(e);if(e instanceof ApiError&&e.status===401)onExpired()})},[]);
  const files=(list?.files??[]).filter(f=>f.os===os);
  return <div className="downloads" aria-label="Файлы установки">
@@ -73,7 +91,7 @@ export function DownloadsPanel({onExpired}:{onExpired:()=>void}){
   {files.length?<div className="table-scroll"><table><thead><tr><th>Что</th><th>Формат</th><th>Размер</th><th>SHA-256</th><th><span className="sr-only">Скачать</span></th></tr></thead><tbody>{files.map(f=><tr key={f.name}>
    <td>{componentName[f.component]}</td><td>{f.format.toUpperCase()} <span className="muted">· {formatHint[f.format]}</span></td><td>{size(f.bytes)}</td>
    <td className="mono" title={f.sha256}>{f.sha256.slice(0,12)}…{f.sha256.slice(-6)}</td>
-   <td><a className="button small" href={'/api/v1/installers/'+encodeURIComponent(f.name)} download={f.name}>Скачать</a></td></tr>)}</tbody></table></div>:null}
+   <td><button className="button small" onClick={()=>void download(f)}>Скачать</button>{state[f.name]?<div className={state[f.name].startsWith('сохранён')?'state-ok':'muted'} role="status">{state[f.name]}</div>:null}</td></tr>)}</tbody></table></div>:null}
   {list?.available?<p className="muted">Файлы раздаёт центр из подписанного выпуска (не из интернета); перед отдачей SHA-256 сверяется с manifest выпуска. Windows-файлы без подписи Authenticode: при ручном запуске SmartScreen может предупредить — сверьте SHA-256.</p>:null}
  </div>;
 }

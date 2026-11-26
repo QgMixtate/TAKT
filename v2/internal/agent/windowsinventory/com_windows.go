@@ -242,7 +242,7 @@ func protectionRows() ([]map[string]any, error) {
 		}
 		return row, nil // ProductState is opaque; do not invent enabled/healthy bits.
 	})
-	rows = append(rows, antivirus...)
+	rows = append(rows, uniqueAntivirus(antivirus)...) // №122: повторные регистрации одного антивируса
 	if len(rows) > 0 {
 		if firewallErr != nil || defenderErr != nil || avErr != nil {
 			return rows, errors.Join(firewallErr, defenderErr, avErr) // Preserve classification, never export raw error.

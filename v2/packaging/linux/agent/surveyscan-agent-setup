@@ -49,8 +49,15 @@ fi
 [ -n "$URL" ] && [ -n "$FINGERPRINT" ] || usage
 if [ -z "$CODE" ]; then
   # с терминала — запрос; иначе — первая строка stdin (echo КОД | …-setup …)
-  [ ! -t 0 ] || printf 'Код регистрации из Web: ' >&2
-  read -r CODE || true
+  # №120: с терминала — скрытый ввод (как пароль)
+  if [ -t 0 ]; then
+    printf 'Код регистрации из Web (ввод не отображается): ' >&2
+    stty -echo 2>/dev/null; trap 'stty echo 2>/dev/null' EXIT INT TERM
+    read -r CODE || true
+    stty echo 2>/dev/null; trap - EXIT INT TERM; echo >&2
+  else
+    read -r CODE || true
+  fi
 fi
 [ -n "$CODE" ] || die "нет кода регистрации (--code, ввод, REG_CODE или SURVEYSCAN_REGISTRATION_CODE)"
 
