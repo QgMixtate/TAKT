@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Макет: мастер portable в стиле ТАКТ</title>
+<style>
+:root{--navy:#0F1A2B;--navy2:#17253b;--mag:#D6157A;--blue:#1E7BB0;--bg:#F3F5F9;--card:#fff;--line:#E2E6EE;--fg:#0F1A2B;--muted:#5B6678;--ok:#1F8A4C;--warn:#B7791F;--bad:#C53030}
+*{box-sizing:border-box}body{margin:0;font:13px/1.45 Inter,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+.app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+aside{background:var(--navy);color:#C9D2E0;padding:18px 14px;display:flex;flex-direction:column;gap:18px}
+.logo{display:flex;align-items:center;gap:10px;padding:0 6px}.mark{width:36px;height:36px;border:2px solid var(--mag);border-radius:9px;position:relative;display:grid;place-items:center;color:#fff;font:700 19px Manrope,Inter,sans-serif}.mark:after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--mag)}
+.logo b{display:block;color:#fff;font:700 17px Manrope,Inter,sans-serif;letter-spacing:.2px}.logo small{display:block;font-size:9.5px;letter-spacing:3px;color:#8D9AB0}
+.grp{font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:#6F7E96;padding:0 8px}
+.steps{display:flex;flex-direction:column;gap:2px}.st{display:flex;gap:10px;align-items:center;padding:8px;border-radius:8px;color:#C9D2E0}
+.st i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px Inter;border:1.5px solid #3A4A64;font-style:normal}
+.st.done i{background:var(--ok);border-color:var(--ok);color:#fff}.st.on{background:var(--navy2);color:#fff;box-shadow:inset 3px 0 0 var(--mag)}.st.on i{border-color:var(--mag);color:#fff}
+.st span small{display:block;color:#7D8BA2;font-size:11px}
+.media{margin-top:auto;background:var(--navy2);border-radius:10px;padding:10px 12px;font-size:11.5px;color:#9FACC0}.media b{color:#fff;font-weight:600}
+main{padding:18px 24px;display:flex;flex-direction:column;gap:14px}
+.top{display:flex;align-items:center;gap:12px}.top h1{margin:0;font:700 20px Manrope,Inter,sans-serif}.chip{padding:3px 9px;border-radius:999px;font-size:11.5px;background:#E8F4EC;color:var(--ok);font-weight:600}.chip.k{background:#EAF2F8;color:var(--blue)}
+.top .sp{flex:1}.btn{border-radius:8px;padding:8px 14px;font:600 13px Inter;border:1px solid var(--line);background:#fff;color:var(--fg)}.btn.p{background:var(--mag);border-color:var(--mag);color:#fff}
+.kpis{display:flex;background:#fff;border:1px solid var(--line);border-radius:10px}.kpi{flex:1;padding:10px 14px;border-right:1px solid var(--line)}.kpi:last-child{border:0}.kpi b{display:block;font:700 19px Manrope,Inter}.kpi span{color:var(--muted);font-size:11.5px}.kpi.sel{box-shadow:inset 0 -2px 0 var(--mag)}
+.grid{display:grid;grid-template-columns:1fr 320px;gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px}.card h3{margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font:700 14px Manrope,Inter;display:flex;gap:8px;align-items:center}.card h3 .sp{flex:1}
+.flt{display:flex;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line)}.flt input{flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit}.flt .f{border:1px solid var(--line);border-radius:7px;padding:6px 9px;color:var(--muted)}
+table{width:100%;border-collapse:collapse}th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:left;padding:7px 10px;background:#FAFBFC;border-bottom:1px solid var(--line)}td{padding:0 10px;height:33px;border-bottom:1px solid #EEF1F5;white-space:nowrap}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}.cb{width:14px;height:14px;border:1.5px solid #AEB7C6;border-radius:3px;display:inline-block;vertical-align:middle}.cb.on{background:var(--mag);border-color:var(--mag)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.g{background:var(--ok)}.y{background:var(--warn)}.r{background:var(--bad)}.n{background:#AEB7C6}
+.bar{height:6px;background:#E8ECF2;border-radius:3px;overflow:hidden;width:90px;display:inline-block;vertical-align:middle}.bar i{display:block;height:100%;background:var(--blue)}
+.side{display:flex;flex-direction:column;gap:14px}.pad{padding:12px 14px}.row{display:flex;justify-content:space-between;padding:4px 0}.row span{color:var(--muted)}
+.big{height:8px;background:#E8ECF2;border-radius:4px;overflow:hidden;margin:6px 0 10px}.big i{display:block;height:100%;width:62%;background:linear-gradient(90deg,var(--blue),var(--mag))}
+.log{background:var(--navy);color:#C9D2E0;border-radius:0 0 10px 10px;padding:10px 12px;font:11.5px/1.6 ui-monospace,Consolas,monospace;height:150px;overflow:hidden}.log b{color:#7FD1A1;font-weight:400}.log em{color:#F2B84B;font-style:normal}
+.note{font-size:11.5px;color:var(--muted)}
+</style><style>
+.form{display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;padding:14px}.form .w{grid-column:1/-1}
+.form label{display:block;font-size:11.5px;color:var(--muted);margin-bottom:4px;font-weight:600}
+.in{border:1px solid var(--line);border-radius:7px;padding:7px 10px;font:inherit;background:#fff;min-height:33px}.in.m{font-family:ui-monospace,Consolas,monospace;font-size:12px}
+.in.area{min-height:84px;white-space:pre-line}.ph{color:#9AA4B5;font-style:italic}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;background:#EEF1F5;color:var(--muted)}.pill.g{background:#E8F4EC;color:var(--ok)}.pill.b{background:#EAF2F8;color:var(--blue)}.pill.r{background:#FCEBEB;color:var(--bad)}.pill.m{background:#FBE7F1;color:var(--mag)}
+.acts{display:flex;gap:8px;padding:0 14px 14px}.drag{color:#AEB7C6;cursor:grab}
+.box{border:1px dashed #C9D1DD;border-radius:8px;padding:10px 12px;background:#FAFBFC}
+.big2{font:700 28px Manrope,Inter}.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px}.sum div{background:#FAFBFC;border:1px solid var(--line);border-radius:8px;padding:10px 12px}.sum span{display:block;color:var(--muted);font-size:11.5px}
+</style></head><body><div class="app"><aside><div class="logo"><div class="mark">т</div><div><b>такт</b><small>PORTABLE</small></div></div><div class="grp">Аудит площадки</div><div class="steps"><div class="st on"><i>1</i><span>Подготовка<small>заполните блок из Web</small></span></div><div class="st"><i>2</i><span>Обследование сети<small>ещё не начато</small></span></div><div class="st"><i>3</i><span>Профили учёток<small>ещё не начато</small></span></div><div class="st"><i>4</i><span>Узлы и сбор<small>ещё не начато</small></span></div><div class="st"><i>5</i><span>Пакет<small>ещё не начато</small></span></div></div>
+ <div class="media"><b>Носитель E:\audit-msk-01</b><br>Свободно 14,2 ГБ · пакет ~38 МБ<br>Только 127.0.0.1 · пароли не пишутся на диск</div></aside><main><div class="top"><h1>Подготовка носителя</h1><span class="chip k">Шаг 1 из 5</span><span class="sp"></span><button class="btn p">Подготовить носитель</button></div>
+<div class="grid"><div class="card"><h3>Блок из центра</h3>
+<div class="form"><div class="w"><label>Строка подготовки из Web: «Portable-аудит» → «Новый носитель» (площадка, сетевая область, ключ шифрования центра)</label>
+<div class="in m area">takt-portable:v1:eyJ0ZW5hbnQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMDEiLCJzaXRlIjoiYzRm…</div></div>
+<div><label>Площадка (из строки)</label><div class="in">Москва, ЦОД-1</div></div><div><label>Сетевая область</label><div class="in">msk-dc1 · 10.20.0.0/16</div></div>
+<div><label>Ключ шифрования центра</label><div class="in"><span class="pill g">получен</span> <span class="mono">X25519 · 8f3a…c21d</span></div></div><div><label>Каталог аудита на носителе</label><div class="in m">E:\audit-msk-01</div></div></div></div>
+<div class="side"><div class="card"><h3>Что произойдёт</h3><div class="pad note" style="line-height:1.7">1. На носителе создаётся ключ подписи источника — он не покидает носитель.<br>2. Появится блок для регистрации источника в центре.<br>3. Пакет будет зашифрован ключом центра: прочитать его сможет только центр.</div></div>
+<div class="card pad"><b>После подготовки</b><p class="note" style="margin:6px 0 10px">Блок регистрации — скопировать в Web одним нажатием.</p><div class="box mono" style="font-size:11px;color:var(--muted)">появится здесь</div></div></div></div></main></div></body></html>
