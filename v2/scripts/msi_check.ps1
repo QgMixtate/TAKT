@@ -26,17 +26,17 @@ $components = @(
 )
 foreach ($c in $components) {
   $name = "surveyscan-$($c.Kind)"
-  # не -Filter: он сопоставляет и короткие имена 8.3 (маска collector совпадала с MSI агента)
-  $v1 = @(Get-ChildItem $V1 | Where-Object { $_.Name -like "${name}_*_windows_x64.msi" }).FullName
-  $v2 = @(Get-ChildItem $V2 | Where-Object { $_.Name -like "${name}_*_windows_x64.msi" }).FullName
-  if (@($v1).Count -ne 1 -or @($v2).Count -ne 1) { Fail "$name — MSI не найден однозначно: $v1 / $v2" }
+  # имена переменных в PowerShell без учёта регистра: $msi1/$msi2, не $v1 (затирал бы параметр -V1)
+  $msi1 = @(Get-ChildItem -LiteralPath $V1 | Where-Object { $_.Name -like "${name}_*_windows_x64.msi" }).FullName
+  $msi2 = @(Get-ChildItem -LiteralPath $V2 | Where-Object { $_.Name -like "${name}_*_windows_x64.msi" }).FullName
+  if (@($msi1).Count -ne 1 -or @($msi2).Count -ne 1) { Fail "$name — MSI не найден однозначно: $msi1 / $msi2" }
   $exe = Join-Path $env:ProgramFiles "SurveyScan\$($c.Dir)\$name.exe"
   $data = Join-Path $env:ProgramData "SurveyScan\$($c.Kind)"
   $config = Join-Path $data $c.Config
 
   # 1. ошибка регистрации (нет связи с адресом) — установка откатывается, код не попадает в журнал
   $secret = 'MSI' + (Get-Random -Minimum 100000000 -Maximum 999999999) + 'CODE'
-  $r = Msi '/i' $v1 ($c.Bad + "REG_CODE=$secret")
+  $r = Msi '/i' $msi1 ($c.Bad + "REG_CODE=$secret")
   Write-Host "${name}: установка с недоступным адресом — код $($r.Code)"
   if ($r.Code -eq 0) { Fail "$name — установка с недоступным адресом прошла" }
   # 1603 — ошибка установки с откатом; другое (1619 и т. п.) — пакет не открылся, проверка отката недействительна
@@ -52,7 +52,7 @@ foreach ($c in $components) {
   $checks.Add("$name MSI: failed registration rolls back (exit $($r.Code)): no service, no program files; REG_CODE hidden in the verbose msiexec log")
 
   # 2. тихая установка без кода — служба установлена (LocalSystem, автозапуск), не запущена
-  $r = Msi '/i' $v1 @()
+  $r = Msi '/i' $msi1 @()
   if ($r.Code -ne 0) { Tail $r; Fail "$name — установка без кода: $($r.Code)" }
   $s = Svc $c.Service
   if (-not $s) {
@@ -72,7 +72,7 @@ foreach ($c in $components) {
   Set-Content -Path $config -Value '{"registered":"marker"}' -Encoding ascii
   Set-Content -Path (Join-Path $data 'state\marker') -Value 'state' -Encoding ascii
   $before = (Get-Item $exe).LastWriteTimeUtc
-  $r = Msi '/i' $v2 @()
+  $r = Msi '/i' $msi2 @()
   if ($r.Code -ne 0) { Fail "$name — обновление: $($r.Code) (журнал $($r.Log))" }
   $products = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -eq "SurveyScan $($c.Dir)" }
   if (@($products).Count -ne 1) { Fail "$name — после обновления продуктов: $(@($products).Count)" }
@@ -82,7 +82,7 @@ foreach ($c in $components) {
 
   # 4. удаление — служба и программа удалены, данные остаются
   Stop-Service $c.Service -ErrorAction SilentlyContinue
-  $r = Msi '/x' $v2 @()
+  $r = Msi '/x' $msi2 @()
   if ($r.Code -ne 0) { Fail "$name — удаление: $($r.Code)" }
   if (Svc $c.Service) { Fail "$name — служба осталась после удаления" }
   if (Test-Path $exe) { Fail "$name — программа осталась после удаления" }
@@ -90,10 +90,10 @@ foreach ($c in $components) {
   if ($c.Kind -eq 'collector' -and (Get-NetFirewallRule -DisplayName 'SurveyScan Collector' -ErrorAction SilentlyContinue)) { Fail 'правило брандмауэра осталось' }
 
   # 5. повторная установка подхватывает регистрацию; удаление с REMOVE_DATA=1 — данные удалены
-  $r = Msi '/i' $v2 @()
+  $r = Msi '/i' $msi2 @()
   if ($r.Code -ne 0) { Fail "$name — повторная установка: $($r.Code)" }
   Stop-Service $c.Service -ErrorAction SilentlyContinue
-  $r = Msi '/x' $v2 @('REMOVE_DATA=1')
+  $r = Msi '/x' $msi2 @('REMOVE_DATA=1')
   if ($r.Code -ne 0) { Fail "$name — удаление с REMOVE_DATA: $($r.Code)" }
   if (Test-Path $data) { Fail "$name — REMOVE_DATA=1 оставил данные" }
   $checks.Add("$name MSI: uninstall removes service and program, keeps registration; REMOVE_DATA=1 removes registration, keys and queue")
