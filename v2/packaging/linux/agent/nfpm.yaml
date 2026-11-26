@@ -1,0 +1,54 @@
+# C52.04: пакет surveyscan-agent (deb, rpm). Сборка: scripts/packages.py подставляет ${VERSION}, ${ARCH}, ${BINARY}, ${PACKAGING}.
+name: surveyscan-agent
+version: ${VERSION}
+version_schema: none
+release: "1"
+arch: ${ARCH}
+platform: linux
+maintainer: "SurveyScan / ТАКТ.Каталог"
+description: "SurveyScan agent (Rust): inventory of this host, delivered to the site collector over mTLS (C03/C15)"
+vendor: "ТАКТ"
+homepage: "https://github.com/QgMixtate/TAKT"
+license: "Proprietary"
+section: admin
+priority: optional
+contents:
+  - src: ${BINARY}
+    dst: /usr/bin/surveyscan-agent
+    file_info: {mode: 0755}
+  - src: ${PACKAGING}/agent/surveyscan-agent-setup
+    dst: /usr/sbin/surveyscan-agent-setup
+    file_info: {mode: 0755}
+  - src: ${PACKAGING}/agent/surveyscan-agent.service
+    dst: /usr/lib/systemd/system/surveyscan-agent.service
+    file_info: {mode: 0644}
+  - src: ${PACKAGING}/agent/surveyscan-agent-register.service
+    dst: /usr/lib/systemd/system/surveyscan-agent-register.service
+    file_info: {mode: 0644}
+  - src: ${PACKAGING}/agent/register.env.example
+    dst: /usr/share/surveyscan-agent/register.env.example
+    file_info: {mode: 0644}
+  - dst: /etc/surveyscan-agent
+    type: dir
+    file_info: {mode: 0700}
+  - dst: /var/lib/surveyscan-agent
+    type: dir
+    file_info: {mode: 0700}
+scripts:
+  postinstall: ${PACKAGING}/agent/postinstall.sh
+  preremove: ${PACKAGING}/agent/preremove.sh
+  postremove: ${PACKAGING}/agent/postremove.sh
+deb:
+  fields:
+    Bugs: "https://github.com/QgMixtate/TAKT/issues"
+rpm:
+  group: System Environment/Daemons
+  summary: "surveyscan-agent"
+  compression: xz
+overrides:
+  rpm:
+    depends:
+      - shadow-utils
+  deb:
+    depends:
+      - passwd

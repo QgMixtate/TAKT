@@ -100,6 +100,22 @@ jobs:
         run: .contract-tools/bin/python scripts/agent_smoke.py
       - name: Rust agent installs by registration code through a real collector; Go agent runs on its state (C52.02)
         run: .contract-tools/bin/python scripts/rust_agent_smoke.py
+      - name: Linux packages deb/rpm/tar.gz of the agent (Rust) and collector (Go) (C52.04)
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.1
+          make packages
+      - name: Packages install, upgrade keeping registration, remove/purge in Debian, Ubuntu, Rocky, Alma, Alt containers (C52-05)
+        run: python3 scripts/package_smoke.py
+      - name: Packages under real systemd on the runner — register.env, agent heartbeat, upgrade, collector setup, purge (C52-05)
+        env:
+          SURVEYSCAN_PACKAGE_HOST: "1"
+        run: .contract-tools/bin/python scripts/package_service_smoke.py
+      - name: Keep Linux packages as a CI artifact (stand tests download them from Actions)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages-${{ github.sha }}
+          path: v2/.dist/packages
+          retention-days: 14
       - name: Real daemon SIGKILL, offline spools and reconnect
         run: .contract-tools/bin/python scripts/recovery_smoke.py
       - name: Real ENOSPC in disposable tmpfs

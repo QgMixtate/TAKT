@@ -1,0 +1,17 @@
+# C52.04: массовая установка (Ansible и т. п.) — регистрация по /etc/surveyscan-collector/register.env один раз;
+# после успеха файл с кодом удаляется, служба collector запускается.
+[Unit]
+Description=SurveyScan collector registration by code (C52)
+ConditionPathExists=/etc/surveyscan-collector/register.env
+ConditionPathExists=!/etc/surveyscan-collector/collector.json
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/surveyscan-collector-setup --env /etc/surveyscan-collector/register.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

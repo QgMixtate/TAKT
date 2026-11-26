@@ -1,0 +1,54 @@
+# C52.04: пакет surveyscan-collector (deb, rpm). Сборка: scripts/packages.py подставляет ${VERSION}, ${ARCH}, ${BINARY}, ${PACKAGING}.
+name: surveyscan-collector
+version: ${VERSION}
+version_schema: none
+release: "1"
+arch: ${ARCH}
+platform: linux
+maintainer: "SurveyScan / ТАКТ.Каталог"
+description: "SurveyScan site collector (Go): receives agents, agentless SSH/WinRM/SNMP collection, relays to the centre"
+vendor: "ТАКТ"
+homepage: "https://github.com/QgMixtate/TAKT"
+license: "Proprietary"
+section: admin
+priority: optional
+contents:
+  - src: ${BINARY}
+    dst: /usr/bin/surveyscan-collector
+    file_info: {mode: 0755}
+  - src: ${PACKAGING}/collector/surveyscan-collector-setup
+    dst: /usr/sbin/surveyscan-collector-setup
+    file_info: {mode: 0755}
+  - src: ${PACKAGING}/collector/surveyscan-collector.service
+    dst: /usr/lib/systemd/system/surveyscan-collector.service
+    file_info: {mode: 0644}
+  - src: ${PACKAGING}/collector/surveyscan-collector-register.service
+    dst: /usr/lib/systemd/system/surveyscan-collector-register.service
+    file_info: {mode: 0644}
+  - src: ${PACKAGING}/collector/register.env.example
+    dst: /usr/share/surveyscan-collector/register.env.example
+    file_info: {mode: 0644}
+  - dst: /etc/surveyscan-collector
+    type: dir
+    file_info: {mode: 0700}
+  - dst: /var/lib/surveyscan-collector
+    type: dir
+    file_info: {mode: 0700}
+scripts:
+  postinstall: ${PACKAGING}/collector/postinstall.sh
+  preremove: ${PACKAGING}/collector/preremove.sh
+  postremove: ${PACKAGING}/collector/postremove.sh
+deb:
+  fields:
+    Bugs: "https://github.com/QgMixtate/TAKT/issues"
+rpm:
+  group: System Environment/Daemons
+  summary: "surveyscan-collector"
+  compression: xz
+overrides:
+  rpm:
+    depends:
+      - shadow-utils
+  deb:
+    depends:
+      - passwd

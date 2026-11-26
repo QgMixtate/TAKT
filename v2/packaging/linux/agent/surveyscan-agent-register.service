@@ -1,0 +1,17 @@
+# C52.04: массовая установка (Ansible и т. п.) — регистрация по /etc/surveyscan-agent/register.env один раз;
+# после успеха файл с кодом удаляется, служба агента запускается.
+[Unit]
+Description=SurveyScan agent registration by code (C52)
+ConditionPathExists=/etc/surveyscan-agent/register.env
+ConditionPathExists=!/etc/surveyscan-agent/config.json
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/surveyscan-agent-setup --env /etc/surveyscan-agent/register.env
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

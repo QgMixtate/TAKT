@@ -1,0 +1,43 @@
+# C52.04: служба collector из пакета deb/rpm. Запускается только после регистрации (есть collector.json):
+# surveyscan-collector-setup или /etc/surveyscan-collector/register.env → surveyscan-collector-register.service.
+[Unit]
+Description=SurveyScan collector (C52)
+ConditionPathExists=/etc/surveyscan-collector/collector.json
+Wants=network-online.target
+After=network-online.target surveyscan-collector-register.service
+StartLimitIntervalSec=120
+StartLimitBurst=8
+
+[Service]
+Type=simple
+User=surveyscan-collector
+Group=surveyscan-collector
+StateDirectory=surveyscan-collector
+StateDirectoryMode=0700
+ExecStartPre=+/bin/chown -R surveyscan-collector:surveyscan-collector /etc/surveyscan-collector /var/lib/surveyscan-collector
+ExecStart=/usr/bin/surveyscan-collector run --config /etc/surveyscan-collector/collector.json
+# продление сертификата перезаписывает collector.pem/collector.key
+ReadWritePaths=/etc/surveyscan-collector
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=yes
+# C51/D-13: ICMP-пробы обследования сети — только сырые сокеты ICMP
+AmbientCapabilities=CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_RAW
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

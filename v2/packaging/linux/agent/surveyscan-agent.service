@@ -1,0 +1,43 @@
+# C52.04: служба агента из пакета deb/rpm. Запускается только после регистрации (есть config.json):
+# surveyscan-agent-setup или /etc/surveyscan-agent/register.env → surveyscan-agent-register.service.
+[Unit]
+Description=SurveyScan agent (Rust, C52)
+ConditionPathExists=/etc/surveyscan-agent/config.json
+Wants=network-online.target
+After=network-online.target surveyscan-agent-register.service
+StartLimitIntervalSec=120
+StartLimitBurst=8
+
+[Service]
+Type=simple
+User=surveyscan-agent
+Group=surveyscan-agent
+StateDirectory=surveyscan-agent
+StateDirectoryMode=0700
+# после регистрации (root): состояние — владельцу службы, конфигурация — только чтение группе службы; «+» — с правами
+# root. Без LoadCredential: его нет в systemd 239 (RHEL/Rocky 8).
+ExecStartPre=+/bin/chown -R surveyscan-agent:surveyscan-agent /var/lib/surveyscan-agent
+ExecStartPre=+/bin/chown root:surveyscan-agent /etc/surveyscan-agent /etc/surveyscan-agent/config.json
+ExecStartPre=+/bin/chmod 0750 /etc/surveyscan-agent
+ExecStartPre=+/bin/chmod 0640 /etc/surveyscan-agent/config.json
+ExecStart=/usr/bin/surveyscan-agent run --config /etc/surveyscan-agent/config.json
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -6,7 +6,7 @@ DIRTY := $(shell test -z "$$(git status --porcelain --untracked-files=normal)" &
 MODULE := github.com/QgMixtate/surveyscan/v2
 BUILD_FLAGS = -X $(MODULE)/internal/platform/buildinfo.Version=$(VERSION) -X $(MODULE)/internal/platform/buildinfo.Revision=$(REVISION) -X $(MODULE)/internal/platform/buildinfo.Dirty=$(DIRTY)
 
-.PHONY: build rust test vet contracts integration dev-up dev-down fmt-check verify
+.PHONY: build rust packages test vet contracts integration dev-up dev-down fmt-check verify
 build:
 	mkdir -p .dist/contracts
 	$(GO) version
@@ -29,6 +29,9 @@ rust:
 	cp agent-rs/target/x86_64-unknown-linux-musl/release/surveyscan-agent agent-rs/target/x86_64-unknown-linux-musl/release/surveyscan-portable .dist/rust/linux/
 	cp agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-agent.exe agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-portable.exe .dist/rust/windows/
 	cd .dist/rust && sha256sum linux/* windows/* > SHA256SUMS
+# Пакеты Linux (C52.04): deb, rpm, tar.gz агента (Rust) и collector (Go) в .dist/packages; нужны make build, make rust и nfpm
+packages:
+	python3 scripts/packages.py --version $(VERSION)
 
 test:
 	$(GO) test -mod=readonly -count=1 -p 2 ./...

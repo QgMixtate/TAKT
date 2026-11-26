@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Макет: мастер portable в стиле ТАКТ</title>
+<style>
+:root{--navy:#0F1A2B;--navy2:#17253b;--mag:#D6157A;--blue:#1E7BB0;--bg:#F3F5F9;--card:#fff;--line:#E2E6EE;--fg:#0F1A2B;--muted:#5B6678;--ok:#1F8A4C;--warn:#B7791F;--bad:#C53030}
+*{box-sizing:border-box}body{margin:0;font:13px/1.45 Inter,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+.app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
+aside{background:var(--navy);color:#C9D2E0;padding:18px 14px;display:flex;flex-direction:column;gap:18px}
+.logo{display:flex;align-items:center;gap:10px;padding:0 6px}.mark{width:36px;height:36px;border:2px solid var(--mag);border-radius:9px;position:relative;display:grid;place-items:center;color:#fff;font:700 19px Manrope,Inter,sans-serif}.mark:after{content:"";position:absolute;top:5px;right:5px;width:7px;height:7px;border-radius:50%;background:var(--mag)}
+.logo b{display:block;color:#fff;font:700 17px Manrope,Inter,sans-serif;letter-spacing:.2px}.logo small{display:block;font-size:9.5px;letter-spacing:3px;color:#8D9AB0}
+.grp{font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:#6F7E96;padding:0 8px}
+.steps{display:flex;flex-direction:column;gap:2px}.st{display:flex;gap:10px;align-items:center;padding:8px;border-radius:8px;color:#C9D2E0}
+.st i{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px Inter;border:1.5px solid #3A4A64;font-style:normal}
+.st.done i{background:var(--ok);border-color:var(--ok);color:#fff}.st.on{background:var(--navy2);color:#fff;box-shadow:inset 3px 0 0 var(--mag)}.st.on i{border-color:var(--mag);color:#fff}
+.st span small{display:block;color:#7D8BA2;font-size:11px}
+.media{margin-top:auto;background:var(--navy2);border-radius:10px;padding:10px 12px;font-size:11.5px;color:#9FACC0}.media b{color:#fff;font-weight:600}
+main{padding:18px 24px;display:flex;flex-direction:column;gap:14px}
+.top{display:flex;align-items:center;gap:12px}.top h1{margin:0;font:700 20px Manrope,Inter,sans-serif}.chip{padding:3px 9px;border-radius:999px;font-size:11.5px;background:#E8F4EC;color:var(--ok);font-weight:600}.chip.k{background:#EAF2F8;color:var(--blue)}
+.top .sp{flex:1}.btn{border-radius:8px;padding:8px 14px;font:600 13px Inter;border:1px solid var(--line);background:#fff;color:var(--fg)}.btn.p{background:var(--mag);border-color:var(--mag);color:#fff}
+.kpis{display:flex;background:#fff;border:1px solid var(--line);border-radius:10px}.kpi{flex:1;padding:10px 14px;border-right:1px solid var(--line)}.kpi:last-child{border:0}.kpi b{display:block;font:700 19px Manrope,Inter}.kpi span{color:var(--muted);font-size:11.5px}.kpi.sel{box-shadow:inset 0 -2px 0 var(--mag)}
+.grid{display:grid;grid-template-columns:1fr 320px;gap:14px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px}.card h3{margin:0;padding:11px 14px;border-bottom:1px solid var(--line);font:700 14px Manrope,Inter;display:flex;gap:8px;align-items:center}.card h3 .sp{flex:1}
+.flt{display:flex;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line)}.flt input{flex:1;border:1px solid var(--line);border-radius:7px;padding:6px 9px;font:inherit}.flt .f{border:1px solid var(--line);border-radius:7px;padding:6px 9px;color:var(--muted)}
+table{width:100%;border-collapse:collapse}th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);text-align:left;padding:7px 10px;background:#FAFBFC;border-bottom:1px solid var(--line)}td{padding:0 10px;height:33px;border-bottom:1px solid #EEF1F5;white-space:nowrap}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px}.cb{width:14px;height:14px;border:1.5px solid #AEB7C6;border-radius:3px;display:inline-block;vertical-align:middle}.cb.on{background:var(--mag);border-color:var(--mag)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}.g{background:var(--ok)}.y{background:var(--warn)}.r{background:var(--bad)}.n{background:#AEB7C6}
+.bar{height:6px;background:#E8ECF2;border-radius:3px;overflow:hidden;width:90px;display:inline-block;vertical-align:middle}.bar i{display:block;height:100%;background:var(--blue)}
+.side{display:flex;flex-direction:column;gap:14px}.pad{padding:12px 14px}.row{display:flex;justify-content:space-between;padding:4px 0}.row span{color:var(--muted)}
+.big{height:8px;background:#E8ECF2;border-radius:4px;overflow:hidden;margin:6px 0 10px}.big i{display:block;height:100%;width:62%;background:linear-gradient(90deg,var(--blue),var(--mag))}
+.log{background:var(--navy);color:#C9D2E0;border-radius:0 0 10px 10px;padding:10px 12px;font:11.5px/1.6 ui-monospace,Consolas,monospace;height:150px;overflow:hidden}.log b{color:#7FD1A1;font-weight:400}.log em{color:#F2B84B;font-style:normal}
+.note{font-size:11.5px;color:var(--muted)}
+</style></head><body><div class="app">
+<aside>
+ <div class="logo"><div class="mark">т</div><div><b>такт</b><small>PORTABLE</small></div></div>
+ <div class="grp">Аудит площадки</div>
+ <div class="steps">
+  <div class="st done"><i>✓</i><span>Подготовка<small>источник и ключ центра</small></span></div>
+  <div class="st done"><i>✓</i><span>Обследование сети<small>3 подсети · 412 узлов</small></span></div>
+  <div class="st done"><i>✓</i><span>Профили учёток<small>3 профиля · 4 правила</small></span></div>
+  <div class="st on"><i>4</i><span>Узлы и сбор<small>идёт сбор 255 / 412</small></span></div>
+  <div class="st"><i>5</i><span>Пакет<small>шифрование ключом центра</small></span></div>
+ </div>
+ <div class="media"><b>Носитель E:\audit-msk-01</b><br>Свободно 14,2 ГБ · пакет ~38 МБ<br>Только 127.0.0.1 · пароли не пишутся на диск</div>
+</aside>
+<main>
+ <div class="top"><h1>Узлы и сбор</h1><span class="chip k">Площадка «Москва, ЦОД-1»</span><span class="chip">Шифрование включено</span><span class="sp"></span><button class="btn">Пауза</button><button class="btn p">Собрать выбранные</button></div>
+ <div class="kpis"><div class="kpi sel"><b>412</b><span>найдено</span></div><div class="kpi"><b>318</b><span>с подходящим профилем</span></div><div class="kpi"><b>255</b><span>собрано</span></div><div class="kpi"><b style="color:var(--bad)">11</b><span>ошибка входа</span></div><div class="kpi"><b style="color:#7D8BA2">94</b><span>доступа нет</span></div></div>
+ <div class="grid">
+  <div class="card"><h3>Узлы<span class="sp"></span><span class="note">выбрано 318 из 412</span></h3>
+   <div class="flt"><input value="10.20.1."><span class="f">Вид: все ▾</span><span class="f">Профиль: все ▾</span><span class="f">Состояние: все ▾</span></div>
+   <table><tr><th></th><th>Адрес</th><th>Имя</th><th>Вид</th><th>Профиль</th><th>Состояние</th><th>Разделы</th></tr>
+   <tr><td><span class="cb on"></span></td><td class="mono">10.20.1.11</td><td>dc-msk-01</td><td>Windows</td><td>win-domain</td><td><span class="dot g"></span>собрано</td><td>12/12</td></tr>
+   <tr><td><span class="cb on"></span></td><td class="mono">10.20.1.14</td><td>app-crm-02</td><td>Linux/SSH</td><td>linux-ro</td><td><span class="dot g"></span>собрано</td><td>12/12</td></tr>
+   <tr><td><span class="cb on"></span></td><td class="mono">10.20.1.15</td><td>app-crm-03</td><td>Linux/SSH</td><td>linux-ro</td><td><span class="dot y"></span>сбор…</td><td><span class="bar"><i style="width:58%"></i></span></td></tr>
+   <tr><td><span class="cb on"></span></td><td class="mono">10.20.1.21</td><td>sql-01</td><td>Windows</td><td>win-domain</td><td><span class="dot g"></span>собрано</td><td>11/12 <span class="note">без прав: журналы</span></td></tr>
+   <tr><td><span class="cb on"></span></td><td class="mono">10.20.1.40</td><td>—</td><td>Linux/SSH</td><td>linux-ro</td><td><span class="dot r"></span>вход отклонён</td><td>—</td></tr>
+   <tr><td><span class="cb"></span></td><td class="mono">10.20.1.52</td><td>—</td><td>Сетевое</td><td class="note">нет правила</td><td><span class="dot n"></span>доступа нет</td><td>—</td></tr>
+   <tr><td><span class="cb on"></span></td><td class="mono">10.20.1.63</td><td>ws-buh-07</td><td>Windows</td><td>win-local</td><td><span class="dot n"></span>в очереди</td><td>—</td></tr>
+   <tr><td><span class="cb on"></span></td><td class="mono">10.20.1.64</td><td>ws-buh-08</td><td>Windows</td><td>win-local</td><td><span class="dot n"></span>в очереди</td><td>—</td></tr>
+   </table></div>
+  <div class="side">
+   <div class="card"><h3>Ход сбора</h3><div class="pad"><div class="big"><i></i></div>
+    <div class="row"><span>Собрано</span><b>255 из 412</b></div><div class="row"><span>Параллельно</span><b>16 узлов</b></div><div class="row"><span>Осталось</span><b>~6 мин</b></div><div class="row"><span>Этот ПК аудитора</span><b style="color:var(--ok)">собран</b></div></div>
+    <div class="log"><b>[255/412]</b> 10.20.1.21 sql-01 — 11 разделов<br><em>[254/412]</em> 10.20.1.40 — вход отклонён (linux-ro)<br><b>[253/412]</b> 10.20.1.14 app-crm-02 — 12 разделов<br><b>[252/412]</b> 10.20.1.11 dc-msk-01 — 12 разделов<br>…</div></div>
+   <div class="card pad"><b>Пароли</b><p class="note" style="margin:6px 0 0">Вводятся один раз на профиль и держатся только в памяти мастера. Перебора учёток нет: узлу — первый подходящий профиль по правилам.</p></div>
+  </div>
+ </div>
+</main></div></body></html>

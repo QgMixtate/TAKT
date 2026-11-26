@@ -1,0 +1,71 @@
+#!/bin/sh
+# C52.04: регистрация surveyscan-collector по коду из Web и запуск службы (пакет deb/rpm).
+#   surveyscan-collector-setup --center https://адрес:порт --fingerprint ОТПЕЧАТОК [--code КОД] [--listen 0.0.0.0:8443]
+#   surveyscan-collector-setup --env /etc/surveyscan-collector/register.env   (массовая установка; файл удаляется после успеха)
+# Код можно передать переменной SURVEYSCAN_REGISTRATION_CODE или ввести по запросу — так он не виден в списке процессов.
+set -eu
+NAME=surveyscan-collector
+ETC=/etc/$NAME
+STATE=/var/lib/$NAME
+CONFIG=$ETC/collector.json
+URL= FINGERPRINT= CODE=${SURVEYSCAN_REGISTRATION_CODE:-} ENVFILE= LISTEN=0.0.0.0:8443
+
+die() { echo "$NAME-setup: $*" >&2; exit 1; }
+usage() { sed -n '3,4p' "$0" | sed 's/^# //' >&2; exit 2; }
+
+# файл KEY=VALUE читается построчно, без выполнения (не source)
+read_env() {
+  [ -r "$1" ] || die "нет файла $1"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in ''|'#'*) continue ;; esac
+    key=${line%%=*}; value=${line#*=}
+    value=${value#\"}; value=${value%\"}; value=${value#\'}; value=${value%\'}
+    case $key in
+      CENTER_URL) URL=$value ;;
+      CENTER_FINGERPRINT) FINGERPRINT=$value ;;
+      REG_CODE) CODE=$value ;;
+      LISTEN) LISTEN=$value ;;
+      *) die "неизвестный параметр в $1: $key" ;;
+    esac
+  done < "$1"
+}
+
+while [ $# -gt 0 ]; do
+  case $1 in
+    --center) URL=${2:-}; shift 2 ;;
+    --fingerprint) FINGERPRINT=${2:-}; shift 2 ;;
+    --code) CODE=${2:-}; shift 2 ;;
+    --env) ENVFILE=${2:-}; shift 2 ;;
+    --listen) LISTEN=${2:-}; shift 2 ;;
+    -h|--help) usage ;;
+    *) usage ;;
+  esac
+done
+
+[ "$(id -u)" = 0 ] || die "запустите от root (sudo)"
+[ -z "$ENVFILE" ] || read_env "$ENVFILE"
+if [ -f "$CONFIG" ]; then
+  echo "$NAME уже зарегистрирован ($CONFIG); для переустановки удалите пакет с очисткой (purge)"
+  exit 0
+fi
+[ -n "$URL" ] && [ -n "$FINGERPRINT" ] || usage
+if [ -z "$CODE" ]; then
+  # с терминала — запрос; иначе — первая строка stdin (echo КОД | …-setup …)
+  [ ! -t 0 ] || printf 'Код регистрации из Web: ' >&2
+  read -r CODE || true
+fi
+[ -n "$CODE" ] || die "нет кода регистрации (--code, ввод, REG_CODE или SURVEYSCAN_REGISTRATION_CODE)"
+
+umask 077
+install -d -m 0700 "$ETC" "$STATE"
+SURVEYSCAN_REGISTRATION_CODE=$CODE /usr/bin/surveyscan-collector register --center "$URL" --fingerprint "$FINGERPRINT" --dir "$ETC" --state "$STATE" --listen "$LISTEN"
+[ -z "$ENVFILE" ] || rm -f "$ENVFILE"
+chown -R $NAME:$NAME "$ETC" "$STATE"
+if [ -d /run/systemd/system ]; then
+  systemctl enable $NAME.service >/dev/null 2>&1 || true
+  # --no-block: при вызове из $NAME-register.service служба ждёт его завершения (After=)
+  systemctl start --no-block $NAME.service
+  echo "служба $NAME запущена: systemctl status $NAME"
+else
+  echo "systemd не запущен: запустите службу $NAME вручную"
+fi
