@@ -312,6 +312,15 @@ def setup_issuer(config_path, state):
                                                          'renewable': True, 'no_parent': True, 'display_name': 'surveyscan-center-issuer'})['auth']['client_token']
     write_private(issuer_file(state), token)
     print('OpenBao: токен выдачи токена центра создан (политика ' + issuer_policy + ', продлевается при каждом запуске центра)', flush=True)
+    # ISSUES №114: копия стенда снимает снимок Raft — отдельный узкий токен «только снимок» (вне каталога состояния,
+    # чтобы не попадать в наборы копий); скрипт копии продлевает его перед остановкой центра
+    snap = STATE / 'bao-snapshot.token'
+    if not snap.exists():
+        bao_call(root, 'PUT', 'sys/policies/acl/surveyscan-raft-snapshot', {'policy': 'path "sys/storage/raft/snapshot" { capabilities = ["read"] }\n'
+                 'path "auth/token/renew-self" { capabilities = ["update"] }\npath "auth/token/lookup-self" { capabilities = ["read"] }\n'})
+        write_private(snap, bao_call(root, 'POST', 'auth/token/create', {'policies': ['surveyscan-raft-snapshot'], 'no_default_policy': True, 'period': '720h',
+                                                                         'renewable': True, 'no_parent': True, 'display_name': 'surveyscan-raft-snapshot'})['auth']['client_token'])
+        print('OpenBao: токен снимка Raft создан (' + str(snap) + ', 0600; продлевать перед каждой копией)', flush=True)
 
 
 def write_private(path, value):

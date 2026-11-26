@@ -49,6 +49,10 @@ def fixture(directory,keep=False):
    try:call('POST','auth/token/revoke',{'token':extra})
    except Exception:pass
   if keep:
+   # ISSUES №115: в постоянном каталоге стенда (он попадает в наборы копий) не оставлять root-токен и тестовые токены
+   for name in ('root-negative-test-token','root-negative-config.json','short-token','short-config.json','revoked-token'):
+    try:(Path(directory)/name).unlink()
+    except FileNotFoundError:pass
    return
   if token:
    try:call('POST','auth/token/revoke',{'token':token})
