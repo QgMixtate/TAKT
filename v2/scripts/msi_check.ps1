@@ -10,10 +10,12 @@ function Fail($m) { throw "FAIL: $m" }
 function Msi($action, $file, [string[]]$props) {
   $dir = Join-Path $env:RUNNER_TEMP 'msi-logs'; New-Item -ItemType Directory -Force $dir | Out-Null
   $log = Join-Path $dir ("msi-" + [IO.Path]::GetFileNameWithoutExtension($file) + "-" + (Get-Random) + ".log")
-  $args = @($action, "`"$file`"", '/qn', '/norestart', '/l*v', "`"$log`"") + $props
-  $p = Start-Process msiexec.exe -ArgumentList $args -Wait -PassThru
+  if (-not (Test-Path -LiteralPath $file)) { Fail "нет файла MSI: $file" }
+  $argv = @($action, "`"$file`"", '/qn', '/norestart', '/l*v', "`"$log`"") + $props
+  $p = Start-Process msiexec.exe -ArgumentList $argv -Wait -PassThru
   return @{ Code = $p.ExitCode; Log = $log }
 }
+function Tail($r) { if (Test-Path $r.Log) { Get-Content $r.Log -Tail 40 | ForEach-Object { Write-Host "  | $_" } } else { Write-Host "  (нет журнала $($r.Log))" } }
 function Svc($name) { Get-CimInstance Win32_Service -Filter "Name='$name'" }
 
 $components = @(
@@ -35,7 +37,10 @@ foreach ($c in $components) {
   # 1. ошибка регистрации (нет связи с адресом) — установка откатывается, код не попадает в журнал
   $secret = 'MSI' + (Get-Random -Minimum 100000000 -Maximum 999999999) + 'CODE'
   $r = Msi '/i' $v1 ($c.Bad + "REG_CODE=$secret")
+  Write-Host "$name: установка с недоступным адресом — код $($r.Code)"
   if ($r.Code -eq 0) { Fail "$name — установка с недоступным адресом прошла" }
+  # 1603 — ошибка установки с откатом; другое (1619 и т. п.) — пакет не открылся, проверка отката недействительна
+  if ($r.Code -ne 1603) { Tail $r; Fail "$name — ожидался откат (1603), получено $($r.Code)" }
   if (Svc $c.Service) { Fail "$name — служба осталась после отката" }
   if (Test-Path $exe) { Fail "$name — программа осталась после отката" }
   $leaks = Select-String -Path $r.Log -Pattern $secret -SimpleMatch
@@ -48,7 +53,7 @@ foreach ($c in $components) {
 
   # 2. тихая установка без кода — служба установлена (LocalSystem, автозапуск), не запущена
   $r = Msi '/i' $v1 @()
-  if ($r.Code -ne 0) { Fail "$name — установка без кода: $($r.Code)" }
+  if ($r.Code -ne 0) { Tail $r; Fail "$name — установка без кода: $($r.Code)" }
   $s = Svc $c.Service
   if (-not $s) {
     Get-CimInstance Win32_Service | Where-Object { $_.Name -like 'Surveyscan*' } | ForEach-Object { Write-Host "service: $($_.Name) $($_.State) $($_.PathName)" }
