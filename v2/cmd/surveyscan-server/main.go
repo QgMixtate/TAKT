@@ -195,6 +195,14 @@ func run(args []string) error {
 	if registry.Machine != nil && registry.Machine.Maintain != nil {
 		go registry.Machine.Maintain(ctx) // токен OpenBao нужен любой роли
 	}
+	// ISSUES №108: центр, поднятый из копии старше срока токена, не готов (503) — причина должна быть видна в журнале
+	if registry.Machine != nil && registry.Machine.Ready != nil {
+		check, done := context.WithTimeout(ctx, 5*time.Second)
+		if e := registry.Machine.Ready(check); e != nil {
+			fmt.Println("OpenBao: токен центра не действует (" + e.Error() + "): /health/ready = 503, подпись и секреты недоступны; после восстановления из копии выпустите новый токен центра (C39, ISSUES №108)")
+		}
+		done()
+	}
 	if e := registry.LoadIntegrations(ctx); e != nil {
 		fmt.Println("integration secrets unavailable: " + e.Error())
 	}

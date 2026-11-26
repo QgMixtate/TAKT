@@ -101,9 +101,11 @@ export function SystemCard({uid,csrf,canWrite,directions,onBack,onComponent,onEx
  </div>;
 }
 
-export function ComponentCard({id,csrf,canWrite,onBack,onOpenAsset,onExpired,embedded=false}:{id:string;csrf:string;canWrite:boolean;onBack:()=>void;onOpenAsset:(uid:string)=>void;onExpired:()=>void;embedded?:boolean}){
+export function ComponentCard({id,csrf,canWrite,onBack,onOpenAsset,onExpired,embedded=false,onChanged}:{id:string;csrf:string;canWrite:boolean;onBack:()=>void;onOpenAsset:(uid:string)=>void;onExpired:()=>void;embedded?:boolean;onChanged?:()=>void}){
  const [offset,setOffset]=useState(0);
- const [d,error,reload]=useLoad<RSMComponentDetail>(()=>api.rsmComponent(id,offset),[id,offset],onExpired);
+ const [d,error,reload0]=useLoad<RSMComponentDetail>(()=>api.rsmComponent(id,offset),[id,offset],onExpired);
+ // №113: изменения в «Привязка и правила» сразу обновляют список хостов карточки компонента
+ const reload=()=>{reload0();onChanged?.()};
  const [busy,actError,act]=useAct(onExpired);
  const [rule,setRule]=useState({kind:'hostname_glob',pattern:'',mode:'propose'}),[bulk,setBulk]=useState(''),[note,setNote]=useState('');
  if(error)return <Err e={error}/>;
