@@ -24,8 +24,10 @@ $components = @(
 )
 foreach ($c in $components) {
   $name = "surveyscan-$($c.Kind)"
-  $v1 = (Get-ChildItem $V1 -Filter "$name*_windows_x64.msi").FullName
-  $v2 = (Get-ChildItem $V2 -Filter "$name*_windows_x64.msi").FullName
+  # не -Filter: он сопоставляет и короткие имена 8.3 (маска collector совпадала с MSI агента)
+  $v1 = @(Get-ChildItem $V1 | Where-Object { $_.Name -like "${name}_*_windows_x64.msi" }).FullName
+  $v2 = @(Get-ChildItem $V2 | Where-Object { $_.Name -like "${name}_*_windows_x64.msi" }).FullName
+  if (@($v1).Count -ne 1 -or @($v2).Count -ne 1) { Fail "$name — MSI не найден однозначно: $v1 / $v2" }
   $exe = Join-Path $env:ProgramFiles "SurveyScan\$($c.Dir)\$name.exe"
   $data = Join-Path $env:ProgramData "SurveyScan\$($c.Kind)"
   $config = Join-Path $data $c.Config
