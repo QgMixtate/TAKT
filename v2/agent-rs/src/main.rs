@@ -14,6 +14,11 @@ fn main() -> ExitCode {
             println!("surveyscan-agent (rust) {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
+        // установщик (MSI, C52.04): повторная установка/обновление поверх зарегистрированного агента — не ошибка
+        Some("register") if args.iter().any(|a| a == "--if-unregistered") && arg(&args, "--config").is_some_and(|c| std::path::Path::new(&c).exists()) => {
+            println!("already_registered");
+            Ok(())
+        }
         Some("register") => {
             let code = arg(&args, "--code").or_else(|| env::var("SURVEYSCAN_REGISTRATION_CODE").ok());
             match (arg(&args, "--collector"), code, arg(&args, "--fingerprint"), arg(&args, "--config"), arg(&args, "--state")) {
@@ -66,6 +71,19 @@ fn main() -> ExitCode {
                 Ok(())
             }),
             None => Err("renew --config ПУТЬ".into()),
+        },
+        // MSI (C52.04): служба установлена всегда, запускается только у зарегистрированного агента
+        #[cfg(windows)]
+        Some("start-service") => match arg(&args, "--config") {
+            Some(c) if std::path::Path::new(&c).exists() => {
+                let name = arg(&args, "--name").unwrap_or_else(|| ssagent::winsvc::DEFAULT_NAME.to_string());
+                ssagent::winsvc::start(&name).map(|_| println!("service_started"))
+            }
+            Some(_) => {
+                println!("not_registered: служба запустится после surveyscan-agent register");
+                Ok(())
+            }
+            None => Err("start-service --config ПУТЬ [--name ИМЯ]".into()),
         },
         #[cfg(windows)]
         Some("install-service") | Some("uninstall-service") | Some("service") => {

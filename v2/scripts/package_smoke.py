@@ -47,8 +47,8 @@ def main():
     checks, failed = [], []
     with tempfile.TemporaryDirectory() as tmp:
         v1, v2 = Path(tmp, 'v1'), Path(tmp, 'v2')
-        packages.build(o.version, ROOT / '.dist', v1)
-        packages.build(o.version + '.1', ROOT / '.dist', v2)
+        packages.build(o.version, ROOT / '.dist', v1, with_windows=False)
+        packages.build(o.version + '.1', ROOT / '.dist', v2, with_windows=False)
         for image, fmt in images.items():
             p = run_image(image, fmt, v1, v2)
             if p.returncode == 0 and p.stdout.strip().endswith('PASS'):

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 )
@@ -20,8 +21,11 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "register" {
 		return register(args[1:])
 	}
+	if handled, e := runServiceCommand(args); handled {
+		return e
+	}
 	if len(args) == 0 || (args[0] != "run" && args[0] != "renew") {
-		return fmt.Errorf("supported commands: register (установка по коду), run/renew --config PRIVATE_FILE, version")
+		return fmt.Errorf("supported commands: register (установка по коду), run/renew --config PRIVATE_FILE, version; Windows: service, start-service")
 	}
 	flags := flag.NewFlagSet("run", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
@@ -58,8 +62,15 @@ func register(args []string) error {
 	dir := flags.String("dir", "", "каталог конфигурации и ключей")
 	state := flags.String("state", "", "каталог состояния")
 	listen := flags.String("listen", "0.0.0.0:8443", "адрес приёма агентов")
+	ifUnregistered := flags.Bool("if-unregistered", false, "уже зарегистрирован — не ошибка (установщик MSI)")
 	if e := flags.Parse(args); e != nil {
 		return e
+	}
+	if *ifUnregistered && *dir != "" {
+		if _, e := os.Stat(filepath.Join(*dir, "collector.json")); e == nil {
+			fmt.Println("already_registered")
+			return nil
+		}
 	}
 	if *code == "" {
 		*code = os.Getenv("SURVEYSCAN_REGISTRATION_CODE")

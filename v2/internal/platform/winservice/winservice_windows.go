@@ -130,7 +130,11 @@ func Start(name string) error {
 	}
 	defer m.Disconnect()
 	defer service.Close()
-	return service.Start()
+	// уже запущена (повторная команда, обновление MSI) — не ошибка
+	if e = service.Start(); errors.Is(e, windows.ERROR_SERVICE_ALREADY_RUNNING) {
+		return nil
+	}
+	return e
 }
 
 func Stop(name string, timeout time.Duration) error {

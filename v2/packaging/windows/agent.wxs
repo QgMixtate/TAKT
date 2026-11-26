@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- C52.04: MSI агента (Rust) для Windows x64. Собирает scripts/packages.py через wixl (msitools).
+     Тихая установка и GPO: msiexec /i surveyscan-agent.msi /qn COLLECTOR_URL=https://… CENTER_FINGERPRINT=… REG_CODE=…
+     Без REG_CODE служба ставится, но не запускается (регистрация позже: surveyscan-agent register …, затем start-service).
+     Удаление оставляет регистрацию и очередь (%ProgramData%\SurveyScan\agent); REMOVE_DATA=1 — удаляет и их. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="SurveyScan Agent" Language="1033" Codepage="1251" Version="$(var.MsiVersion)"
+           Manufacturer="ТАКТ" UpgradeCode="6C7A3D1E-52A4-4C0B-9A51-0D4A7E52C401">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="SurveyScan agent (Rust)" Comments="C52.04 $(var.Version)"/>
+    <Media Id="1" Cabinet="agent.cab" EmbedCab="yes"/>
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="Установлена более новая версия SurveyScan Agent."/>
+
+    <Property Id="COLLECTOR_URL" Secure="yes"/>
+    <Property Id="CENTER_FINGERPRINT" Secure="yes"/>
+    <Property Id="REG_CODE" Secure="yes"/>
+    <Property Id="REMOVE_DATA" Secure="yes"/>
+    <!-- код не попадает в журнал msiexec /l*v -->
+    <Property Id="MsiHiddenProperties" Value="REG_CODE"/>
+    <Property Id="ARPNOMODIFY" Value="1"/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="VendorDir" Name="SurveyScan">
+          <Directory Id="INSTALLDIR" Name="Agent">
+            <Component Id="AgentExe" Guid="8B0F5C1A-52A4-4D3E-8F11-6A2C0E52C402" Win64="yes">
+              <File Id="AgentExe" Name="surveyscan-agent.exe" Source="$(var.AgentExe)" KeyPath="yes"/>
+              <ServiceInstall Id="AgentService" Name="SurveyscanAgent" DisplayName="SurveyScan Agent"
+                              Description="Постоянный агент инвентаризации (C52)" Type="ownProcess" Start="auto"
+                              ErrorControl="normal" Account="LocalSystem"
+                              Arguments="service --name SurveyscanAgent --config &quot;[CommonAppDataFolder]SurveyScan\agent\config.json&quot;"/>
+              <ServiceControl Id="AgentServiceControl" Name="SurveyscanAgent" Stop="both" Remove="uninstall" Wait="yes"/>
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="DataVendorDir" Name="SurveyScan">
+          <Directory Id="DATADIR" Name="agent">
+            <Component Id="DataDir" Guid="8B0F5C1A-52A4-4D3E-8F11-6A2C0E52C403" Win64="yes">
+              <CreateFolder/>
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Main" Level="1">
+      <ComponentRef Id="AgentExe"/>
+      <ComponentRef Id="DataDir"/>
+    </Feature>
+
+    <!-- регистрация по коду: от SYSTEM, до запуска службы; ошибка (неверный отпечаток, код) — откат установки -->
+    <CustomAction Id="Register" FileKey="AgentExe" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="register --if-unregistered --collector &quot;[COLLECTOR_URL]&quot; --fingerprint &quot;[CENTER_FINGERPRINT]&quot; --code &quot;[REG_CODE]&quot; --config &quot;[CommonAppDataFolder]SurveyScan\agent\config.json&quot; --state &quot;[CommonAppDataFolder]SurveyScan\agent\state&quot;"/>
+    <CustomAction Id="StartIfRegistered" FileKey="AgentExe" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="start-service --name SurveyscanAgent --config &quot;[CommonAppDataFolder]SurveyScan\agent\config.json&quot;"/>
+    <!-- REMOVE_DATA=1: удаление регистрации, ключей и очереди (cmd.exe из системного каталога, путь — фиксированный) -->
+    <CustomAction Id="SetSystemCmd" Property="SYSTEMCMD" Value="[SystemFolder]cmd.exe"/>
+    <CustomAction Id="RemoveData" Property="SYSTEMCMD" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="/d /c rmdir /s /q &quot;[CommonAppDataFolder]SurveyScan\agent&quot;"/>
+
+    <InstallExecuteSequence>
+      <Custom Action="Register" After="InstallServices">REG_CODE AND NOT REMOVE~="ALL"</Custom>
+      <Custom Action="StartIfRegistered" After="StartServices">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="SetSystemCmd" Before="CostInitialize">1</Custom>
+      <Custom Action="RemoveData" After="RemoveFiles">REMOVE~="ALL" AND REMOVE_DATA="1" AND NOT UPGRADINGPRODUCTCODE</Custom>
+    </InstallExecuteSequence>
+  </Product>
+</Wix>

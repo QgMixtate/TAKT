@@ -181,3 +181,20 @@ windows-2022) → **04.3** файлы выпуска в подписанном �
 4. Иконки (штрих 1,75): шаги, причины (замок, ключ, часы), цепочка подключения, носитель.
 5. Одно главное действие на экран (маджента); «Пауза», «+ Профиль» — второстепенные без рамки; журнал — светлый,
    время серым, имя узла цветом итога.
+
+### 04.2 — MSI (2026-11-26)
+- `packaging/windows/{agent,collector}.wxs`, сборка wixl (msitools) на Linux: `scripts/packages.py` (MSI и zip рядом с
+  deb/rpm; `--only-windows`). Версия MSI — числовая: `X.Y.Z-cN[.M]` → `X.Y.(Z·1000+N).M`; MajorUpgrade с заменой и
+  одинаковой версии. Без подписи Authenticode (решение C52.05).
+- Параметры: агент — `COLLECTOR_URL`, `CENTER_FINGERPRINT`, `REG_CODE` (агент регистрируется через collector площадки,
+  поэтому адрес — collector, а не центра); collector — `CENTER_URL`, `CENTER_FINGERPRINT`, `REG_CODE`, `LISTEN`;
+  оба — `REMOVE_DATA=1` при удалении. `REG_CODE` — в `MsiHiddenProperties` (не попадает в журнал msiexec).
+- Программа — `%ProgramFiles%\SurveyScan\Agent|Collector`, регистрация и очередь — `%ProgramData%\SurveyScan\agent|collector`.
+  Службы `SurveyscanAgent` / `SurveyscanCollector` (LocalSystem, автозапуск) ставятся всегда; регистрация по коду —
+  отложенное действие от SYSTEM до запуска служб, ошибка (неверный отпечаток, код, нет связи) — откат установки;
+  служба запускается только у зарегистрированного (`start-service`), повторная установка/обновление не регистрирует заново
+  (`register --if-unregistered`). Collector: правило брандмауэра Windows на программу; служба Windows у Go-collector —
+  новая (`service`, `start-service`).
+- Проверка: workflow `installers.yml` — сборка на Linux, `scripts/msi_check.ps1` на чистой Windows Server 2022: откат
+  при ошибке регистрации без кода в журнале, установка без кода, обновление с сохранением регистрации, удаление,
+  `REMOVE_DATA=1`, брандмауэр. Сквозная регистрация с центром через MSI — стенд (C52-08, win-ar).

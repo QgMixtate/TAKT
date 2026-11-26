@@ -74,8 +74,8 @@ def scenario(**s):
         return c['code']
 
     files = Path(tempfile.mkdtemp(prefix='c52-pkg-'))
-    packages.build(VERSION, ROOT / '.dist', files / 'v1')
-    packages.build(VERSION + '.1', ROOT / '.dist', files / 'v2')
+    packages.build(VERSION, ROOT / '.dist', files / 'v1', with_windows=False)
+    packages.build(VERSION + '.1', ROOT / '.dist', files / 'v2', with_windows=False)
     deb = lambda v, kind: next((files / v).glob(f'surveyscan-{kind}_*.deb')).relative_to(files)
     t = Target(files)
     try:

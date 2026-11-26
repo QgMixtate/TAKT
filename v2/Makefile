@@ -16,6 +16,7 @@ build:
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscanctl ./cmd/surveyscanctl
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscan-portable ./cmd/surveyscan-portable
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscan-portable.exe ./cmd/surveyscan-portable # Windows-аудит ПК (C23)
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscan-collector.exe ./cmd/surveyscan-collector # MSI collector (C52.04)
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -ldflags '$(BUILD_FLAGS)' -o .dist/surveyscan-router ./cmd/surveyscan-router
 	CGO_ENABLED=0 $(GO) build -mod=readonly -trimpath -p 2 -o .dist/testsshd ./scripts/testsshd # только для смоков C51.03
 	cp contracts/*.json .dist/contracts/
@@ -29,7 +30,8 @@ rust:
 	cp agent-rs/target/x86_64-unknown-linux-musl/release/surveyscan-agent agent-rs/target/x86_64-unknown-linux-musl/release/surveyscan-portable .dist/rust/linux/
 	cp agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-agent.exe agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-portable.exe .dist/rust/windows/
 	cd .dist/rust && sha256sum linux/* windows/* > SHA256SUMS
-# Пакеты Linux (C52.04): deb, rpm, tar.gz агента (Rust) и collector (Go) в .dist/packages; нужны make build, make rust и nfpm
+# Пакеты (C52.04): deb, rpm, tar.gz, MSI и zip агента (Rust) и collector (Go) в .dist/packages; нужны make build, make rust,
+# nfpm и wixl (msitools)
 packages:
 	python3 scripts/packages.py --version $(VERSION)
 

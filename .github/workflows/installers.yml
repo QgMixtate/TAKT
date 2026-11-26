@@ -1,0 +1,60 @@
+name: surveyscan-installers
+# C52.04: MSI агента (Rust) и collector (Go) собираются на Linux (wixl) и проверяются на чистой Windows Server 2022.
+on:
+  push:
+    paths: ['v2/packaging/**', 'v2/scripts/packages.py', 'v2/scripts/msi_check.ps1', 'v2/agent-rs/**', 'v2/cmd/surveyscan-collector/**', 'v2/internal/collector/**', 'v2/internal/platform/winservice/**', 'v2/go.mod', 'v2/go.sum', '.github/workflows/installers.yml']
+  pull_request:
+    paths: ['v2/packaging/**', 'v2/scripts/packages.py', 'v2/scripts/msi_check.ps1', 'v2/agent-rs/**', 'v2/cmd/surveyscan-collector/**', 'v2/internal/collector/**', 'v2/internal/platform/winservice/**', 'v2/go.mod', 'v2/go.sum', '.github/workflows/installers.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: surveyscan-installers-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  build-msi:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: v2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: v2/go.sum
+      - name: Toolchains (Rust Windows target, mingw, wixl)
+        run: |
+          rustup target add x86_64-pc-windows-gnu
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64 wixl msitools
+      - name: Windows binaries — Rust agent and Go collector
+        run: |
+          (cd agent-rs && cargo build --release --locked --target x86_64-pc-windows-gnu)
+          mkdir -p .dist/rust/windows
+          cp agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-agent.exe .dist/rust/windows/
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -mod=readonly -trimpath -o .dist/surveyscan-collector.exe ./cmd/surveyscan-collector
+      - name: MSI and zip, two versions for the upgrade check
+        run: |
+          python3 scripts/packages.py --version 0.0.0-c13 --only-windows --output .dist/msi/v1
+          python3 scripts/packages.py --version 0.0.0-c13.1 --only-windows --output .dist/msi/v2
+          msiinfo export .dist/msi/v1/surveyscan-agent_0.0.0-c13_windows_x64.msi Property | grep -q 'MsiHiddenProperties	REG_CODE'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msi-${{ github.sha }}
+          path: v2/.dist/msi
+          retention-days: 14
+  test-msi:
+    needs: build-msi
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: msi-${{ github.sha }}
+          path: msi
+      - name: MSI on clean Windows Server 2022 — rollback on failed registration, silent install, upgrade, uninstall, REMOVE_DATA (C52-04)
+        shell: pwsh
+        run: v2/scripts/msi_check.ps1 -V1 msi/v1 -V2 msi/v2

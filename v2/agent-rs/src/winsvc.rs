@@ -145,7 +145,11 @@ pub fn start(name: &str) -> Result<(), String> {
         return Err("service unavailable".into());
     }
     if unsafe { StartServiceW(s.0, 0, null()) } == 0 {
-        return Err(format!("service start failed ({})", unsafe { windows_sys::Win32::Foundation::GetLastError() }));
+        let e = unsafe { windows_sys::Win32::Foundation::GetLastError() };
+        // ERROR_SERVICE_ALREADY_RUNNING: повторный запуск (обновление MSI, повторная команда) — не ошибка
+        if e != 1056 {
+            return Err(format!("service start failed ({e})"));
+        }
     }
     Ok(())
 }

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- C52.04: MSI collector (Go) для Windows x64. Собирает scripts/packages.py через wixl (msitools).
+     Тихая установка: msiexec /i surveyscan-collector.msi /qn CENTER_URL=https://… CENTER_FINGERPRINT=… REG_CODE=… [LISTEN=0.0.0.0:8443]
+     Без REG_CODE служба ставится, но не запускается (позже: surveyscan-collector register …, затем start-service).
+     Входящие подключения агентов разрешаются правилом брандмауэра Windows для программы collector.
+     Удаление оставляет регистрацию, ключи и очередь (%ProgramData%\SurveyScan\collector); REMOVE_DATA=1 — удаляет и их. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="SurveyScan Collector" Language="1033" Codepage="1251" Version="$(var.MsiVersion)"
+           Manufacturer="ТАКТ" UpgradeCode="6C7A3D1E-52A4-4C0B-9A51-0D4A7E52C411">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine"
+             Description="SurveyScan collector (Go)" Comments="C52.04 $(var.Version)"/>
+    <Media Id="1" Cabinet="collector.cab" EmbedCab="yes"/>
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="Установлена более новая версия SurveyScan Collector."/>
+
+    <Property Id="CENTER_URL" Secure="yes"/>
+    <Property Id="CENTER_FINGERPRINT" Secure="yes"/>
+    <Property Id="REG_CODE" Secure="yes"/>
+    <Property Id="LISTEN" Value="0.0.0.0:8443" Secure="yes"/>
+    <Property Id="REMOVE_DATA" Secure="yes"/>
+    <Property Id="MsiHiddenProperties" Value="REG_CODE"/>
+    <Property Id="ARPNOMODIFY" Value="1"/>
+
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFiles64Folder">
+        <Directory Id="VendorDir" Name="SurveyScan">
+          <Directory Id="INSTALLDIR" Name="Collector">
+            <Component Id="CollectorExe" Guid="8B0F5C1A-52A4-4D3E-8F11-6A2C0E52C412" Win64="yes">
+              <File Id="CollectorExe" Name="surveyscan-collector.exe" Source="$(var.CollectorExe)" KeyPath="yes"/>
+              <ServiceInstall Id="CollectorService" Name="SurveyscanCollector" DisplayName="SurveyScan Collector"
+                              Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem"
+                              Arguments="service --name SurveyscanCollector --config &quot;[CommonAppDataFolder]SurveyScan\collector\collector.json&quot;"/>
+              <ServiceControl Id="CollectorServiceControl" Name="SurveyscanCollector" Stop="both" Remove="uninstall" Wait="yes"/>
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="DataVendorDir" Name="SurveyScan">
+          <Directory Id="DATADIR" Name="collector">
+            <Component Id="DataDir" Guid="8B0F5C1A-52A4-4D3E-8F11-6A2C0E52C413" Win64="yes">
+              <CreateFolder/>
+            </Component>
+          </Directory>
+        </Directory>
+      </Directory>
+    </Directory>
+
+    <Feature Id="Main" Level="1">
+      <ComponentRef Id="CollectorExe"/>
+      <ComponentRef Id="DataDir"/>
+    </Feature>
+
+    <CustomAction Id="Register" FileKey="CollectorExe" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="register --if-unregistered --center &quot;[CENTER_URL]&quot; --fingerprint &quot;[CENTER_FINGERPRINT]&quot; --code &quot;[REG_CODE]&quot; --listen &quot;[LISTEN]&quot; --dir &quot;[CommonAppDataFolder]SurveyScan\collector&quot; --state &quot;[CommonAppDataFolder]SurveyScan\collector\state&quot;"/>
+    <CustomAction Id="StartIfRegistered" FileKey="CollectorExe" Execute="deferred" Impersonate="no" Return="check"
+                  ExeCommand="start-service --name SurveyscanCollector --config &quot;[CommonAppDataFolder]SurveyScan\collector\collector.json&quot;"/>
+    <!-- системные программы — из системного каталога (не из PATH) -->
+    <CustomAction Id="SetSystemCmd" Property="SYSTEMCMD" Value="[SystemFolder]cmd.exe"/>
+    <CustomAction Id="SetNetsh" Property="SYSTEMNETSH" Value="[SystemFolder]netsh.exe"/>
+    <CustomAction Id="FirewallAdd" Property="SYSTEMNETSH" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="advfirewall firewall add rule name=&quot;SurveyScan Collector&quot; dir=in action=allow program=&quot;[#CollectorExe]&quot; enable=yes profile=any"/>
+    <CustomAction Id="FirewallDelete" Property="SYSTEMNETSH" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="advfirewall firewall delete rule name=&quot;SurveyScan Collector&quot;"/>
+    <CustomAction Id="RemoveData" Property="SYSTEMCMD" Execute="deferred" Impersonate="no" Return="ignore"
+                  ExeCommand="/d /c rmdir /s /q &quot;[CommonAppDataFolder]SurveyScan\collector&quot;"/>
+
+    <InstallExecuteSequence>
+      <Custom Action="SetSystemCmd" Before="CostInitialize">1</Custom>
+      <Custom Action="SetNetsh" After="SetSystemCmd">1</Custom>
+      <!-- удаление правила и при установке: повтор/восстановление не плодит дубликаты -->
+      <Custom Action="FirewallDelete" After="StopServices">1</Custom>
+      <Custom Action="RemoveData" After="RemoveFiles">REMOVE~="ALL" AND REMOVE_DATA="1" AND NOT UPGRADINGPRODUCTCODE</Custom>
+      <Custom Action="FirewallAdd" After="InstallServices">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="Register" After="FirewallAdd">REG_CODE AND NOT REMOVE~="ALL"</Custom>
+      <Custom Action="StartIfRegistered" After="StartServices">NOT REMOVE~="ALL"</Custom>
+    </InstallExecuteSequence>
+  </Product>
+</Wix>
