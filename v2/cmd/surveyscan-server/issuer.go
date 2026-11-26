@@ -15,11 +15,14 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/bao"
 	"github.com/QgMixtate/surveyscan/v2/internal/platform/diskspool"
 )
+
+var dnsName = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
 
 // bootstrapIssuer — операторская dev-команда. Root token не принимается, CA/receipt private keys не экспортируются.
 func bootstrapIssuer(args []string) error {
@@ -28,8 +31,20 @@ func bootstrapIssuer(args []string) error {
 	config := flags.String("config", "", "")
 	output := flags.String("output-directory", "", "")
 	validity := flags.Duration("server-validity", 24*time.Hour, "operator dev loopback leaf validity, 1h..168h")
+	// стенд (ISSUES №121): адрес ВМ центра в сертификате — collector и установщики с других машин сети стенда
+	serverHost := flags.String("server-host", "", "дополнительный IP или DNS-имя сервера в сертификате (стенд)")
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *config == "" || *output == "" {
 		return errors.New("explicit private OpenBao config and output directory required")
+	}
+	ips, names := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}, []string{"localhost"}
+	if h := *serverHost; h != "" {
+		if ip := net.ParseIP(h); ip != nil {
+			ips = append(ips, ip)
+		} else if len(h) <= 253 && dnsName.MatchString(h) {
+			names = append(names, h)
+		} else {
+			return errors.New("server host must be an IP address or DNS name")
+		}
 	}
 	if *validity < time.Hour || *validity > 7*24*time.Hour {
 		return errors.New("loopback server validity must be between 1h and 168h")
@@ -78,7 +93,7 @@ func bootstrapIssuer(args []string) error {
 	if e != nil {
 		return e
 	}
-	leaf := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "SurveyScan dev loopback"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(*validity), IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}, DNSNames: []string{"localhost"}, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	leaf := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: "SurveyScan dev loopback"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(*validity), IPAddresses: ips, DNSNames: names, KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	raw, e = x509.CreateCertificate(rand.Reader, leaf, parsed, serverPublic, signer)
 	if e != nil {
 		return e

@@ -151,7 +151,7 @@ try{
  await page.getByRole('tab',{name:'SLA'}).click();await page.getByLabel('Порог предупреждения').fill('85');await page.getByRole('button',{name:/Сохранить SLA/}).click();await expect(page.getByRole('status')).toContainText('Сохранено');
  await page.getByRole('tab',{name:'Очередь'}).click();checks.push('C50 SLA in the Web: queue shows ticket SLA, admin saves business hours and targets');
  // C52.01 установка по коду: администратор создаёт код collector — код показан один раз с командами, затем отзывает
- await page.getByRole('button',{name:'Источники',exact:true}).click();const inst=page.locator('section',{has:page.getByRole('heading',{name:/Установка/})});
+ await page.getByRole('button',{name:'Источники',exact:true}).click();await page.getByRole('tab',{name:'Установка'}).click();const inst=page.locator('section',{has:page.getByRole('heading',{name:/Установка/})});
  await inst.getByLabel('Комментарий к коду').fill('Smoke: площадка');await inst.getByRole('button',{name:'Создать код'}).click();await expect(inst.getByRole('status')).toContainText(/Код: SSR-[0-9A-Z]{5}-/);await expect(inst).toContainText('surveyscan-collector-setup');await expect(inst).toContainText('msiexec /i surveyscan-collector_');
  await inst.getByRole('button',{name:'Скрыть код'}).click();await expect(inst.getByRole('table',{name:'Коды регистрации'}).locator('tbody')).toContainText('действует');page.once('dialog',d=>void d.accept());await inst.getByRole('button',{name:'Отозвать'}).first().click();await expect(inst.getByRole('table',{name:'Коды регистрации'}).locator('tbody')).toContainText('отозван');
  checks.push('C52 install in the Web: registration code created once with install commands and centre fingerprint, then revoked');

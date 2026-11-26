@@ -41,7 +41,7 @@ def main(agent_scenario=None,web_scenario=None,browser_origin=None,bao_settings=
    class PublicOnly:
     def public_key(self):return ed25519.Ed25519PublicKey.from_public_bytes(base64.urlsafe_b64decode(bao_settings['center_public']+'=='))
    center_key=PublicOnly()
-  tls_port,http_port,collector_port=(state['tls_port'] if state else freeport()),(state['http_port'] if state else freeport()),int(os.environ.get('C15_COLLECTOR_PORT') or freeport());machine_file=save('machine.json',json.dumps({'dev_mode':True,'listen':f'127.0.0.1:{tls_port}','ca_certificate_file':ca_file,'ca_private_key_file':ca_private,'server_certificate_file':server_file,'server_private_key_file':server_private,'center_signing_key_file':center_private}))
+  tls_port,http_port,collector_port=(state['tls_port'] if state else freeport()),(state['http_port'] if state else freeport()),int(os.environ.get('C15_COLLECTOR_PORT') or freeport());machine_file=save('machine.json',json.dumps({'dev_mode':True,'listen':f"{os.environ.get('C15_CENTER_BIND','127.0.0.1')}:{tls_port}",'ca_certificate_file':ca_file,'ca_private_key_file':ca_private,'server_certificate_file':server_file,'server_private_key_file':server_private,'center_signing_key_file':center_private}))
   if inventory12:
    cfg=json.loads(Path(machine_file).read_text());cfg['inventory12_enabled']=True;Path(machine_file).write_text(json.dumps(cfg))
   if bao_settings is not None:

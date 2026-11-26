@@ -92,6 +92,8 @@ def scenario(args, **s):
     (out / 'agent-config.windows.json').write_text(json.dumps(windows, indent=2))
     (out / 'agent-config.linux.json').write_text(json.dumps(dict(base, ca_certificate_file='/CHANGE/ME/ca.pem', state_directory='/CHANGE/ME/state'), indent=2))
     print(f"READY collector=https://{args.public_host}:{args.collector_port} out={out}", flush=True)
+    if os.environ.get('C15_CENTER_PUBLIC_HOST'):
+        print(f"центр для установщиков (--center у collector): https://{os.environ['C15_CENTER_PUBLIC_HOST']}:{s['tls_port']}", flush=True)
     # Заявки по файлам в OUT: prepare.json -> платформа --platform (grant.json); prepare-linux*.json -> linux/amd64;
     # prepare-windows*.json -> windows/amd64; grant лежит рядом под именем с заменой prepare -> grant. Файлов может быть
     # сколько угодно (несколько агентов/целей за один запуск центра); найденные позже подхватываются на лету.
@@ -242,6 +244,7 @@ def main():
     p.add_argument('--persistent', action='store_true', help='постоянный стенд: БД, CA, ключи OpenBao и регистрации агентов сохраняются между перезапусками (обновление центра без переподключения агентов)')
     p.add_argument('--state', default=str(ROOT / '.local/vm-center-state'), help='каталог постоянного стенда (секреты, 0700; не публиковать)')
     p.add_argument('--backup-marker', default=None, help='файл метки резервной копии (запоминается в постоянном стенде)')
+    p.add_argument('--center-public-host', default=None, help='ISSUES №121: IP/имя ВМ центра — центр слушает сеть стенда, адрес — в сертификате (запоминается)')
     p.add_argument('--release-dir', default=None, help='C52.04: каталог выпуска с installers/ (раздача из Web; запоминается)')
     p.add_argument('--release-public-key', default=None, help='C52.04: открытый ключ выпуска (PEM) — центр проверяет подпись manifest (запоминается)')
     p.add_argument('--setup-issuer', action='store_true', help='ISSUES №111: один раз создать токен выдачи токена центра (нужен root-токен на ВМ) и выйти')
@@ -387,8 +390,9 @@ def renew_server_certificate(settings):
     work = Path(tempfile.mkdtemp(prefix='renew-', dir=Path(settings['server_certificate']).parent.parent))
     try:
         out = work / 'issuer'
+        host = ['--server-host', settings['center_public_host']] if settings.get('center_public_host') else []
         r = subprocess.run([str(ROOT / '.dist/surveyscan-server'), 'bootstrap-issuer', '--config', settings['config'], '--output-directory', str(out),
-                            '--server-validity', SERVER_VALIDITY], capture_output=True, timeout=30)
+                            '--server-validity', SERVER_VALIDITY, *host], capture_output=True, timeout=30)
         assert r.returncode == 0, 'server certificate renewal failed'
         for name, target in (('server.pem', settings['server_certificate']), ('server.key', settings['server_private'])):
             temp = Path(target).with_suffix('.new')
@@ -440,6 +444,15 @@ def persistent(args):
         if settings.get(key):
             os.environ[env] = settings[key]
             print(env + ':', settings[key], flush=True)
+    # ISSUES №121: центр доступен из сети стенда (collector и установщики с других ВМ): адрес — в сертификате,
+    # прослушивание — 0.0.0.0 на том же порту; без параметра — как раньше, только 127.0.0.1
+    if args.center_public_host and settings.get('center_public_host') != args.center_public_host:
+        settings['center_public_host'] = args.center_public_host
+        settings_file.write_text(json.dumps(settings))
+    if settings.get('center_public_host'):
+        os.environ['C15_CENTER_BIND'] = '0.0.0.0'
+        os.environ['C15_CENTER_PUBLIC_HOST'] = settings['center_public_host']
+        print('центр для сети стенда:', settings['center_public_host'], flush=True)
     ensure_integrations(settings['config'])
     fresh_token(settings['config'], state)
     renew_server_certificate(settings)
