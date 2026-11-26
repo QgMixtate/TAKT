@@ -35,7 +35,13 @@ def unseal():
   initial=bao_request('/v1/sys/init',{'secret_shares':1,'secret_threshold':1})
   private_json(keyfile,initial)
  if bao_request('/v1/sys/seal-status')['sealed']:
-  if not keyfile.exists():raise RuntimeError('OpenBao initialized but local unseal file missing; restore authorized unseal material, do not reset volume')
+  if not keyfile.exists():
+   # ISSUES №111: ключа на ВМ нет — оператор вводит его сам (ключ не печатается и не сохраняется)
+   if not sys.stdin.isatty():raise RuntimeError('OpenBao sealed and the unseal key is not on this host (ISSUES №111): run `python3 scripts/dev.py unseal` interactively with the operator key')
+   import getpass
+   result=bao_request('/v1/sys/unseal',{'key':getpass.getpass('OpenBao unseal key: ').strip()})
+   if result['sealed']:raise RuntimeError('OpenBao remained sealed')
+   print('OpenBao unsealed by operator key.');return
   if stat.S_IMODE(keyfile.stat().st_mode)&0o077:raise RuntimeError('OpenBao bootstrap file permissions must be private')
   initial=json.loads(keyfile.read_text());key=initial.get('keys_base64',initial.get('keys'))[0]
   result=bao_request('/v1/sys/unseal',{'key':key})

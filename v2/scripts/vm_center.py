@@ -242,6 +242,7 @@ def main():
     p.add_argument('--persistent', action='store_true', help='постоянный стенд: БД, CA, ключи OpenBao и регистрации агентов сохраняются между перезапусками (обновление центра без переподключения агентов)')
     p.add_argument('--state', default=str(ROOT / '.local/vm-center-state'), help='каталог постоянного стенда (секреты, 0700; не публиковать)')
     p.add_argument('--backup-marker', default=None, help='файл метки резервной копии (запоминается в постоянном стенде)')
+    p.add_argument('--setup-issuer', action='store_true', help='ISSUES №111: один раз создать токен выдачи токена центра (нужен root-токен на ВМ) и выйти')
     args = p.parse_args()
     if args.selftest:
         args.platform = 'linux/amd64'
@@ -250,6 +251,14 @@ def main():
     os.environ['C15_COLLECTOR_PORT'] = str(args.collector_port)
     signal.signal(signal.SIGTERM, _stop)
     signal.signal(signal.SIGINT, _stop)
+    if args.setup_issuer:
+        initialize()
+        unseal()
+        settings = json.loads((Path(args.state) / 'vm.json').read_text())
+        setup_issuer(settings['config'], args.state)
+        fresh_token(settings['config'], args.state)  # проверка: токен центра выпускается без root
+        print('OpenBao: токен центра выпущен токеном выдачи — root-токен для запуска центра больше не нужен', flush=True)
+        return
     initialize()
     ensure_stack()
     if args.persistent and not args.selftest:
@@ -266,21 +275,66 @@ def main():
             harness(agent_scenario=lambda **s: scenario(args, **s), bao_settings=settings, report_directory=STATE, inventory12=True, collector_inventory12=True)
 
 
-def fresh_token(config_path):
-    # Токен центра периодический (1 ч): пока центр стоял, он мог истечь. Выпускаем новый с той же узкой политикой.
-    cfg = json.loads(Path(config_path).read_text())
-    root = json.loads((STATE / 'bao-init.json').read_text())['root_token']
+BAO = 'http://127.0.0.1:58200/v1/'
+
+
+def bao_call(token, method, path, body=None):
     import urllib.request
-    request = urllib.request.Request('http://127.0.0.1:58200/v1/auth/token/create', method='POST', headers={'X-Vault-Token': root, 'Content-Type': 'application/json'},
-                                     data=json.dumps({'policies': [cfg['policy']], 'no_default_policy': True, 'period': '1h', 'renewable': True, 'no_parent': True}).encode())
+    request = urllib.request.Request(BAO + path, method=method, headers={'X-Vault-Token': token, 'Content-Type': 'application/json'},
+                                     data=None if body is None else json.dumps(body).encode())
     with urllib.request.urlopen(request, timeout=10) as response:
-        token = json.load(response)['auth']['client_token']
-    path = Path(cfg['token_file'])
-    temp = path.with_suffix('.new')
+        raw = response.read()
+        return json.loads(raw) if raw else None
+
+
+def issuer_file(state=None):
+    # ISSUES №111: узкий токен «выдать токен центра» вместо root-токена; лежит в каталоге постоянного стенда (0600)
+    return Path(state or STATE) / 'bao-center-issuer.token'
+
+
+def root_token():
+    keyfile = STATE / 'bao-init.json'
+    if not keyfile.exists():
+        raise SystemExit('OpenBao: root-токена на ВМ нет (ISSUES №111) — нужен токен выдачи (--setup-issuer) или root-токен оператора')
+    return json.loads(keyfile.read_text())['root_token']
+
+
+def setup_issuer(config_path, state):
+    """Один раз, пока root-токен ещё на ВМ: роль токена центра и токен выдачи, который умеет только её и продлевать себя."""
+    cfg = json.loads(Path(config_path).read_text())
+    root, role, issuer_policy = root_token(), cfg['policy'], cfg['policy'] + '-issuer'
+    bao_call(root, 'POST', 'auth/token/roles/' + role, {'allowed_policies': [cfg['policy']], 'orphan': True, 'renewable': True,
+                                                       'token_period': '1h', 'token_no_default_policy': True})
+    rules = ('path "auth/token/create/' + role + '" { capabilities = ["update"] }\n'
+             'path "auth/token/renew-self" { capabilities = ["update"] }\npath "auth/token/lookup-self" { capabilities = ["read"] }\n')
+    bao_call(root, 'PUT', 'sys/policies/acl/' + issuer_policy, {'policy': rules})
+    token = bao_call(root, 'POST', 'auth/token/create', {'policies': [issuer_policy], 'no_default_policy': True, 'period': '720h',
+                                                         'renewable': True, 'no_parent': True, 'display_name': 'surveyscan-center-issuer'})['auth']['client_token']
+    write_private(issuer_file(state), token)
+    print('OpenBao: токен выдачи токена центра создан (политика ' + issuer_policy + ', продлевается при каждом запуске центра)', flush=True)
+
+
+def write_private(path, value):
+    temp = Path(path).with_suffix('.new')
     fd = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w') as f:
-        f.write(token + '\n')
+        f.write(value + '\n')
     os.replace(temp, path)
+
+
+def fresh_token(config_path, state=None):
+    # Токен центра периодический (1 ч): пока центр стоял, он мог истечь. Выпускаем новый с той же узкой политикой —
+    # токеном выдачи (№111), а если его ещё нет — root-токеном (прежний порядок стенда).
+    cfg = json.loads(Path(config_path).read_text())
+    issuer = issuer_file(state)
+    if issuer.exists():
+        it = issuer.read_text().strip()
+        bao_call(it, 'POST', 'auth/token/renew-self', {})
+        token = bao_call(it, 'POST', 'auth/token/create/' + cfg['policy'], {'policies': [cfg['policy']]})['auth']['client_token']
+    else:
+        token = bao_call(root_token(), 'POST', 'auth/token/create', {'policies': [cfg['policy']], 'no_default_policy': True, 'period': '1h',
+                                                                     'renewable': True, 'no_parent': True})['auth']['client_token']
+    write_private(cfg['token_file'], token)
 
 
 def ensure_integrations(config_path):
@@ -290,7 +344,7 @@ def ensure_integrations(config_path):
     if cfg.get('integrations_path'):
         return
     import urllib.request
-    root = json.loads((STATE / 'bao-init.json').read_text())['root_token']
+    root = root_token()
     def call(method, path, body=None):
         req = urllib.request.Request('http://127.0.0.1:58200/v1/' + path, method=method, headers={'X-Vault-Token': root, 'Content-Type': 'application/json'},
                                      data=None if body is None else json.dumps(body).encode())
@@ -367,7 +421,7 @@ def persistent(args):
         os.environ['SURVEYSCAN_V2_BACKUP_MARKER'] = marker
         print('метка резервной копии:', marker, flush=True)
     ensure_integrations(settings['config'])
-    fresh_token(settings['config'])
+    fresh_token(settings['config'], state)
     renew_server_certificate(settings)
     (state / 'harness').mkdir(exist_ok=True)
     harness(agent_scenario=lambda **s: scenario(args, **s), bao_settings=settings, report_directory=STATE, inventory12=True, collector_inventory12=True, persist=state / 'harness')
