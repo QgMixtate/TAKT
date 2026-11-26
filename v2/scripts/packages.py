@@ -74,6 +74,11 @@ def windows(kind, dist, version, out):
     if q.returncode != 0 or not any(l.startswith('Register\t11282\t') for l in t.stdout.splitlines()):
         sys.stderr.write(q.stdout + q.stderr + t.stdout)
         raise SystemExit(f'msibuild {kind}: HideTarget не установлен')
+    # wixl при цепочках After ставил RemoveExistingProducts внутрь установки (Windows: ошибка 2613) — проверка порядка
+    seq = subprocess.run(['msiinfo', 'export', str(msi), 'InstallExecuteSequence'], capture_output=True, text=True, timeout=120).stdout
+    order = {f[0]: int(f[2]) for f in (l.split('\t') for l in seq.splitlines()[3:]) if len(f) == 3 and f[2].isdigit()}
+    if not order.get('InstallValidate', 0) < order.get('RemoveExistingProducts', 0) < order.get('InstallInitialize', 0):
+        raise SystemExit(f'MSI {kind}: RemoveExistingProducts вне InstallValidate…InstallInitialize: {order}')
     with zipfile.ZipFile(out / f'{name}_{version}_windows_x64.zip', 'w', zipfile.ZIP_DEFLATED) as z:
         info = zipfile.ZipInfo(f'{name}.exe', date_time=(2026, 1, 1, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED

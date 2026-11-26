@@ -60,11 +60,12 @@
     <CustomAction Id="RemoveData" Property="SYSTEMCMD" Execute="deferred" Impersonate="no" Return="ignore"
                   ExeCommand="/d /c rmdir /s /q &quot;[CommonAppDataFolder]SurveyScan\agent&quot;"/>
 
+    <!-- номера заданы явно: wixl при цепочках After переставлял RemoveExistingProducts (ошибка 2613) -->
     <InstallExecuteSequence>
-      <Custom Action="Register" After="InstallServices">REG_CODE AND NOT REMOVE~="ALL"</Custom>
-      <Custom Action="StartIfRegistered" After="StartServices">NOT REMOVE~="ALL"</Custom>
-      <Custom Action="SetSystemCmd" Before="CostInitialize">1</Custom>
-      <Custom Action="RemoveData" After="RemoveFiles">REMOVE~="ALL" AND REMOVE_DATA="1" AND NOT UPGRADINGPRODUCTCODE</Custom>
+      <Custom Action="Register" Sequence="5802">REG_CODE AND NOT REMOVE~="ALL"</Custom>
+      <Custom Action="StartIfRegistered" Sequence="5901">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="SetSystemCmd" Sequence="790">1</Custom>
+      <Custom Action="RemoveData" Sequence="3501">REMOVE~="ALL" AND REMOVE_DATA="1" AND NOT UPGRADINGPRODUCTCODE</Custom>
     </InstallExecuteSequence>
   </Product>
 </Wix>

@@ -64,15 +64,16 @@
     <CustomAction Id="RemoveData" Property="SYSTEMCMD" Execute="deferred" Impersonate="no" Return="ignore"
                   ExeCommand="/d /c rmdir /s /q &quot;[CommonAppDataFolder]SurveyScan\collector&quot;"/>
 
+    <!-- номера заданы явно: wixl при цепочках After переставлял RemoveExistingProducts (ошибка 2613) -->
     <InstallExecuteSequence>
-      <Custom Action="SetSystemCmd" Before="CostInitialize">1</Custom>
-      <Custom Action="SetNetsh" After="SetSystemCmd">1</Custom>
+      <Custom Action="SetSystemCmd" Sequence="790">1</Custom>
+      <Custom Action="SetNetsh" Sequence="791">1</Custom>
       <!-- удаление правила и при установке: повтор/восстановление не плодит дубликаты -->
-      <Custom Action="FirewallDelete" After="StopServices">1</Custom>
-      <Custom Action="RemoveData" After="RemoveFiles">REMOVE~="ALL" AND REMOVE_DATA="1" AND NOT UPGRADINGPRODUCTCODE</Custom>
-      <Custom Action="FirewallAdd" After="InstallServices">NOT REMOVE~="ALL"</Custom>
-      <Custom Action="Register" After="FirewallAdd">REG_CODE AND NOT REMOVE~="ALL"</Custom>
-      <Custom Action="StartIfRegistered" After="StartServices">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="FirewallDelete" Sequence="1901">1</Custom>
+      <Custom Action="RemoveData" Sequence="3501">REMOVE~="ALL" AND REMOVE_DATA="1" AND NOT UPGRADINGPRODUCTCODE</Custom>
+      <Custom Action="FirewallAdd" Sequence="5801">NOT REMOVE~="ALL"</Custom>
+      <Custom Action="Register" Sequence="5802">REG_CODE AND NOT REMOVE~="ALL"</Custom>
+      <Custom Action="StartIfRegistered" Sequence="5901">NOT REMOVE~="ALL"</Custom>
     </InstallExecuteSequence>
   </Product>
 </Wix>
