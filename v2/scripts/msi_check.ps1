@@ -8,7 +8,8 @@ $ErrorActionPreference = 'Stop'
 $checks = New-Object System.Collections.Generic.List[string]
 function Fail($m) { throw "FAIL: $m" }
 function Msi($action, $file, [string[]]$props) {
-  $log = Join-Path $env:RUNNER_TEMP ("msi-" + [IO.Path]::GetFileNameWithoutExtension($file) + "-" + (Get-Random) + ".log")
+  $dir = Join-Path $env:RUNNER_TEMP 'msi-logs'; New-Item -ItemType Directory -Force $dir | Out-Null
+  $log = Join-Path $dir ("msi-" + [IO.Path]::GetFileNameWithoutExtension($file) + "-" + (Get-Random) + ".log")
   $args = @($action, "`"$file`"", '/qn', '/norestart', '/l*v', "`"$log`"") + $props
   $p = Start-Process msiexec.exe -ArgumentList $args -Wait -PassThru
   return @{ Code = $p.ExitCode; Log = $log }
@@ -47,7 +48,11 @@ foreach ($c in $components) {
   $r = Msi '/i' $v1 @()
   if ($r.Code -ne 0) { Fail "$name — установка без кода: $($r.Code)" }
   $s = Svc $c.Service
-  if (-not $s) { Fail "$name — нет службы" }
+  if (-not $s) {
+    Get-CimInstance Win32_Service | Where-Object { $_.Name -like 'Surveyscan*' } | ForEach-Object { Write-Host "service: $($_.Name) $($_.State) $($_.PathName)" }
+    Select-String -Path $r.Log -Pattern 'InstallServices|ServiceInstall|Return value 3|Error 19|FirewallAdd|StartIfRegistered|Register' | Select-Object -First 40 | ForEach-Object { Write-Host $_.Line }
+    Fail "$name — нет службы (журнал $($r.Log))"
+  }
   if ($s.StartMode -ne 'Auto' -or $s.StartName -ne 'LocalSystem' -or $s.State -ne 'Stopped') { Fail "$name — служба: $($s.StartMode) $($s.StartName) $($s.State)" }
   if ($s.PathName -notlike "*$($c.Config)*") { Fail "$name — аргументы службы: $($s.PathName)" }
   & $exe start-service --name $c.Service --config $config | Out-Null

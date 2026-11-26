@@ -58,3 +58,10 @@ jobs:
       - name: MSI on clean Windows Server 2022 — rollback on failed registration, silent install, upgrade, uninstall, REMOVE_DATA (C52-04)
         shell: pwsh
         run: v2/scripts/msi_check.ps1 -V1 msi/v1 -V2 msi/v2
+      - name: msiexec logs on failure (test registration codes only)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: msi-logs-${{ github.sha }}
+          path: ${{ runner.temp }}/msi-logs
+          retention-days: 7
