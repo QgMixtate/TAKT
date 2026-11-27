@@ -336,6 +336,7 @@ export const api={
  topology:()=>call<Topology>('/api/v1/topology','Topology'),
  networkMap:()=>call<NetworkMap>('/api/v1/topology/map','NetworkMap'),
  saveNetworkMap:(csrf:string,revision:string,document:MapDocument)=>call<NetworkMap>('/api/v1/topology/map','NetworkMap',{method:'PUT',body:JSON.stringify({revision,document}),headers:{'X-CSRF-Token':csrf}}),
+ revokeSource:(csrf:string,id:string,reason:string)=>call<Source>('/api/v1/sources/'+encodeURIComponent(id)+'/revocations','Source',{method:'POST',body:JSON.stringify({reason_code:reason}),headers:{'X-CSRF-Token':csrf}}), // №131
  sources:(cursor:string|null=null)=>call<SourcePage>('/api/v1/sources?limit=50'+(cursor?'&cursor='+encodeURIComponent(cursor):''),'SourcePage')
 };
 export async function checkCompatibility(){

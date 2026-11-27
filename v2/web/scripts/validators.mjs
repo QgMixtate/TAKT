@@ -6,7 +6,7 @@ const schema=JSON.parse(readFileSync(new URL('../../contracts/wire.schema.json',
 const ajv=new Ajv({strict:false,allowUnionTypes:true,code:{source:true}});addFormats(ajv);ajv.addSchema(schema);
 const extension=JSON.parse(readFileSync(new URL('../../contracts/c09.schema.json',import.meta.url)));ajv.addSchema(extension);
 const c12=JSON.parse(readFileSync(new URL('../../contracts/c12.schema.json',import.meta.url)));ajv.addSchema(c12);
-const names=['Session','Asset','AssetPage','SourcePage'];
+const names=['Session','Asset','AssetPage','SourcePage','Source'];
 const exports=Object.fromEntries(names.map(name=>[name,schema.$id+'#/$defs/'+name]));
 exports.SourceProfile=c12.$id+'#/$defs/SourceProfile';
 exports.InventoryDetail=extension.$id+'#/$defs/InventoryDetail';

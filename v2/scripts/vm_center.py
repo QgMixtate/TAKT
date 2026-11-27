@@ -244,7 +244,7 @@ def main():
     p.add_argument('--persistent', action='store_true', help='постоянный стенд: БД, CA, ключи OpenBao и регистрации агентов сохраняются между перезапусками (обновление центра без переподключения агентов)')
     p.add_argument('--state', default=str(ROOT / '.local/vm-center-state'), help='каталог постоянного стенда (секреты, 0700; не публиковать)')
     p.add_argument('--backup-marker', default=None, help='файл метки резервной копии (запоминается в постоянном стенде)')
-    p.add_argument('--center-public-host', default=None, help='ISSUES №121: IP/имя ВМ центра — центр слушает сеть стенда, адрес — в сертификате (запоминается)')
+    p.add_argument('--center-public-host', default=None, help='ISSUES №121: IP/имя ВМ центра — центр слушает сеть, адрес — в сертификате; доступ сузить брандмауэром до сети стенда (№126; запоминается)')
     p.add_argument('--release-dir', default=None, help='C52.04: каталог выпуска с installers/ (раздача из Web; запоминается)')
     p.add_argument('--release-public-key', default=None, help='C52.04: открытый ключ выпуска (PEM) — центр проверяет подпись manifest (запоминается)')
     p.add_argument('--setup-issuer', action='store_true', help='ISSUES №111: один раз создать токен выдачи токена центра (нужен root-токен на ВМ) и выйти')
@@ -450,6 +450,8 @@ def persistent(args):
         settings['center_public_host'] = args.center_public_host
         settings_file.write_text(json.dumps(settings))
     if settings.get('center_public_host'):
+        # 0.0.0.0, а не только адрес ВМ: обвязка стенда (готовность, collector стенда) ходит в центр по 127.0.0.1.
+        # №126: доступ к порту сужается брандмауэром ВМ до сети стенда (OPERATIONS §16, задание №29)
         os.environ['C15_CENTER_BIND'] = '0.0.0.0'
         os.environ['C15_CENTER_PUBLIC_HOST'] = settings['center_public_host']
         print('центр для сети стенда:', settings['center_public_host'], flush=True)

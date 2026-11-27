@@ -78,7 +78,7 @@ export function DownloadsPanel({onExpired}:{onExpired:()=>void}){
    if(sum!==null&&sum!==f.sha256){setState(s=>({...s,[f.name]:'SHA-256 не совпал — файл не сохранён'}));return}
    const url=URL.createObjectURL(new Blob([body],{type:'application/octet-stream'})),a=document.createElement('a');
    a.href=url;a.download=f.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
-   setState(s=>({...s,[f.name]:sum===null?'сохранён (SHA-256 сверьте вручную)':'сохранён, SHA-256 совпал'}));
+   setState(s=>({...s,[f.name]:(sum===null?'передан браузеру (SHA-256 сверьте вручную)':'SHA-256 совпал, файл передан браузеру')+(f.format==='exe'||f.format==='msi'?' — если браузер спросит, подтвердите сохранение':'')}));  // №130: Chrome может держать .exe «неподтверждённым»
   }catch{setState(s=>({...s,[f.name]:'нет связи с центром'}))}
  }
  useEffect(()=>{api.installers().then(setList).catch(e=>{setError(e);if(e instanceof ApiError&&e.status===401)onExpired()})},[]);
@@ -91,7 +91,7 @@ export function DownloadsPanel({onExpired}:{onExpired:()=>void}){
   {files.length?<div className="table-scroll"><table><thead><tr><th>Что</th><th>Формат</th><th>Размер</th><th>SHA-256</th><th><span className="sr-only">Скачать</span></th></tr></thead><tbody>{files.map(f=><tr key={f.name}>
    <td>{componentName[f.component]}</td><td>{f.format.toUpperCase()} <span className="muted">· {formatHint[f.format]}</span></td><td>{size(f.bytes)}</td>
    <td className="mono" title={f.sha256}>{f.sha256.slice(0,12)}…{f.sha256.slice(-6)}</td>
-   <td><button className="button small" onClick={()=>void download(f)}>Скачать</button>{state[f.name]?<div className={state[f.name].startsWith('сохранён')?'state-ok':'muted'} role="status">{state[f.name]}</div>:null}</td></tr>)}</tbody></table></div>:null}
+   <td><button className="button small" onClick={()=>void download(f)}>Скачать</button>{state[f.name]?<div className={state[f.name].includes('совпал')?'state-ok':'muted'} role="status">{state[f.name]}</div>:null}</td></tr>)}</tbody></table></div>:null}
   {list?.available?<p className="muted">Файлы раздаёт центр из подписанного выпуска (не из интернета); перед отдачей SHA-256 сверяется с manifest выпуска. Windows-файлы без подписи Authenticode: при ручном запуске SmartScreen может предупредить — сверьте SHA-256.</p>:null}
  </div>;
 }

@@ -30,6 +30,10 @@ for kind in agent collector; do
   printf 'REG_CODE=x\nTOUCH=$(touch /tmp/pwned)\n' > /tmp/bad.env
   if /usr/sbin/$n-setup --env /tmp/bad.env >/dev/null 2>&1; then fail "$n: принят неизвестный параметр"; fi
   [ ! -e /tmp/pwned ] || fail "$n: register.env выполнен как shell"
+  # №128: код не того вида — отказ с пояснением до обращения к сети
+  [ $kind = agent ] && flag=--collector || flag=--center
+  if out=$(echo 'not-a-code' | /usr/sbin/$n-setup $flag https://127.0.0.1:9 --fingerprint ab 2>&1); then fail "$n: принят код не того вида"; fi
+  echo "$out" | grep -q 'не похож на код' || fail "$n: нет пояснения про вид кода: $out"
   # «регистрация» (как после setup) — обновление пакета её сохраняет
   echo '{"registered":true}' > /etc/$n/$cfg; chmod 600 /etc/$n/$cfg
   echo state > /var/lib/$n/marker

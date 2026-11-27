@@ -117,5 +117,5 @@ input::placeholder,textarea::placeholder{color:#b3bcb0;font-style:italic}
 .button.secondary{background:#f5f8f4}
 
 /* ISSUES №119: вкладка «Установка» в «Источниках» — на всю ширину */
-.install-tab{max-width:1100px}
+.install-tab{width:100%}
 .install-tab .install-panel.embedded{padding:0}

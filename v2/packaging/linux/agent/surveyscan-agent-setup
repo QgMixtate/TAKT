@@ -51,6 +51,8 @@ if [ -z "$CODE" ]; then
   # с терминала — запрос; иначе — первая строка stdin (echo КОД | …-setup …)
   # №120: с терминала — скрытый ввод (как пароль)
   if [ -t 0 ]; then
+    # №127: вставка из Windows Terminal/ssh приходит с маркерами bracketed paste — режим выключается перед вводом
+    printf '\033[?2004l' >&2
     printf 'Код регистрации из Web (ввод не отображается): ' >&2
     stty -echo 2>/dev/null; trap 'stty echo 2>/dev/null' EXIT INT TERM
     read -r CODE || true
@@ -60,6 +62,11 @@ if [ -z "$CODE" ]; then
   fi
 fi
 [ -n "$CODE" ] || die "нет кода регистрации (--code, ввод, REG_CODE или SURVEYSCAN_REGISTRATION_CODE)"
+# №127/№128: маркеры вставки (ESC[200~ … ESC[201~), пробелы и CR — убрать; вид кода — проверить до отправки
+CODE=$(printf '%s' "$CODE" | tr -d '\033\r\t ' | sed -e 's/\[20[01]~//g')
+printf '%s' "$CODE" | tr 'a-z' 'A-Z' | tr -d '-' | grep -q '^SSR[0-9A-Z]\{20\}$' ||
+  die "код не похож на код из Web (вид SSR-XXXXX-XXXXX-XXXXX-XXXXX); проверьте, что вставлен целиком"
+
 
 umask 077
 install -d -m 0700 "$ETC" "$STATE"
