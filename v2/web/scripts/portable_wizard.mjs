@@ -2,7 +2,7 @@
 // «Узлы и сбор» → страница узла (разделы, причина); «Пакет» — файл на носителе; шрифты встроены (без сети).
 //   node scripts/portable_wizard.mjs ПУТЬ_К_surveyscan-portable
 import {spawn,execFileSync} from 'node:child_process';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync} from 'node:fs';
+import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,copyFileSync,existsSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {chromium,expect} from '@playwright/test';
@@ -12,8 +12,8 @@ const checks=[];
 const b64url=(t)=>Buffer.from(t).toString('base64url');
 const prep='takt-portable:v1:'+b64url(JSON.stringify({tenant:'00000000-0000-4000-8000-000000000071',site:'00000000-0000-4000-8000-000000000072',scope:'00000000-0000-4000-8000-000000000073',site_name:'Москва, ЦОД-1',scope_name:'msk-dc1'}));
 
-function wizard(dir){
- return new Promise((resolve,reject)=>{const p=spawn(exe,['wizard','--state',dir,'--no-browser']);let buf='';
+function wizard(dir,bin=exe,args=['wizard','--state',dir,'--no-browser']){
+ return new Promise((resolve,reject)=>{const p=spawn(bin,args,{env:{...process.env,DISPLAY:'',BROWSER:'true'}});let buf='';
   p.stdout.on('data',d=>{buf+=d;const m=/http:\/\/127\.0\.0\.1:\d+\/#[0-9a-f]+/.exec(buf);if(m)resolve({p,url:m[0]})});p.on('exit',c=>reject(new Error('wizard exited '+c)));setTimeout(()=>reject(new Error('wizard did not start')),15000)});
 }
 const browser=await chromium.launch({headless:true,executablePath:process.env.SURVEYSCAN_CHROMIUM||undefined});
@@ -56,6 +56,10 @@ try{
   await page.screenshot({path:'../.local/wizard-5-package.png'});
   checks.push('wizard steps 4–5: this PC collected — node row opens the node page (chain, 12 sections with status), package file with SHA-256 listed');
  }finally{w2.p.kill()}
+ // запуск двойным щелчком: без параметров — мастер, носитель ss-portable рядом с программой
+ const media=mkdtempSync(join(tmpdir(),'wiz-click-'));const bin=join(media,'surveyscan-portable');copyFileSync(exe,bin);execFileSync('chmod',['+x',bin]);
+ const w3=await wizard(null,bin,[]);
+ try{const page=await browser.newPage();await page.goto(w3.url);await expect(page.getByRole('heading',{name:'Подготовка носителя'})).toBeVisible();if(!existsSync(join(media,'ss-portable')))throw new Error('ss-portable not created next to the program');checks.push('double-click start: no arguments opens the wizard, medium ss-portable next to the program')}finally{w3.p.kill()}
  if(errors.length)throw new Error('page errors: '+errors.join('; '));
  if(external.length)throw new Error('external requests: '+external.join(', '));
  checks.push('wizard pages: no script errors, no requests outside 127.0.0.1');

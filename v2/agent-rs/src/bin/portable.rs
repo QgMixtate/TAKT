@@ -67,7 +67,13 @@ fn secrets_from_stdin() -> Result<ssagent::profiles::Secrets, String> {
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let state = || arg(&args, "--state").map(PathBuf::from).ok_or_else(|| "--state КАТАЛОГ".to_string());
+    // Запуск двойным щелчком (без параметров): мастер, носитель — каталог ss-portable рядом с программой
+    let click = args.is_empty();
     let r: Result<(), String> = match args.first().map(String::as_str) {
+        None => env::current_exe().map_err(|e| e.to_string()).and_then(|exe| {
+            let dir = exe.parent().map(|d| d.join("ss-portable")).ok_or("каталог программы не определён")?;
+            ssagent::wizard::serve(ssagent::wizard::Options { dir, port: 0, open_browser: true })
+        }),
         Some("version") => {
             println!("surveyscan-portable (rust) {}", ssagent::VERSION);
             Ok(())
@@ -318,6 +324,11 @@ fn main() -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("{e}");
+            if click {
+                // окно, открытое щелчком, не закрывается молча — пользователь видит причину
+                eprintln!("Нажмите Enter, чтобы закрыть окно.");
+                let _ = std::io::stdin().read_line(&mut String::new());
+            }
             ExitCode::FAILURE
         }
     }
