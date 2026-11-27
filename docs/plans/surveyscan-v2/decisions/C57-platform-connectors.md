@@ -188,4 +188,16 @@ PlatformSnapshot { schema_version, snapshot_id, tenant_id, origin (источн�
   запросы только к DNS-серверу collector. Порядок обновления: центр, затем collector. Проверено: unit (чистка имени,
   предел одновременных запросов, таймаут и общий предел), collector (имя в результате), integration (хранение,
   сохранение имени при обследовании без DNS). Не проверено: на DNS стенда (DC).
-  Дальше: zVirt/oVirt REST (C57.03, часть 3).
+- 2026-11-27: **C57.03, часть 3 — zVirt / oVirt (REST API engine v4).** Вид учётки и цели `ovirt` (миграция 0078,
+  контракт C51), как у vSphere: без источника-агента, сертификат — PEM CA или закрепление. Collector делает только GET
+  к `/ovirt-engine/api` (Basic, `Version: 4`, JSON): ЦОД, кластеры, хосты (BIOS UUID и серийник из hardware_information,
+  модель, CPU/RAM, ОС), ВМ с сетевыми картами (`follow=nics`; BIOS UUID = id ВМ, FQDN гостя, ОС, питание), домены
+  хранения, логические сети (VLAN); связи runs_on / member_of / located_in. Сбой одного раздела — неполный снимок.
+  Проверка сервера вынесена в общий пакет `remote/tlspin` (vSphere переведён на него); collector — общий цикл
+  `runPlatform` для vsphere/ovirt, коды причин `<вид>:auth_failed|not_platform|unreachable|snapshot_rejected`.
+  Проверено: unit на поддельном engine с синтетическими ответами формата API v4 (числа строками, вход, закреплённый и
+  чужой сертификат, неверный пароль, неполный снимок, «не engine», соответствие схеме c57), integration (учётка ovirt,
+  PEM администратора, grant не выдаётся, отчёт об ошибке входа), web smoke локально. Не проверено: живой zVirt стенда
+  (ответы реального engine могут отличаться — первая проверка покажет; нужна учётка ReadOnlyAdmin).
+  Не сделано в этой части: связи ВМ с хранилищами и сетями (нужны disk_attachments и vnic_profiles — позже, если нужны).
+  Дальше: C57.04 — Proxmox, Redfish; проект C55.

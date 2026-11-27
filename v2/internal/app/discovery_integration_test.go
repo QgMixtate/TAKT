@@ -775,6 +775,33 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	if vt.State != "active" || vt.Source != nil || vt.CertOrigin == nil || *vt.CertOrigin != "first_use" || vt.LastCollected == nil {
 		t.Fatalf("vsphere target after first snapshot %+v", vt)
 	}
+	// C57.03: цель oVirt/zVirt — так же, как vSphere: учётка ovirt, порт 443, без агента; учётка vSphere не подходит
+	var ocred sources.CollectCredential
+	_ = json.Unmarshal(call("admin", "POST", "/api/v1/discovery/credentials", `{"name":"zVirt RO","kind":"ovirt","username":"ro-takt@internal","secret":{"password":"ovirt-secret-57"}}`, 201), &ocred)
+	call("admin", "POST", "/api/v1/discovery/targets", fmt.Sprintf(`{"collector_id":%q,"address":"10.51.0.41","kind":"ovirt","credential_id":%q}`, collector, vcred.ID), 422)
+	var ot sources.RemoteTarget
+	_ = json.Unmarshal(call("admin", "POST", "/api/v1/discovery/targets", fmt.Sprintf(`{"collector_id":%q,"address":"10.51.0.41","kind":"ovirt","credential_id":%q,"tls_ca_pem":%q,"tls_server_name":"engine.lab51.local"}`, collector, ocred.ID, caPEM), 201), &ot)
+	if ot.Port != 443 || ot.State != "pending" || ot.CertOrigin == nil || *ot.CertOrigin != "admin" {
+		t.Fatalf("ovirt target %+v", ot)
+	}
+	if code, _ = post("/api/v1/machine/collect-targets/"+ot.ID+"/grant", []byte(`{"source_id":"`+identifier.New()+`","csr_sha256":"`+strings.Repeat("0", 64)+`","signing_public_key":"x"}`)); code == 200 {
+		t.Fatal("ovirt target must not get an agent grant")
+	}
+	if code, _ = post("/api/v1/machine/collect-targets/"+ot.ID+"/tlscert", []byte(`{"tls_cert_sha256":"`+firstCert+`"}`)); code != 404 {
+		t.Fatal("certificate pin is not for targets with administrator PEM", code)
+	}
+	if code, _ = post("/api/v1/machine/collect-targets/"+ot.ID+"/report", []byte(`{"ok":false,"problem":"ovirt:auth_failed"}`)); code != 204 {
+		t.Fatal("ovirt report", code)
+	}
+	_ = json.Unmarshal(call("view51", "GET", "/api/v1/discovery/targets", "", 200), &tl)
+	for _, x := range tl.Items {
+		if x.ID == ot.ID {
+			ot = x
+		}
+	}
+	if ot.State != "pending" || ot.LastError == nil || *ot.LastError != "ovirt:auth_failed" {
+		t.Fatalf("ovirt target after failed login %+v", ot)
+	}
 }
 
 // C51.03 (A): учётки сбора — вводит только администратор, секрет уходит в хранилище секретов и нигде не

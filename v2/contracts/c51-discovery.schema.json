@@ -750,7 +750,8 @@
       "ssh",
       "winrm",
       "snmp",
-      "vsphere"
+      "vsphere",
+      "ovirt"
      ]
     },
     "username": {
@@ -848,7 +849,8 @@
       "ssh",
       "winrm",
       "snmp",
-      "vsphere"
+      "vsphere",
+      "ovirt"
      ]
     },
     "port": {

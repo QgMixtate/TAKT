@@ -13,14 +13,10 @@ package vsphere
 
 import (
 	"context"
-	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
-	"encoding/hex"
 	"errors"
 	"net"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -34,6 +30,7 @@ import (
 	"github.com/vmware/govmomi/vim25/types"
 
 	"github.com/QgMixtate/surveyscan/v2/contracts"
+	"github.com/QgMixtate/surveyscan/v2/internal/remote/tlspin"
 )
 
 // Target — адрес API vSphere и способ проверки сервера. Ровно одно из CAPEM (с ServerName) и CertSHA256.
@@ -50,49 +47,17 @@ type Target struct {
 
 var (
 	// ErrPolicy — не задан способ проверки сервера.
-	ErrPolicy = errors.New("vsphere: server verification not configured")
+	ErrPolicy = tlspin.ErrPolicy
 	// ErrCertChanged — сертификат сервера не совпал с закреплённым отпечатком.
-	ErrCertChanged = errors.New("vsphere: server certificate changed (cert_changed)")
+	ErrCertChanged = tlspin.ErrCertChanged
 	// ErrAuth — вход отклонён (неверная учётка или нет прав).
 	ErrAuth = errors.New("vsphere: login rejected (auth_failed)")
 	// ErrNotVSphere — по адресу нет API vSphere.
 	ErrNotVSphere = errors.New("vsphere: no vSphere API at address (not_vsphere)")
-
-	pinRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-// CertSHA256 — отпечаток SHA-256 DER-сертификата (строчные hex), как у WinRM.
-func CertSHA256(der []byte) string {
-	sum := sha256.Sum256(der)
-	return hex.EncodeToString(sum[:])
-}
-
 func tlsConfig(t Target) (*tls.Config, error) {
-	cfg := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: t.ServerName}
-	switch {
-	case len(t.CAPEM) > 0:
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(t.CAPEM) {
-			return nil, ErrPolicy
-		}
-		cfg.RootCAs = pool
-		if cfg.ServerName == "" {
-			cfg.ServerName = t.Host
-		}
-	case pinRe.MatchString(t.CertSHA256):
-		pin := t.CertSHA256
-		// цепочка не строится: доверие — ровно этому сертификату (как known_hosts у SSH)
-		cfg.InsecureSkipVerify = true //nolint:gosec // проверка — VerifyConnection по закреплённому отпечатку
-		cfg.VerifyConnection = func(cs tls.ConnectionState) error {
-			if len(cs.PeerCertificates) == 0 || CertSHA256(cs.PeerCertificates[0].Raw) != pin {
-				return ErrCertChanged
-			}
-			return nil
-		}
-	default:
-		return nil, ErrPolicy
-	}
-	return cfg, nil
+	return tlspin.Config(t.CAPEM, t.ServerName, t.Host, t.CertSHA256)
 }
 
 // FetchCert — сертификат сервера без входа (для закрепления при первом подключении): отпечаток SHA-256 DER.
@@ -100,23 +65,7 @@ func FetchCert(host string, port int, serverName string, timeout time.Duration) 
 	if port == 0 {
 		port = 443
 	}
-	//nolint:gosec // только чтение сертификата для закрепления; учётные данные по этому соединению не передаются
-	cfg := &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true, ServerName: serverName}
-	raw, err := (&net.Dialer{Timeout: timeout}).Dial("tcp", net.JoinHostPort(host, strconv.Itoa(port)))
-	if err != nil {
-		return "", err
-	}
-	defer raw.Close()
-	c := tls.Client(raw, cfg)
-	_ = c.SetDeadline(time.Now().Add(timeout))
-	if err = c.Handshake(); err != nil {
-		return "", err
-	}
-	certs := c.ConnectionState().PeerCertificates
-	if len(certs) == 0 {
-		return "", errors.New("vsphere: no server certificate")
-	}
-	return CertSHA256(certs[0].Raw), nil
+	return tlspin.Fetch(host, port, serverName, timeout)
 }
 
 // Inventory — прочитанное из vSphere (без секретов).
