@@ -74,7 +74,7 @@ try{
  await drawer.getByLabel('Подсеть (CIDR)').fill('127.0.0.0/30');await drawer.getByRole('button',{name:/Добавить подсеть/}).click();await expect(drawer).toBeHidden();
  await expect(page.getByRole('button',{name:/Loopback/})).toBeVisible();
  await page.getByRole('button',{name:'Обследовать'}).click();await expect(page.getByText('завершено').first()).toBeVisible({timeout:150000});
- await expect(page.locator('.systems-main').getByRole('cell',{name:'127.0.0.1',exact:true})).toBeVisible();
+ await expect(page.locator('.systems-main').getByRole('cell',{name:/^127\.0\.0\.1(\s|$)/})).toBeVisible(); // C57.03: под адресом — имя по обратному DNS, если оно есть у резолвера collector
  await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:'../.local/c51-discovery-web.png',fullPage:true});checks.push('C51 discovery: tabs, /16 refused with a visible error in the drawer, subnet created, run by button, real collector result shown');
  // C51.03: учётка в боковой панели (секрет не возвращается), «Собирать…» у узла без отпечатка ключа → цель сбора
  await page.getByRole('tab',{name:'Учётки сбора'}).click();await page.getByRole('button',{name:'+ Новая учётка'}).click();drawer=page.getByRole('dialog',{name:'Новая учётка'});
