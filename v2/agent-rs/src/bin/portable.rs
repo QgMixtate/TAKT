@@ -36,6 +36,13 @@ fn hostname(sections: &[serde_json::Value]) -> String {
     sections.iter().find(|s| s["name"] == "identity").and_then(|s| s["records"][0]["hostname"].as_str()).unwrap_or("host").to_string()
 }
 
+/// Итог узла для мастера (C52.04, страница узла): разделы — имя, статус, код причины и число строк; данных инвентаря нет.
+fn summary(transport: &str, target: &str, sections: &[serde_json::Value]) -> serde_json::Value {
+    let secs: Vec<serde_json::Value> = sections.iter().map(|s| serde_json::json!({"name": s["name"], "status": s["status"], "reason_code": s["reason_code"], "rows": s["records"].as_array().map(|a| a.len()).unwrap_or(0)})).collect();
+    let os = sections.iter().find(|s| s["name"] == "os").and_then(|s| s["records"][0].get("name").or(s["records"][0].get("caption")).cloned()).unwrap_or(serde_json::Value::Null);
+    serde_json::json!({"transport": transport, "target": target, "hostname": hostname(sections), "os": os, "sections": secs})
+}
+
 fn report(kind: &str, name: &str, sections: &[serde_json::Value]) {
     let rows: usize = sections.iter().map(|s| s["records"].as_array().map(|a| a.len()).unwrap_or(0)).sum();
     println!("{:<6} {:<24} rows={}", kind, name, rows);
@@ -74,10 +81,15 @@ fn main() -> ExitCode {
             None => Err("inventory-section ИМЯ".into()),
         },
         Some("init") => state().and_then(|dir| {
-            let (t, s, sc) = (arg(&args, "--tenant").unwrap_or_default(), arg(&args, "--site").unwrap_or_default(), arg(&args, "--scope").unwrap_or_default());
+            // C52.04: строка подготовки из Web (--prep) вместо трёх идентификаторов и ключа
+            let prep = arg(&args, "--prep").map(|x| p::parse_prep(&x)).transpose()?;
+            let (t, s, sc) = match &prep {
+                Some(x) => (x.tenant.clone(), x.site.clone(), x.scope.clone()),
+                None => (arg(&args, "--tenant").unwrap_or_default(), arg(&args, "--site").unwrap_or_default(), arg(&args, "--scope").unwrap_or_default()),
+            };
             let (id, public) = p::init(&dir, &t, &s, &sc)?;
             println!("tenant_id={}\nsite_id={}\nscope_id={}\nsource_id={}\ngeneration_id={}\nkey_id={}\npublic_key={}", id.tenant_id, id.site_id, id.network_scope_id, id.source_id, id.generation_id, id.key_id, p::public_b64url(&public));
-            if let Some(k) = arg(&args, "--center-key") {
+            if let Some(k) = arg(&args, "--center-key").or_else(|| prep.as_ref().and_then(|x| x.center_key.clone())) {
                 println!("encryption_key_id={}", p::set_center_key(&dir, &k)?);
             }
             println!("Передайте public_key в центр для доверия при импорте. Ключ подписи остаётся в {}", dir.display());
@@ -126,12 +138,15 @@ fn main() -> ExitCode {
             println!("source_id={} key_id={}", id.source_id, id.key_id);
             let mut observations = vec![];
             let mut failed_targets = 0;
+            let started = ssagent::client::now_rfc3339();
+            let mut summaries: Vec<serde_json::Value> = vec![]; // results-last.json для мастера
             // №59: адреса этого ПК и наблюдение «этот ПК» — тот же узел по сети не собирается повторно
             let mut own: (std::collections::HashSet<String>, Option<serde_json::Value>) = (Default::default(), None);
             if !args.iter().any(|a| a == "--no-host") {
                 let (candidates, sections) = host()?;
                 let name = hostname(&sections);
                 report("host", &name, &sections);
+                summaries.push({ let mut r = summary("host", &name, &sections); r["outcome"] = "collected".into(); r });
                 own.0 = own_addresses(&sections);
                 let o = p::observation(&dir, &id, "host", &name, &candidates, sections)?;
                 own.1 = Some(o["observation_id"].clone());
@@ -219,6 +234,7 @@ fn main() -> ExitCode {
                     match r {
                         Ok((candidates, sections)) => {
                             report("winrm", &ip, &sections);
+                            summaries.push({ let mut r = summary("winrm", &ip, &sections); r["outcome"] = "collected".into(); r["profile"] = profile.clone().into(); r });
                             let o = p::observation(&dir, &id, "winrm", &ip, &candidates, sections)?;
                             outcomes.insert(ip, serde_json::json!({"outcome": "collected", "profile": profile, "observation_id": o["observation_id"]}));
                             observations.push(o);
@@ -226,6 +242,7 @@ fn main() -> ExitCode {
                         Err(f) => {
                             failed_targets += 1;
                             println!("{:<6} {:<24} FAILED: {}", "winrm", ip, f.code());
+                            summaries.push(serde_json::json!({"transport": "winrm", "target": ip, "outcome": f.outcome(), "reason": f.code(), "profile": profile}));
                             outcomes.insert(ip, serde_json::json!({"outcome": f.outcome(), "reason": f.code(), "profile": profile}));
                         }
                     }
@@ -236,6 +253,7 @@ fn main() -> ExitCode {
                     match r {
                         Ok((candidates, sections)) => {
                             report("ssh", &ip, &sections);
+                            summaries.push({ let mut r = summary("ssh", &ip, &sections); r["outcome"] = "collected".into(); r["profile"] = profile.clone().into(); r });
                             let o = p::observation(&dir, &id, "ssh", &ip, &candidates, sections)?;
                             outcomes.insert(ip, serde_json::json!({"outcome": "collected", "profile": profile, "observation_id": o["observation_id"]}));
                             observations.push(o);
@@ -243,11 +261,23 @@ fn main() -> ExitCode {
                         Err(f) => {
                             failed_targets += 1;
                             println!("{:<6} {:<24} FAILED: {}", "ssh", ip, f.code());
+                            summaries.push(serde_json::json!({"transport": "ssh", "target": ip, "outcome": f.outcome(), "reason": f.code(), "profile": profile}));
                             outcomes.insert(ip, serde_json::json!({"outcome": f.outcome(), "reason": f.code(), "profile": profile}));
                         }
                     }
                 }
             }
+            // итоги для мастера: узлы без профиля и снятые аудитором — из обследования
+            if let Some(l) = &last {
+                for h in l["hosts"].as_array().into_iter().flatten() {
+                    let ip = h["ip"].as_str().unwrap_or_default();
+                    if !summaries.iter().any(|r| r["target"] == ip) && !own.0.contains(ip) {
+                        let o = outcomes.get(ip).and_then(|o| o["outcome"].as_str()).unwrap_or("no_profile");
+                        summaries.push(serde_json::json!({"transport": h["kind"], "target": ip, "outcome": o}));
+                    }
+                }
+            }
+            ssagent::state::save_json(&dir.join("results-last.json"), &serde_json::json!({"started_at": started, "finished_at": ssagent::client::now_rfc3339(), "dry_run": dry, "hosts": summaries}))?;
             if dry {
                 println!("DRY RUN: {} target(s) ok, {} failed; package not written", observations.len(), failed_targets);
                 return Ok(());

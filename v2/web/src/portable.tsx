@@ -9,6 +9,7 @@ type Parsed=Partial<Record<typeof fields[number],string>>;
 export function parseInit(text:string):Parsed{const out:Parsed={};for(const line of text.split(/\r?\n/)){const m=/^\s*([a-z_]+)=(\S+)\s*$/.exec(line);if(m&&(fields as readonly string[]).includes(m[1]))out[m[1] as typeof fields[number]]=m[2]}return out}
 // №123: причина отказа импорта видна в Web (код — для поддержки)
 const rejectText:Record<string,string>={SCHEMA_INVALID:'данные пакета не прошли проверку формата',SOURCE_NOT_AUTHORIZED:'носитель не зарегистрирован в центре или отозван',SEQUENCE_CONFLICT:'нарушен порядок пакетов носителя'};
+const b64url=(t:string)=>{let b='';for(const c of new TextEncoder().encode(t))b+=String.fromCharCode(c);return btoa(b).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')};
 const dispositionName:Record<string,string>={applied:'принято',duplicate:'уже было',rejected:'отклонено',quarantined:'в карантине',recorded_pending_resolution:'ждёт разбора'};
 
 export function PortablePanel({csrf,tenant,sources,onChanged,onExpired}:{csrf:string;tenant:string;sources:Source[];onChanged:()=>void;onExpired:()=>void}){
@@ -18,6 +19,8 @@ export function PortablePanel({csrf,tenant,sources,onChanged,onExpired}:{csrf:st
  useEffect(()=>{if(!open)return;api.portableScopes().then(p=>{setScopes(p.items);setEnc(p.encryption);setEncOK(p.encryption_available);if(p.items[0])setScope(p.items[0].scope_id)}).catch(fail)},[open]);
  const chosen=scopes.find(s=>s.scope_id===scope);
  const args=chosen?`--tenant ${tenant} --site ${chosen.site_id} --scope ${chosen.scope_id}`+(enc?` --center-key ${enc.public_key}`:''):'';
+ // C52.04: строка подготовки для мастера portable — те же значения, что в командах (без секретов)
+ const prep=chosen?'takt-portable:v1:'+b64url(JSON.stringify({tenant,site:chosen.site_id,scope:chosen.scope_id,...(enc?{center_key:enc.public_key}:{}),site_name:chosen.site_name,scope_name:chosen.namespace})):'';
  const parsed=parseInit(initText);const ready=!!(parsed.site_id&&parsed.scope_id&&parsed.source_id&&parsed.generation_id&&parsed.public_key);
  const portables=sources.filter(s=>s.source_kind==='portable');
  async function register(){setBusy(true);setError(null);setNote(null);try{const r=await api.registerPortable(csrf,{site_id:parsed.site_id!,scope_id:parsed.scope_id!,source_id:parsed.source_id!,generation_id:parsed.generation_id!,public_key:parsed.public_key!});setNote('Источник зарегистрирован: '+r.source_id.slice(0,8)+'… Теперь соберите пакет и загрузите его ниже.');setSource(r.source_id);setInitText('');onChanged()}catch(e){fail(e)}finally{setBusy(false)}}
@@ -30,7 +33,10 @@ export function PortablePanel({csrf,tenant,sources,onChanged,onExpired}:{csrf:st
   <div className="two-col portable-top">
    <Panel title="Как провести аудит без установки"><ol className="steps">
     <li><span className="n">1</span><div><b>Подготовить носитель</b><p className="muted">Площадка и сегмент: <select aria-label="Площадка и сегмент" value={scope} onChange={e=>setScope(e.target.value)}>{scopes.map(s=><option key={s.scope_id} value={s.scope_id}>{s.site_name} · {s.namespace}</option>)}</select></p>
-     {chosen?<details className="cmds"><summary>Команды для носителя — Linux и Windows</summary><p className="muted">Linux (<span className="mono">surveyscan-portable</span> из выпуска):</p><pre className="mono cmd">{`./surveyscan-portable init --state ./ss-portable ${args}\n./surveyscan-portable collect --state ./ss-portable --out ./ss-portable-audit.zip\n./surveyscan-portable verify --package ./ss-portable-audit.zip --public-key <public_key из вывода init>`}</pre>
+     {chosen?<div className="prep"><p className="muted">Строка подготовки — вставьте в мастер на носителе (<span className="mono">surveyscan-portable.exe wizard</span>, шаг 1); секретов в ней нет:</p>
+      <textarea className="mono" aria-label="Строка подготовки носителя" readOnly rows={3} value={prep}/>
+      <button className="button small" onClick={()=>void navigator.clipboard?.writeText(prep).then(()=>setNote('Строка подготовки скопирована.')).catch(()=>{})}>Копировать строку</button></div>:null}
+     {chosen?<details className="cmds"><summary>Без мастера — команды для носителя, Linux и Windows</summary><p className="muted">Linux (<span className="mono">surveyscan-portable</span> из выпуска):</p><pre className="mono cmd">{`./surveyscan-portable init --state ./ss-portable ${args}\n./surveyscan-portable collect --state ./ss-portable --out ./ss-portable-audit.zip\n./surveyscan-portable verify --package ./ss-portable-audit.zip --public-key <public_key из вывода init>`}</pre>
       <p className="muted">Windows («от администратора», <span className="mono">surveyscan-portable.exe</span>):</p><pre className="mono cmd">{`.\\surveyscan-portable.exe init --state .\\ss-portable ${args}\n.\\surveyscan-portable.exe collect --state .\\ss-portable --out .\\ss-portable-audit.zip\n.\\surveyscan-portable.exe verify --package .\\ss-portable-audit.zip --public-key <public_key из вывода init>`}</pre></details>:null}
      <p className="muted"><b>Шифрование пакета:</b> {enc?<span>включено, ключ центра <span className="mono">{enc.key_id.slice(0,16)}</span> — потерянный носитель не прочитать.</span>:encOK?<><span>выключено — пакет читается любым, у кого он окажется. </span><button className="button small" disabled={busy} onClick={()=>void encrypt()}>Включить шифрование</button></>:<span>недоступно: у центра не настроено хранилище секретов.</span>}</p></div></li>
     <li><span className="n">2</span><div><b>Зарегистрировать носитель</b><p className="muted">Вставьте весь вывод <span className="mono">init</span> — открытый ключ; ключ подписи остаётся на носителе.</p>

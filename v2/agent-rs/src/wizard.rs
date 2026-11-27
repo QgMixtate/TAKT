@@ -5,6 +5,7 @@
 use crate::portable as p;
 use crate::profiles::{Profiles, FILE as PROFILES_FILE};
 use serde_json::{json, Value};
+use sha2::Digest;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -12,6 +13,17 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 
 const PAGE: &str = include_str!("wizard.html");
+/// Шрифты мастера (Inter, Manrope; лицензия OFL — assets/fonts): мастер работает без сети, CDN нет.
+const FONTS: &[(&str, &[u8])] = &[
+    ("inter-latin-400.woff2", include_bytes!("../assets/fonts/inter-latin-400-normal.woff2")),
+    ("inter-latin-500.woff2", include_bytes!("../assets/fonts/inter-latin-500-normal.woff2")),
+    ("inter-latin-600.woff2", include_bytes!("../assets/fonts/inter-latin-600-normal.woff2")),
+    ("inter-cyrillic-400.woff2", include_bytes!("../assets/fonts/inter-cyrillic-400-normal.woff2")),
+    ("inter-cyrillic-500.woff2", include_bytes!("../assets/fonts/inter-cyrillic-500-normal.woff2")),
+    ("inter-cyrillic-600.woff2", include_bytes!("../assets/fonts/inter-cyrillic-600-normal.woff2")),
+    ("manrope-latin-700.woff2", include_bytes!("../assets/fonts/manrope-latin-700-normal.woff2")),
+    ("manrope-cyrillic-700.woff2", include_bytes!("../assets/fonts/manrope-cyrillic-700-normal.woff2")),
+];
 const MAX_BODY: usize = 1 << 20;
 const MAX_LINES: usize = 2000;
 
@@ -147,6 +159,14 @@ fn handle(w: &Wizard, c: TcpStream) -> std::io::Result<()> {
     if req.method == "GET" && req.path == "/" {
         return respond(&c, 200, "text/html; charset=utf-8", PAGE.as_bytes());
     }
+    if req.method == "GET" {
+        if let Some(name) = req.path.strip_prefix("/fonts/") {
+            return match FONTS.iter().find(|(n, _)| *n == name) {
+                Some((_, b)) => respond(&c, 200, "font/woff2", b),
+                None => respond(&c, 404, "text/plain", b"not found"),
+            };
+        }
+    }
     if !req.path.starts_with("/api/") {
         return respond(&c, 404, "text/plain", b"not found");
     }
@@ -194,6 +214,10 @@ fn route(w: &Wizard, method: &str, path: &str, b: &Value) -> R {
                 return Err((409, "каталог аудита уже подготовлен".into()));
             }
             let mut a = vec!["init".to_string(), "--state".into(), w.dir.display().to_string()];
+            if !s(b, "prep").is_empty() {
+                p::parse_prep(s(b, "prep")).map_err(bad)?; // понятная ошибка сразу, до запуска
+                a.extend(["--prep".into(), s(b, "prep").to_string()]);
+            }
             for k in ["tenant", "site", "scope"] {
                 if !s(b, k).is_empty() {
                     a.extend([format!("--{k}"), s(b, k).to_string()]);
@@ -203,6 +227,11 @@ fn route(w: &Wizard, method: &str, path: &str, b: &Value) -> R {
                 a.extend(["--center-key".into(), s(b, "center_key").to_string()]);
             }
             start(w, "init", a, String::new(), None)
+        }
+        ("POST", "/api/prep") => {
+            // предпросмотр строки подготовки: что из неё получено (шаг 1 мастера)
+            let x = p::parse_prep(s(b, "prep")).map_err(bad)?;
+            Ok(json!({"site": x.site, "scope": x.scope, "site_name": x.site_name, "scope_name": x.scope_name, "center_key": x.center_key.is_some()}))
         }
         ("POST", "/api/center-key") => {
             let id = p::set_center_key(&w.dir, s(b, "center_key")).map_err(bad)?;
@@ -294,8 +323,16 @@ fn state(w: &Wizard) -> R {
         _ => vec![],
     };
     let center = p::center_key(&w.dir).ok().flatten().is_some();
+    // C52.04: итоги последнего сбора по узлам и разделам (страница узла мастера)
+    let results: Value = std::fs::read(w.dir.join("results-last.json")).ok().and_then(|r| serde_json::from_slice(&r).ok()).unwrap_or(Value::Null);
+    let packages: Vec<Value> = std::fs::read_dir(w.dir.join("packages")).map(|d| d.filter_map(Result::ok).filter_map(|e| {
+        let m = e.metadata().ok()?;
+        let name = e.file_name().to_string_lossy().to_string();
+        let sha = std::fs::read(e.path()).ok().map(|b| crate::sign::hex(&sha2::Sha256::digest(&b)));
+        Some(json!({"name": name, "bytes": m.len(), "sha256": sha, "path": e.path().display().to_string()}))
+    }).collect()).unwrap_or_default();
     Ok(json!({"dir": w.dir.display().to_string(), "initialized": identity.is_some(), "source_id": identity, "public_key": public, "init_block": block, "center_key": center,
-        "profiles": profiles, "discovery": discovery, "bound": bound, "platform": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION")}))
+        "profiles": profiles, "discovery": discovery, "bound": bound, "results": results, "packages": packages, "platform": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION")}))
 }
 
 fn start(w: &Wizard, kind: &str, args: Vec<String>, stdin: String, package: Option<String>) -> R {

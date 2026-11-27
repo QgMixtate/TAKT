@@ -1,9 +1,9 @@
 name: surveyscan-web
 on:
   push:
-    paths: ['v2/web/**', 'v2/contracts/**', '.github/workflows/web.yml']
+    paths: ['v2/web/**', 'v2/contracts/**', '.github/workflows/web.yml', 'v2/agent-rs/**']
   pull_request:
-    paths: ['v2/web/**', 'v2/contracts/**', '.github/workflows/web.yml']
+    paths: ['v2/web/**', 'v2/contracts/**', '.github/workflows/web.yml', 'v2/agent-rs/**']
   workflow_dispatch:
 permissions:
   contents: read
@@ -69,6 +69,10 @@ jobs:
       - run: python scripts/dev.py up
       - name: Real API, PG, TLS source and Chromium acceptance
         run: .contract-tools/bin/python scripts/web_smoke.py
+      - name: Rust portable wizard in Chromium — preparation string, this PC collected, node page, package (C52.04)
+        run: |
+          (cd agent-rs && cargo build --release --locked --bin surveyscan-portable)
+          cd web && node scripts/portable_wizard.mjs ../agent-rs/target/release/surveyscan-portable
       - uses: actions/upload-artifact@v4
         if: always()
         with:

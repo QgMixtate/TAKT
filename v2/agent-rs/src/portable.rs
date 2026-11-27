@@ -45,6 +45,39 @@ pub fn clean_id(raw: &str) -> String {
     raw.chars().filter(|c| c.is_ascii_hexdigit() || *c == '-').collect::<String>().to_ascii_lowercase()
 }
 
+/// Строка подготовки носителя из Web (C52.04, мастер — шаг 1): `takt-portable:v1:` + base64url(JSON) с площадкой,
+/// сегментом и (необязательно) ключом шифрования центра. Секретов в ней нет: это те же значения, что в командах Web.
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Prep {
+    pub tenant: String,
+    pub site: String,
+    pub scope: String,
+    #[serde(default)]
+    pub center_key: Option<String>,
+    #[serde(default)]
+    pub site_name: Option<String>,
+    #[serde(default)]
+    pub scope_name: Option<String>,
+}
+
+pub const PREP_PREFIX: &str = "takt-portable:v1:";
+
+pub fn parse_prep(text: &str) -> Result<Prep, String> {
+    let body = text.trim().strip_prefix(PREP_PREFIX).ok_or("строка подготовки должна начинаться с takt-portable:v1: (скопируйте её из Web целиком)")?;
+    let raw = URL_SAFE_NO_PAD.decode(body.trim_end_matches('=')).map_err(|_| "строка подготовки повреждена (скопируйте её из Web целиком)")?;
+    if raw.len() > 4096 {
+        return Err("строка подготовки слишком длинная".into());
+    }
+    let p: Prep = serde_json::from_slice(&raw).map_err(|_| "строка подготовки повреждена")?;
+    if ![&p.tenant, &p.site, &p.scope].iter().all(|v| crate::claims::valid_id(v)) {
+        return Err("строка подготовки: неверные идентификаторы".into());
+    }
+    if p.site_name.as_ref().is_some_and(|n| n.len() > 256) || p.scope_name.as_ref().is_some_and(|n| n.len() > 256) {
+        return Err("строка подготовки: слишком длинное имя".into());
+    }
+    Ok(p)
+}
+
 pub fn init(dir: &Path, tenant: &str, site: &str, scope: &str) -> Result<(Identity, VerifyingKey), String> {
     let (tenant, site, scope) = (clean_id(tenant), clean_id(site), clean_id(scope));
     let (tenant, site, scope) = (tenant.as_str(), site.as_str(), scope.as_str());
@@ -278,5 +311,22 @@ mod clean_id_tests {
             assert_eq!(super::clean_id(&raw), id);
         }
         assert!(!crate::claims::valid_id(&super::clean_id("site 42")));
+    }
+}
+
+#[cfg(test)]
+mod prep_tests {
+    use super::*;
+    #[test]
+    fn preparation_string_round_trip_and_rejections() {
+        let j = r#"{"tenant":"00000000-0000-4000-8000-000000000001","site":"00000000-0000-4000-8000-000000000002","scope":"00000000-0000-4000-8000-000000000003","center_key":"MCowBQYDK2VuAyEA","site_name":"Москва"}"#;
+        let s = format!("{PREP_PREFIX}{}", URL_SAFE_NO_PAD.encode(j));
+        let p = parse_prep(&format!("  {s}\n")).unwrap();
+        assert_eq!(p.site_name.as_deref(), Some("Москва"));
+        assert_eq!(p.center_key.as_deref(), Some("MCowBQYDK2VuAyEA"));
+        assert!(parse_prep("tenant=1").is_err());
+        assert!(parse_prep(&format!("{PREP_PREFIX}!!!")).is_err());
+        let bad = format!("{PREP_PREFIX}{}", URL_SAFE_NO_PAD.encode(r#"{"tenant":"x","site":"y","scope":"z"}"#));
+        assert!(parse_prep(&bad).is_err());
     }
 }

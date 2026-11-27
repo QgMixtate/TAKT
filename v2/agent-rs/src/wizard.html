@@ -3,237 +3,418 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SurveyScan portable — мастер</title>
+<title>ТАКТ portable — мастер аудита</title>
 <style>
-:root { --bg:#f6f7f9; --fg:#1d2330; --muted:#5f6b7a; --line:#d8dde4; --card:#fff; --accent:#2457c5; --ok:#1f7a3d; --bad:#b3261e; --warn:#8a5a00; }
-* { box-sizing: border-box; }
-body { margin:0; font:14px/1.45 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
-header { padding:14px 20px; background:#1d2330; color:#fff; display:flex; gap:16px; align-items:baseline; flex-wrap:wrap; }
-header b { font-size:16px; } header span { color:#aab4c3; font-size:12px; }
-nav { display:flex; gap:4px; padding:10px 20px 0; flex-wrap:wrap; }
-nav button { border:1px solid var(--line); border-bottom:none; background:#e9edf2; padding:8px 14px; border-radius:6px 6px 0 0; cursor:pointer; color:var(--fg); }
-nav button.on { background:var(--card); font-weight:600; }
-main { background:var(--card); margin:0 20px 20px; border:1px solid var(--line); border-radius:0 6px 6px 6px; padding:18px 20px; }
-h2 { margin:0 0 6px; font-size:17px; } p.hint { color:var(--muted); margin:0 0 14px; }
-label { display:block; margin:8px 0 3px; font-weight:600; font-size:13px; }
-input, select, textarea { font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:4px; width:100%; max-width:520px; background:#fff; color:var(--fg); }
-textarea { min-height:70px; font-family:ui-monospace, Consolas, monospace; }
-input::placeholder, textarea::placeholder { font-style:italic; color:#98a2b0; }
-button.main, button.sec { margin-top:12px; padding:7px 16px; border-radius:4px; cursor:pointer; font:inherit; }
-button.main { background:var(--accent); color:#fff; border:1px solid var(--accent); }
-button.sec { background:#fff; color:var(--accent); border:1px solid var(--accent); }
-button:disabled { opacity:.5; cursor:default; }
-table { border-collapse:collapse; width:100%; margin-top:10px; font-size:13px; }
-th, td { border-bottom:1px solid var(--line); padding:5px 6px; text-align:left; vertical-align:middle; }
-th { background:#f0f2f5; font-weight:600; }
-td input, td select { max-width:none; padding:4px 6px; }
-.mono { font-family:ui-monospace, Consolas, monospace; font-size:12px; word-break:break-all; }
-pre.log { background:#11151c; color:#d5dbe4; padding:10px; border-radius:4px; max-height:320px; overflow:auto; font-size:12px; white-space:pre-wrap; }
-.bar { height:8px; background:#e3e7ec; border-radius:4px; overflow:hidden; max-width:520px; margin-top:10px; } .bar i { display:block; height:100%; background:var(--accent); width:0; }
-.ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); } .muted { color:var(--muted); }
-.row { display:flex; gap:16px; flex-wrap:wrap; } .row > div { flex:1 1 240px; }
-.msg { margin-top:10px; }
+@font-face{font-family:Inter;font-weight:400;src:url(/fonts/inter-latin-400.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2190-21FF}
+@font-face{font-family:Inter;font-weight:400;src:url(/fonts/inter-cyrillic-400.woff2) format('woff2');unicode-range:U+0400-045F,U+0490-0491,U+2116}
+@font-face{font-family:Inter;font-weight:500;src:url(/fonts/inter-latin-500.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2190-21FF}
+@font-face{font-family:Inter;font-weight:500;src:url(/fonts/inter-cyrillic-500.woff2) format('woff2');unicode-range:U+0400-045F,U+0490-0491,U+2116}
+@font-face{font-family:Inter;font-weight:600;src:url(/fonts/inter-latin-600.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F,U+2190-21FF}
+@font-face{font-family:Inter;font-weight:600;src:url(/fonts/inter-cyrillic-600.woff2) format('woff2');unicode-range:U+0400-045F,U+0490-0491,U+2116}
+@font-face{font-family:Manrope;font-weight:700;src:url(/fonts/manrope-latin-700.woff2) format('woff2');unicode-range:U+0000-00FF,U+2000-206F}
+@font-face{font-family:Manrope;font-weight:700;src:url(/fonts/manrope-cyrillic-700.woff2) format('woff2');unicode-range:U+0400-045F,U+0490-0491}
+:root{--navy:#0F1A2B;--navy2:#17253B;--mag:#D6157A;--blue:#1E7BB0;--bg:#F3F5F9;--line:#E3E7EE;--line2:#EEF1F5;--fg:#0F1A2B;--muted:#5B6678;--faint:#8A95A8;--ok:#1F8A4C;--warn:#B7791F;--bad:#C53030}
+*{box-sizing:border-box}
+body{margin:0;font:400 13px/1.5 Inter,"Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--fg);-webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1}
+h1,h2,h3{font-family:Manrope,Inter,sans-serif;font-weight:700;letter-spacing:-.01em;margin:0}
+button,input,select,textarea{font:inherit;color:inherit}
+.ic{width:16px;height:16px;flex:none;vertical-align:-3px}
+.app{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}
+aside{background:var(--navy);color:#C9D2E0;padding:20px 14px;display:flex;flex-direction:column;gap:20px;position:sticky;top:0;height:100vh}
+.logo{display:flex;align-items:center;gap:10px;padding:0 6px}.mark{width:34px;height:34px;border:2px solid var(--mag);border-radius:9px;position:relative;display:grid;place-items:center;color:#fff;font:700 18px Manrope,Inter}.mark:after{content:"";position:absolute;top:5px;right:5px;width:6px;height:6px;border-radius:50%;background:var(--mag)}
+.logo b{display:block;color:#fff;font:700 16px Manrope,Inter}.logo small{display:block;font-size:9.5px;letter-spacing:3px;color:#7F8DA4}
+.grp{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#6F7E96;padding:0 8px}
+.steps{display:flex;flex-direction:column;gap:2px}
+.st{display:flex;gap:10px;align-items:flex-start;padding:9px 8px;border-radius:8px;border:0;background:none;color:#C9D2E0;text-align:left;cursor:pointer;width:100%}
+.st:hover{background:#142136}.st .n{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font:600 11px Inter;border:1.5px solid #3A4A64;margin-top:1px;flex:none}
+.st.done .n{background:var(--ok);border-color:var(--ok);color:#fff}.st.on{background:var(--navy2);color:#fff;box-shadow:inset 2px 0 0 var(--mag)}.st.on .n{border-color:var(--mag);color:#fff}
+.st small{display:block;color:#7D8BA2;font-size:11.5px}
+.media{margin-top:auto;padding:12px 8px;border-top:1px solid #22324B;font-size:11.5px;color:#8D9AB0;display:flex;gap:10px;overflow-wrap:anywhere}.media b{color:#E6EBF2;font-weight:500;display:block;word-break:break-all}
+main{padding:20px 28px 40px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.top h1{font-size:21px}.sub{color:var(--muted);font-size:12.5px}.sp{flex:1}
+.btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:8px;font:600 13px Inter;border:1px solid transparent;background:transparent;color:var(--fg);white-space:nowrap;cursor:pointer}
+.btn.p{background:var(--mag);color:#fff;box-shadow:0 1px 2px rgba(214,21,122,.25)}.btn.p:hover{background:#B8106A}.btn.s{background:#fff;border-color:var(--line)}.btn.g{color:var(--muted)}.btn.g:hover{background:#E9EDF3}
+.btn:disabled{opacity:.5;cursor:default}.btn.sm{height:28px;padding:0 10px;font-size:12px}
+.card{background:#fff;border:1px solid var(--line);border-radius:12px}.ch{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--line2)}.ch h3{font-size:14px}.pad{padding:14px 16px}
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));background:#fff;border:1px solid var(--line);border-radius:12px}
+.kpi{padding:12px 16px;border-right:1px solid var(--line2);display:flex;flex-direction:column;gap:2px;background:none;border-top:0;border-bottom:0;border-left:0;text-align:left;cursor:pointer}.kpi:last-child{border-right:0}.kpi b{font:700 22px Manrope,Inter}.kpi span{color:var(--muted);font-size:12px;display:flex;gap:6px;align-items:center}.kpi.sel{box-shadow:inset 0 -2px 0 var(--mag)}
+table{width:100%;border-collapse:collapse}th{font:600 11px Inter;color:var(--faint);text-align:left;padding:8px 12px;border-bottom:1px solid var(--line2)}
+td{padding:0 12px;height:36px;border-bottom:1px solid var(--line2)}tr:last-child td{border-bottom:0}tbody tr.click{cursor:pointer}tbody tr.click:hover td{background:#FAFBFD}
+td input,td select{width:100%;border:1px solid var(--line);border-radius:6px;padding:4px 8px;background:#fff}
+.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,monospace;font-size:12px}.muted{color:var(--muted)}.faint{color:var(--faint)}.small{font-size:12px}
+.s-ok{color:var(--ok)}.s-warn{color:var(--warn)}.s-bad{color:var(--bad)}.s-n{color:var(--faint)}
+.stt{display:inline-flex;align-items:center;gap:6px;font-weight:500;white-space:nowrap}
+.gh td{height:32px;background:#FAFBFC;font-weight:600}
+.prog{height:6px;background:#E8ECF2;border-radius:3px;overflow:hidden}.prog i{display:block;height:100%;background:var(--blue);width:0;transition:width .3s}
+.log{font:12px/1.75 ui-monospace,Consolas,monospace;padding:10px 16px;color:#3A465A;max-height:260px;overflow:auto;white-space:pre-wrap;word-break:break-all}
+.field{display:flex;flex-direction:column;gap:4px}.field label{font-weight:600;font-size:12.5px}.field small{color:var(--muted)}
+.in{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;width:100%}textarea.in{resize:vertical;word-break:break-all}
+.row{display:flex;gap:12px;flex-wrap:wrap}.row>*{flex:1 1 200px}
+.grid2{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;align-items:start}
+.col{display:flex;flex-direction:column;gap:16px}
+.center{max-width:620px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:16px;padding-top:4vh}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;font-size:13px}
+.msg{padding:10px 12px;border-radius:8px;background:#FFF8F8;border:1px solid #F3C9C9;color:var(--bad)}.msg.ok{background:#F2FAF5;border-color:#CDE9D7;color:var(--ok)}
+.chk{width:15px;height:15px;accent-color:var(--mag);vertical-align:middle}
+.chain{display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:12.5px;padding-top:12px;margin-top:12px;border-top:1px solid var(--line2)}.chain span.l{color:var(--fg)}
+.kv{display:grid;grid-template-columns:120px 1fr;gap:6px 10px;font-size:12.5px}.kv dt{color:var(--muted)}.kv dd{margin:0}
+.crumb{color:var(--muted);font-size:12.5px}.crumb button{border:0;background:none;color:var(--blue);cursor:pointer;padding:0}
+.hide{display:none!important}
+@media(max-width:1000px){.app{grid-template-columns:1fr}aside{position:static;height:auto}.grid2{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
-<header><b>SurveyScan portable — мастер аудита</b><span id="where"></span></header>
-<nav id="tabs"></nav>
-<main id="view"></main>
+<div class="app">
+<aside>
+ <div class="logo"><div class="mark">т</div><div><b>такт</b><small>PORTABLE</small></div></div>
+ <div class="grp">Аудит площадки</div>
+ <nav class="steps" id="steps" aria-label="Шаги мастера"></nav>
+ <div class="media" id="media"></div>
+</aside>
+<main id="view" aria-live="polite"></main>
+</div>
 <script>
 "use strict";
 const token = location.hash.slice(1);
 history.replaceState(null, "", "/");
-let st = null, job = null, secrets = {}, selected = new Set(), withHost = true, tab = 0, poll = null, draft = null;
-const steps = ["1. Подготовка", "2. Обследование сети", "3. Профили учёток", "4. Узлы и сбор", "5. Пакет"];
-const $ = (id) => document.getElementById(id);
+// иконки — штрих 1,75 (как в макете)
+const P = {check:'<path d="M20 6 9 17l-5-5"/>',lock:'<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',key:'<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.3-9.3M17 6l3 3M14 9l2 2"/>',clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',wrench:'<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.5-.5-.5-2.5z"/>',plug:'<path d="M9 2v6M15 2v6M6 8h12v3a6 6 0 0 1-12 0zM12 17v5"/>',server:'<rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/><path d="M7 7.5h.01M7 16.5h.01"/>',package:'<path d="m12 3 8.5 4.5v9L12 21l-8.5-4.5v-9z"/><path d="m3.5 7.5 8.5 4.5 8.5-4.5M12 12v9"/>',usb:'<rect x="7" y="2" width="10" height="7" rx="1"/><path d="M5 9h14v7a5 5 0 0 1-5 5h-4a5 5 0 0 1-5-5z"/>',shield:'<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="m9 12 2 2 4-4"/>',alert:'<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17h.01"/>',x:'<circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/>',minus:'<circle cx="12" cy="12" r="9"/><path d="M8 12h8"/>',okc:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',retry:'<path d="M3 12a9 9 0 0 1 15.5-6.2L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.2L3 16M3 21v-5h5"/>',copy:'<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',chev:'<path d="m9 6 6 6-6 6"/>',left:'<path d="m15 6-6 6 6 6"/>',plus:'<path d="M12 5v14M5 12h14"/>',term:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>',win:'<path d="M3 5.5 10.5 4.5v7H3zM12 4.3 21 3v8.5h-9zM3 12.5h7.5v7L3 18.5zM12 12.5h9V21l-9-1.3z"/>',radar:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12 19 5"/>'};
+const ic = (n, c = "") => `<svg class="ic ${c}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`;
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const $ = (id) => document.getElementById(id);
+
+// справочник: почему не собрано и что сделать (коды сборщиков portable)
+const WHY = {
+ HOST_UNREACHABLE: ["Узел не ответил на порт сбора", "Проверьте, что узел включён и порт (SSH 22, WinRM 5985/5986) открыт с этого ПК: брандмауэр узла и сети."],
+ TIMEOUT: ["Узел не уложился во время ожидания", "Повторите сбор; при повторе — проверьте загрузку узла и канал до него."],
+ AUTH_FAILED: ["Вход отклонён", "Проверьте учётку и пароль профиля (или включена ли учётка). Мастер не перебирает другие учётки — доменная учётка не заблокируется."],
+ SECOND_FACTOR_REQUIRED: ["Узел требует второй фактор при входе по SSH", "Используйте профиль с ключом SSH, для которого второй фактор не требуется, или исключите узел правилом «не собирать»."],
+ HOST_KEY_CHANGED: ["Ключ SSH узла изменился с прошлого подключения", "Убедитесь, что это тот же узел (переустановка, смена адреса). Если да — удалите его строку из known_hosts.json на носителе и повторите."],
+ KEY_INVALID: ["Ключ SSH профиля не прочитан", "Нужен закрытый ключ OpenSSH без парольной фразы; проверьте путь к файлу в профиле."],
+ UNSUPPORTED_PLATFORM: ["ОС узла не поддерживается этим способом сбора", "Для такого узла используйте агент или другой профиль."],
+ WINRM_PROTOCOL_ERROR: ["WinRM ответил не по протоколу", "Проверьте, что на узле включён WinRM (5985) и он отвечает: Test-WSMan. Подготовка — руководство, раздел 11."],
+ UNENCRYPTED_REPLY: ["WinRM ответил без шифрования", "Включите шифрование WinRM на узле (AllowUnencrypted=false) — мастер не принимает открытый ответ."],
+ SCRIPT_FAILED: ["Сценарий сбора на узле не выполнился", "Проверьте, что учётке разрешён запуск команд по WinRM и PowerShell не ограничен политикой."],
+ COLLECTOR_NOT_AVAILABLE: ["Этот способ недоступен на ОС мастера", "Вход «текущей учёткой Windows» работает, только когда мастер запущен на Windows."],
+ ACCESS_DENIED: ["Нет прав на раздел", "Выдайте учётке права на чтение этих данных (локальные администраторы; для журналов — группа «Event Log Readers») и повторите узел."],
+ PROVIDER_UNAVAILABLE: ["Источник данных на узле недоступен", "Проверьте службу WMI (Windows) или наличие утилиты на узле; остальные разделы собраны."],
+ DATA_UNAVAILABLE: ["Данные раздела на узле недоступны", "Обычно — нет утилиты или службы; остальные разделы собраны."],
+ API_DATA_UNAVAILABLE: ["Данные раздела на узле недоступны", "Обычно — нет утилиты или службы; остальные разделы собраны."],
+ SOURCE_UNAVAILABLE: ["Источник данных раздела недоступен", "Проверьте наличие утилиты (например, dmidecode, lsblk, ip) и права учётки."],
+ PACKAGE_MANAGER_UNSUPPORTED: ["Менеджер пакетов узла не распознан", "ПО собирается из dpkg/rpm; для другого — раздел пуст."],
+ SECTION_UNSUPPORTED: ["Раздел не собирается этим способом", "Для полного состава поставьте агент на узел."],
+ BASELINE_COVERAGE_ONLY: ["Собран базовый состав раздела", "Полный состав — агентом на узле."],
+ QFE_SUBSET: ["Обновления — только из списка QFE", "Полный журнал обновлений — агентом на узле."],
+ REMOTE_SSH_PARTIAL: ["По SSH собрана часть раздела", "Без прав root часть данных недоступна; полный состав — с sudo или агентом."],
+ REMOTE_WINRM_PARTIAL: ["По WinRM собрана часть раздела", "Полный состав — с правами администратора или агентом."],
+ NETWORK_COLLECTION_INCOMPLETE: ["Сеть собрана не полностью", "Повторите узел; при повторе — проверьте права учётки."],
+ LOCAL_SAM_UNSUPPORTED_ON_DC: ["На контроллере домена нет локальных пользователей", "Это нормально: пользователи домена — в каталоге AD."],
+ LIMIT_REACHED: ["Данных больше предела — раздел обрезан", "Остальные записи не вошли в пакет; сообщите в поддержку, если это важно."],
+ WORKER_UNAVAILABLE: ["Внутренний сбой сбора раздела", "Повторите узел; если повторится — передайте журнал узла в поддержку."],
+ WORKER_FAILED: ["Внутренний сбой сбора раздела", "Повторите узел; если повторится — передайте журнал узла в поддержку."],
+ INVALID_WORKER_RESPONSE: ["Внутренний сбой сбора раздела", "Повторите узел; если повторится — передайте журнал узла в поддержку."],
+ OS_RELEASE_UNAVAILABLE: ["Версия ОС не определена", "Нет /etc/os-release на узле; остальное собрано."],
+ HOSTNAME_UNAVAILABLE: ["Имя узла не определено", "Остальное собрано; актив сопоставится по адресам."],
+};
+const reasonGroup = (code) => ({ HOST_UNREACHABLE: "Узел недоступен", TIMEOUT: "Таймаут / обрыв", AUTH_FAILED: "Вход отклонён", SECOND_FACTOR_REQUIRED: "Вход отклонён", HOST_KEY_CHANGED: "Ключ узла изменился", KEY_INVALID: "Ключ профиля", ACCESS_DENIED: "Нет прав на раздел", WINRM_PROTOCOL_ERROR: "WinRM не готов", UNENCRYPTED_REPLY: "WinRM не готов", SCRIPT_FAILED: "WinRM не готов", SOURCE_UNAVAILABLE: "Не хватает утилиты / службы", DATA_UNAVAILABLE: "Не хватает утилиты / службы", API_DATA_UNAVAILABLE: "Не хватает утилиты / службы", PROVIDER_UNAVAILABLE: "Не хватает утилиты / службы" }[code] || "Прочее");
+const SECTION = { identity: "Идентификация", os: "ОС", network: "Сеть", hardware: "Оборудование", software: "ПО", updates: "Обновления", services: "Службы", users_groups: "Пользователи и группы", routes_ports: "Маршруты и порты", resources: "Ресурсы", protection: "Средства защиты", neighbors: "Сетевые соседи" };
+const KIND = { linux_ssh: "Linux / SSH", windows_winrm: "Windows", network_snmp: "Сетевое", unknown: "не определён", host: "этот ПК", ssh: "Linux / SSH", winrm: "Windows" };
+
+let st = null, job = null, poll = null, step = 0, page = null, draft = null, secrets = {}, selected = null, filter = { q: "", kpi: "all" }, testRes = null, prepView = null;
+
 async function api(method, path, body) {
-  const r = await fetch(path, { method, headers: { "X-Token": token, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const v = await r.json().catch(() => ({ error: "ответ мастера не прочитан" }));
-  if (!r.ok) throw new Error(v.error || ("ошибка " + r.status));
-  return v;
+ const r = await fetch(path, { method, headers: { "X-Token": token, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+ const v = await r.json().catch(() => ({ error: "ответ мастера не прочитан" }));
+ if (!r.ok) throw new Error(v.error || ("ошибка " + r.status));
+ return v;
 }
-async function refresh() {
-  st = await api("GET", "/api/state");
-  job = await api("GET", "/api/job");
-  if (!draft) draft = JSON.parse(JSON.stringify(st.profiles || { profiles: [], rules: [] }));
-  draft.profiles = draft.profiles || []; draft.rules = draft.rules || [];
-  $("where").textContent = "каталог аудита: " + st.dir + " · " + st.platform + " · v" + st.version;
-  render();
-}
-function nav() {
-  $("tabs").innerHTML = steps.map((s, i) => `<button class="${i === tab ? "on" : ""}" data-tab="${i}">${s}</button>`).join("");
-  document.querySelectorAll("[data-tab]").forEach((b) => b.onclick = () => { tab = +b.dataset.tab; render(); });
-}
-function jobView(kind) {
-  if (!job || job.kind !== kind) return `<div id="jobbox" data-kind="${kind}"></div>`;
-  const lines = job.lines || [];
-  let pct = null;
-  for (const l of lines) { const m = /^\[(\d+)\/(\d+)\]/.exec(l); if (m) pct = Math.round(100 * m[1] / Math.max(1, m[2])); }
-  const state = job.running ? `<span class="warn">выполняется…</span>` : job.ok ? `<span class="ok">готово</span>` : `<span class="bad">завершено с ошибкой</span>`;
-  return `<div id="jobbox" data-kind="${kind}"><div class="msg">Состояние: ${state}</div>` + (pct !== null ? `<div class="bar"><i style="width:${pct}%"></i></div>` : "") +
-    `<pre class="log">${esc(lines.slice(-200).join("\n")) || "…"}</pre></div>`;
-}
-function watch() {
-  if (poll) return;
-  poll = setInterval(async () => {
-    job = await api("GET", "/api/job").catch(() => job);
-    if (!job.running) { clearInterval(poll); poll = null; await refresh(); return; }
-    const box = $("jobbox"); // обновляем только журнал, чтобы не сбить ввод в полях
-    if (box) box.outerHTML = jobView(box.dataset.kind);
-  }, 1000);
-}
-async function run(path, body) {
-  try { await api("POST", path, body); job = await api("GET", "/api/job"); render(); watch(); }
-  catch (e) { alert(e.message); }
+async function refresh(first) {
+ st = await api("GET", "/api/state");
+ job = await api("GET", "/api/job");
+ if (!draft) { draft = JSON.parse(JSON.stringify(st.profiles || { profiles: [], rules: [] })); draft.profiles = draft.profiles || []; draft.rules = draft.rules || []; }
+ if (first) step = !st.initialized ? 0 : results().length ? 3 : !st.discovery ? 1 : !(st.profiles?.profiles || []).length ? 2 : 3; // продолжить с места остановки
+ if (selected === null) selected = new Set((st.discovery?.hosts || []).filter((h, i) => st.bound[i]).map((h) => h.ip));
+ render();
 }
 function busy() { return job && job.running; }
-
-function stepInit() {
-  if (st.initialized) {
-    return `<h2>Каталог аудита подготовлен</h2><p class="hint">Источник portable создан; ключ подписи остаётся на этом носителе.</p>
-      <label for="ib2">Блок для центра — скопируйте целиком в Web: «Portable-аудит» → «Зарегистрировать источник»</label>
-      <textarea id="ib2" class="mono" rows="7" readonly>${esc(st.init_block || '')}</textarea>
-      <button class="sec" id="ibc">Копировать блок</button>
-      <label>Шифрование пакета ключом центра</label><div>${st.center_key ? '<span class="ok">включено</span>' : '<span class="warn">не задан ключ центра — пакет не шифруется</span>'}</div>
-      <label for="ck">Ключ шифрования центра (base64, из «Portable-аудит»)</label><input id="ck" autocomplete="off" placeholder="например, MCowBQYDK2VuAyEA…">
-      <button class="sec" id="ckb">Сохранить ключ центра</button>` + jobView("init");
-  }
-  return `<h2>Подготовка носителя</h2><p class="hint">Идентификаторы выдаёт центр при создании portable-источника (Web → «Portable-аудит»).</p>
-    <div class="row"><div><label for="t">tenant_id</label><input id="t" placeholder="например, 00000000-0000-4000-8000-000000000001"></div>
-    <div><label for="s">site_id</label><input id="s"></div><div><label for="sc">scope_id (сетевая область)</label><input id="sc"></div></div>
-    <label for="ck">Ключ шифрования центра (необязательно)</label><input id="ck" autocomplete="off">
-    <button class="main" id="ib" ${busy() ? "disabled" : ""}>Подготовить</button>` + jobView("init");
+function watch() {
+ if (poll) return;
+ poll = setInterval(async () => {
+  job = await api("GET", "/api/job").catch(() => job);
+  if (!job.running) { clearInterval(poll); poll = null; await refresh(); return; }
+  const box = $("jobbox"); if (box) box.outerHTML = jobView(box.dataset.kind, box.dataset.title);
+  const pr = $("prog"); if (pr) pr.style.width = progress() + "%";
+ }, 1000);
 }
-function bindInit() {
-  if ($("ibc")) $("ibc").onclick = async () => { const t = $("ib2"); t.select(); try { await navigator.clipboard.writeText(t.value); } catch (e) { document.execCommand("copy"); } $("ibc").textContent = "Скопировано"; };
-  if ($("ib")) $("ib").onclick = () => run("/api/init", { tenant: $("t").value, site: $("s").value, scope: $("sc").value, center_key: $("ck").value });
-  if ($("ckb")) $("ckb").onclick = async () => { try { await api("POST", "/api/center-key", { center_key: $("ck").value }); await refresh(); } catch (e) { alert(e.message); } };
+async function run(path, body) {
+ try { await api("POST", path, body); job = await api("GET", "/api/job"); render(); watch(); }
+ catch (e) { flash(e.message, false); }
 }
-
-function hostsSummary() {
-  const d = st.discovery;
-  if (!d || !d.hosts) return `<p class="muted">Обследование ещё не выполнялось.</p>`;
-  const c = (k) => d.hosts.filter((h) => h.kind === k).length;
-  return `<p>Последнее обследование: ${esc(d.finished_at)} — <b>${d.hosts.length}</b> узлов (Linux/SSH ${c("linux_ssh")}, Windows ${c("windows_winrm")}, сетевых ${c("network_snmp")}, не определено ${c("unknown")})${d.complete ? "" : ' <span class="warn">— прервано по сроку</span>'}.</p>`;
+function flash(text, ok) { const m = $("flash"); if (m) { m.className = "msg" + (ok ? " ok" : ""); m.textContent = text; m.classList.remove("hide"); } else alert(text); }
+function progress() {
+ let pct = null;
+ for (const l of (job?.lines || [])) { const m = /^\[(\d+)\/(\d+)\]/.exec(l); if (m) pct = Math.round(100 * m[1] / Math.max(1, m[2])); }
+ if (job && !job.running && job.ok) pct = 100;
+ return pct ?? (job?.running ? 5 : 0);
 }
-function stepDiscover() {
-  const d = st.discovery || {};
-  return `<h2>Обследование сети</h2><p class="hint">Проверяются TCP-порты 22, 23, 80, 135, 443, 445, 5985, 5986; учётные данные не используются.</p>
-    <label for="rg">Подсети (по одной в строке)</label><textarea id="rg" placeholder="например, 10.20.1.0/24">${esc((d.ranges || []).join("\n"))}</textarea>
-    <label for="ex">Исключить</label><textarea id="ex" placeholder="например, 10.20.1.0/28">${esc((d.excluded || []).join("\n"))}</textarea>
-    <label for="rt">Не более подключений в секунду</label><input id="rt" type="number" min="1" max="5000" value="200" style="max-width:140px">
-    <br><button class="main" id="db" ${busy() || !st.initialized ? "disabled" : ""}>Начать обследование</button>
-    ${st.initialized ? "" : '<p class="warn">Сначала подготовьте каталог аудита (шаг 1).</p>'}` + hostsSummary() + jobView("discover");
-}
-const lines = (id) => $(id).value.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
-function bindDiscover() { if ($("db")) $("db").onclick = () => run("/api/discover", { ranges: lines("rg"), excluded: lines("ex"), rate: +$("rt").value || 200 }); }
-
-function opt(v, list) { return list.map(([k, t]) => `<option value="${k}" ${k === (v || "") ? "selected" : ""}>${t}</option>`).join(""); }
-function stepProfiles() {
-  const P = draft.profiles, R = draft.rules;
-  const pr = P.map((p, i) => `<tr><td><input data-p="${i}" data-f="name" value="${esc(p.name)}" placeholder="например, linux-ro"></td>
-    <td><select data-p="${i}" data-f="kind">${opt(p.kind, [["ssh", "SSH (Linux)"], ["winrm", "WinRM (Windows)"]])}</select></td>
-    <td><select data-p="${i}" data-f="auth">${opt(p.auth, p.kind === "winrm" ? [["password", "пароль"], ["current_user", "текущая учётка Windows"]] : [["password", "пароль"], ["key", "ключ"]])}</select></td>
-    <td><input data-p="${i}" data-f="user" value="${esc(p.user)}" placeholder="${p.kind === "winrm" ? "например, DOMAIN\\audit" : "например, audit"}" ${p.auth === "current_user" ? "disabled" : ""}></td>
-    <td><input data-p="${i}" data-f="key_file" value="${esc(p.key_file)}" ${p.auth === "key" ? "" : "disabled"} placeholder="путь к ключу"></td>
-    <td><input data-p="${i}" data-f="kdc" value="${esc(p.kdc)}" ${p.kind === "winrm" && p.auth === "password" ? "" : "disabled"} placeholder="KDC (Kerberos)"></td>
-    <td><input data-p="${i}" data-f="port" type="number" value="${esc(p.port)}" style="width:80px"></td>
-    <td><button class="sec" data-del-p="${i}">✕</button></td></tr>`).join("");
-  const rr = R.map((r, i) => `<tr><td>${i + 1}</td><td><select data-r="${i}" data-f="profile">${opt(r.profile, P.map((p) => [p.name, p.name]))}</select></td>
-    <td><select data-r="${i}" data-f="kind">${opt(r.kind, [["", "любой"], ["linux_ssh", "Linux/SSH"], ["windows_winrm", "Windows"], ["network_snmp", "сетевое"]])}</select></td>
-    <td><input data-r="${i}" data-f="subnet" value="${esc(r.subnet)}" placeholder="например, 10.20.1.0/24"></td>
-    <td><input data-r="${i}" data-f="domain" value="${esc(r.domain)}" placeholder="домен Windows"></td>
-    <td><button class="sec" data-del-r="${i}">✕</button></td></tr>`).join("");
-  const hosts = (st.discovery && st.discovery.hosts) || [];
-  return `<h2>Профили учёток</h2><p class="hint">Пароли сюда не записываются: они вводятся при проверке и сборе и живут только в этой вкладке браузера.</p>
-    <table><tr><th>Имя</th><th>Вид</th><th>Вход</th><th>Логин</th><th>Ключ SSH</th><th>KDC</th><th>Порт</th><th></th></tr>${pr}</table>
-    <button class="sec" id="ap">+ профиль</button>
-    <h2 style="margin-top:18px">Правила привязки</h2><p class="hint">Узлу назначается первый подходящий профиль сверху вниз — без перебора паролей.</p>
-    <table><tr><th>№</th><th>Профиль</th><th>Вид узла</th><th>Подсеть</th><th>Домен</th><th></th></tr>${rr}</table>
-    <button class="sec" id="ar">+ правило</button><br><button class="main" id="sp">Сохранить профили и правила</button>
-    <h2 style="margin-top:18px">Проверка на одном узле</h2>
-    <div class="row"><div><label for="ti">Узел</label><select id="ti">${hosts.map((h, i) => `<option value="${esc(h.ip)}">${esc(h.ip)} — ${esc(h.kind)} → ${esc(st.bound[i] || "нет профиля")}</option>`).join("")}</select></div>
-    <div><label for="tp">Пароль профиля (если нужен)</label><input id="tp" type="password" autocomplete="off"></div></div>
-    <button class="main" id="tb" ${busy() || !hosts.length ? "disabled" : ""}>Проверить вход и сбор</button>` + jobView("test");
-}
-function bindProfiles() {
-  document.querySelectorAll("[data-p]").forEach((el) => el.onchange = () => {
-    const p = draft.profiles[+el.dataset.p], f = el.dataset.f;
-    if (f === "port") { if (el.value) p.port = +el.value; else delete p.port; }
-    else if (el.value === "" && f !== "name" && f !== "user") delete p[f]; else p[f] = el.value;
-    if (f === "kind") p.auth = "password";
-    if (p.auth === "current_user") p.user = "";
-    if (p.auth !== "key") delete p.key_file;
-    if (!(p.kind === "winrm" && p.auth === "password")) delete p.kdc;
-    render();
-  });
-  document.querySelectorAll("[data-r]").forEach((el) => el.onchange = () => { const r = draft.rules[+el.dataset.r]; if (el.value) r[el.dataset.f] = el.value; else delete r[el.dataset.f]; });
-  document.querySelectorAll("[data-del-p]").forEach((b) => b.onclick = () => { draft.profiles.splice(+b.dataset.delP, 1); render(); });
-  document.querySelectorAll("[data-del-r]").forEach((b) => b.onclick = () => { draft.rules.splice(+b.dataset.delR, 1); render(); });
-  $("ap").onclick = () => { draft.profiles.push({ name: "", kind: "ssh", user: "", auth: "password" }); render(); };
-  $("ar").onclick = () => { draft.rules.push({ profile: (draft.profiles[0] || {}).name || "" }); render(); };
-  $("sp").onclick = async () => { try { await api("PUT", "/api/profiles", draft); draft = null; await refresh(); alert("Сохранено"); } catch (e) { alert(e.message); } };
-  if ($("tb")) $("tb").onclick = () => {
-    const ip = $("ti").value, i = (st.discovery.hosts || []).findIndex((h) => h.ip === ip), name = st.bound[i];
-    if (!name) { alert("Узлу не назначен профиль: добавьте правило и сохраните."); return; }
-    if ($("tp").value) secrets[name] = $("tp").value;
-    run("/api/test", { ip, secrets: name in secrets ? { [name]: secrets[name] } : {} });
-  };
+function jobView(kind, title) {
+ if (!job || job.kind !== kind) return `<div id="jobbox" data-kind="${kind}" data-title="${esc(title)}"></div>`;
+ const state = job.running ? `<span class="stt">${ic("retry")}выполняется…</span>` : job.ok ? `<span class="stt s-ok">${ic("okc")}готово</span>` : `<span class="stt s-bad">${ic("x")}завершено с ошибкой</span>`;
+ const lines = (job.lines || []).slice(-200).map((l) => { const c = /FAILED|ошибк|отклон/i.test(l) ? "s-bad" : /EXPORTED|DRY RUN|DISCOVERED|ENCRYPTED/.test(l) ? "s-ok" : ""; return `<div class="${c}">${esc(l)}</div>`; }).join("");
+ return `<div class="card" id="jobbox" data-kind="${kind}" data-title="${esc(title)}"><div class="ch"><h3>${esc(title)}</h3><span class="sp"></span>${state}</div>
+  <div class="pad"><div class="prog"><i id="prog" style="width:${progress()}%"></i></div></div>
+  <div class="log" id="joblog">${lines || '<span class="faint">…</span>'}</div>
+  <div class="pad" style="border-top:1px solid var(--line2);padding:8px 16px"><button class="btn g sm" data-copy="joblog">${ic("copy")}Копировать журнал</button></div></div>`;
 }
 
-function stepCollect() {
-  const hosts = (st.discovery && st.discovery.hosts) || [];
-  const used = [...new Set(hosts.map((h, i) => selected.has(h.ip) ? st.bound[i] : null).filter(Boolean))];
-  const needPw = used.filter((n) => { const p = (st.profiles.profiles || []).find((x) => x.name === n); return p && p.auth !== "current_user"; });
-  const rows = hosts.map((h, i) => `<tr><td><input type="checkbox" data-ip="${esc(h.ip)}" ${selected.has(h.ip) ? "checked" : ""} ${st.bound[i] ? "" : "disabled"} style="width:auto"></td>
-    <td class="mono">${esc(h.ip)}</td><td>${esc(h.kind)}</td><td class="mono">${esc((h.ports || []).join(", "))}</td><td>${st.bound[i] ? esc(st.bound[i]) : '<span class="muted">нет профиля</span>'}</td></tr>`).join("");
-  return `<h2>Узлы и сбор</h2><p class="hint">Отметьте узлы для сбора. Узлы без профиля попадут в пакет как «нет профиля», снятые — как «пропущен».</p>
-    <label><input type="checkbox" id="wh" ${withHost ? "checked" : ""} style="width:auto"> Собрать также этот ПК</label>
-    <button class="sec" id="all">Отметить все с профилем</button> <button class="sec" id="none">Снять все</button>
-    <table><tr><th></th><th>Адрес</th><th>Вид</th><th>Порты</th><th>Профиль</th></tr>${rows || '<tr><td colspan="5" class="muted">Нет узлов — выполните обследование (шаг 2).</td></tr>'}</table>
-    ${needPw.map((n) => `<label for="pw-${esc(n)}">Пароль профиля «${esc(n)}»</label><input type="password" autocomplete="off" id="pw-${esc(n)}" data-pw="${esc(n)}" value="${esc(secrets[n] || "")}">`).join("")}
-    <br><button class="main" id="cb" ${busy() || !st.initialized || (!selected.size && !withHost) ? "disabled" : ""}>Собрать и сохранить пакет</button>` + jobView("collect");
+// итоги сбора: узел → исход
+function results() { return st.results?.hosts || []; }
+function hostRow(ip) { return results().find((r) => r.target === ip); }
+// штатные состояния — не проблема: базовый состав раздела, подмножество QFE, на DC нет локальных пользователей,
+// раздел не собирается этим способом (полный состав — агентом)
+const NORMAL = new Set(["BASELINE_COVERAGE_ONLY", "QFE_SUBSET", "LOCAL_SAM_UNSUPPORTED_ON_DC", "SECTION_UNSUPPORTED", "COLLECTED"]);
+const secKind = (s) => s.status === "collected" || (s.status === "partial" && NORMAL.has(s.reason_code)) ? "ok" : s.reason_code === "SECTION_UNSUPPORTED" || s.status === "unsupported" ? "na" : s.status === "partial" ? "partial" : "bad";
+function sectionsBad(r) { return (r?.sections || []).filter((s) => secKind(s) === "partial" || secKind(s) === "bad"); }
+function sectionsOk(r) { return (r?.sections || []).filter((s) => secKind(s) === "ok").length; }
+const when = (t) => { if (!t) return ""; const d = new Date(t); return isNaN(d) ? t : d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+function verdict(r) {
+ if (!r) return { t: "в очереди", c: "s-n", i: "clock", k: "queued" };
+ if (r.outcome === "collected") { const b = sectionsBad(r); return b.length ? { t: "частично", c: "s-warn", i: "alert", k: "partial" } : { t: "собрано", c: "s-ok", i: "okc", k: "ok" }; }
+ if (r.outcome === "no_access") return { t: r.reason === "AUTH_FAILED" ? "вход отклонён" : "нет доступа", c: "s-bad", i: "lock", k: "failed" };
+ if (r.outcome === "unreachable") return { t: "недоступен", c: "s-bad", i: "plug", k: "failed" };
+ if (r.outcome === "skipped") return { t: "снят аудитором", c: "s-n", i: "minus", k: "skipped" };
+ return { t: "доступа нет (нет правила)", c: "s-n", i: "minus", k: "noprofile" };
 }
-function bindCollect() {
-  const hosts = (st.discovery && st.discovery.hosts) || [];
-  document.querySelectorAll("[data-ip]").forEach((c) => c.onchange = () => { c.checked ? selected.add(c.dataset.ip) : selected.delete(c.dataset.ip); render(); });
-  document.querySelectorAll("[data-pw]").forEach((c) => c.oninput = () => { secrets[c.dataset.pw] = c.value; });
-  $("wh").onchange = () => { withHost = $("wh").checked; render(); };
-  $("all").onclick = () => { hosts.forEach((h, i) => st.bound[i] && selected.add(h.ip)); render(); };
-  $("none").onclick = () => { selected.clear(); render(); };
-  if ($("cb")) $("cb").onclick = () => {
-    const s = {}; document.querySelectorAll("[data-pw]").forEach((c) => { if (c.value) s[c.dataset.pw] = c.value; });
-    run("/api/collect", { ips: [...selected], host: withHost, secrets: s });
-  };
+function reasonOf(r) {
+ if (!r) return null;
+ if (r.reason) return r.reason;
+ const b = sectionsBad(r)[0]; return b ? b.reason_code : null;
 }
-
-function stepResult() {
-  if (!job || job.kind !== "collect") return `<h2>Пакет</h2><p class="muted">Сбор ещё не выполнялся (шаг 4).</p>`;
-  const lines = job.lines || [];
-  const failed = lines.filter((l) => /FAILED:/.test(l));
-  const done = lines.filter((l) => /rows=\d+/.test(l));
-  const exp = lines.find((l) => l.startsWith("EXPORTED:"));
-  return `<h2>Пакет</h2>` + (job.running ? `<p class="warn">Сбор выполняется…</p>` : job.ok && job.package
-    ? `<p class="ok">Пакет сохранён:</p><div class="mono">${esc(job.package)}</div><p class="hint">Загрузите его в центр: Web → «Portable-аудит» → «Загрузить пакет».</p>`
-    : `<p class="bad">Пакет не сохранён.</p>`) +
-    `<p>Собрано: <b>${done.length}</b>, без доступа или недоступно: <b>${failed.length}</b>.</p>` +
-    (failed.length ? `<table><tr><th>Узел</th><th>Причина</th></tr>${failed.map((l) => { const m = /^\S+\s+(\S+)\s+FAILED:\s*(\S+)/.exec(l) || []; return `<tr><td class="mono">${esc(m[1])}</td><td>${esc(m[2])}</td></tr>`; }).join("")}</table>` : "") +
-    (exp ? `<p class="muted mono">${esc(exp)}</p>` : "");
+function allNodes() {
+ const hosts = (st.discovery?.hosts || []).map((h, i) => ({ ip: h.ip, kind: h.kind, ports: h.ports || [], profile: st.bound[i], r: hostRow(h.ip) }));
+ const own = results().find((r) => r.transport === "host");
+ if (own) hosts.unshift({ ip: own.target, kind: "host", ports: [], profile: "локально", r: own, own: true });
+ return hosts;
+}
+function counts() {
+ const n = allNodes(); const c = { all: n.length, ok: 0, partial: 0, failed: 0, noprofile: 0, queued: 0, skipped: 0 };
+ for (const x of n) c[verdict(x.r).k]++;
+ return c;
 }
 
+const steps = [["Подготовка", () => st.initialized ? (st.center_key ? "источник и ключ центра" : "ключ центра не задан") : "вставьте строку из Web"],
+ ["Обследование сети", () => st.discovery?.hosts ? `${(st.discovery.ranges || []).length} подсети · ${st.discovery.hosts.length} узлов` : "ещё не начато"],
+ ["Профили учёток", () => (draft.profiles.length ? `${draft.profiles.length} профиля · ${draft.rules.length} правила` : "ещё не заданы")],
+ ["Узлы и сбор", () => { const r = results(); if (!r.length) return "ещё не собирали"; const c = counts(); return `собрано ${c.ok + c.partial} из ${c.all}`; }],
+ ["Пакет", () => (st.packages?.length ? `${st.packages.length} пакет(а) на носителе` : "ещё не сохранён")]];
+function nav() {
+ $("steps").innerHTML = steps.map(([t, s], i) => {
+  const done = i === 0 ? st.initialized : i === 1 ? !!st.discovery?.hosts : i === 2 ? draft.profiles.length > 0 : i === 3 ? results().length > 0 : (st.packages || []).length > 0;
+  return `<button class="st ${i === step ? "on" : done ? "done" : ""}" data-step="${i}"><span class="n">${done && i !== step ? ic("check") : i + 1}</span><span>${t}<small>${esc(s())}</small></span></button>`;
+ }).join("");
+ $("media").innerHTML = `${ic("usb")}<div><b>${esc(st.dir)}</b>${esc(st.platform)} · версия ${esc(st.version)}<br>только 127.0.0.1 · пароли не пишутся на диск</div>`;
+}
 function render() {
-  nav();
-  const v = $("view");
-  const focus = document.activeElement && document.activeElement.id;
-  if (tab === 0) { v.innerHTML = stepInit(); bindInit(); }
-  if (tab === 1) { v.innerHTML = stepDiscover(); bindDiscover(); }
-  if (tab === 2) { v.innerHTML = stepProfiles(); bindProfiles(); }
-  if (tab === 3) { v.innerHTML = stepCollect(); bindCollect(); }
-  if (tab === 4) { v.innerHTML = stepResult(); }
-  if (focus && $(focus)) $(focus).focus();
+ nav();
+ const v = $("view");
+ v.innerHTML = `<div class="msg hide" id="flash" role="status"></div>` + (page ? nodePage(page) : [stepPrep, stepDiscover, stepProfiles, stepCollect, stepPackage][step]());
+ bind();
 }
-refresh().then(() => { if (job && job.running) watch(); }).catch((e) => { $("view").innerHTML = `<p class="bad">${esc(e.message)}</p>`; });
+
+// 1. Подготовка
+function stepPrep() {
+ if (st.initialized) {
+  return `<div class="center"><div><h1 style="font-size:24px">Носитель подготовлен</h1><div class="sub">Ключ подписи создан на носителе и не покидает его</div></div>
+  <div class="card pad" style="display:flex;flex-direction:column;gap:12px">
+   <div class="field"><label>Блок для центра</label><small>Web → «Portable-аудит» → «Зарегистрировать носитель» — вставьте целиком</small>
+    <textarea class="in mono" id="ib" rows="7" readonly>${esc(st.init_block || "")}</textarea></div>
+   <div style="display:flex;gap:8px"><button class="btn s" data-copy="ib">${ic("copy")}Копировать блок</button><span class="sp"></span><button class="btn p" data-step="1">Дальше: обследование ${ic("chev")}</button></div>
+  </div>
+  <div class="card pad">${st.center_key ? `<span class="stt s-ok">${ic("lock")}Пакеты шифруются ключом центра — прочитать их сможет только центр</span>` :
+   `<div class="field"><label class="s-warn">${ic("alert")} Ключ шифрования центра не задан — пакет будет не зашифрован</label><small>Ключ — в Web «Portable-аудит» (строка подготовки содержит его, если шифрование включено)</small>
+    <div style="display:flex;gap:8px"><input class="in mono" id="ck" placeholder="ключ центра (base64)" autocomplete="off"><button class="btn s" id="ckb">Сохранить</button></div></div>`}</div></div>`;
+ }
+ const pv = prepView;
+ return `<div class="center"><div><h1 style="font-size:24px">Подготовка носителя</h1><div class="sub">Шаг 1 из 5 · один раз на носитель</div></div>
+ <div class="card pad" style="display:flex;flex-direction:column;gap:14px">
+  <div class="field"><label for="prep">Строка подготовки из Web</label><small>«Portable-аудит» → площадка и сегмент → «Копировать строку»</small>
+   <textarea class="in mono" id="prep" rows="3" placeholder="takt-portable:v1:…" spellcheck="false">${esc(pv?.text || "")}</textarea></div>
+  ${pv?.error ? `<div class="msg">${esc(pv.error)}</div>` : pv?.site ? `<div class="facts">
+   <span class="s-ok">${ic("okc")}</span><span>Площадка <b>${esc(pv.site_name || pv.site)}</b>${pv.scope_name ? ` · сегмент <b>${esc(pv.scope_name)}</b>` : ""}</span>
+   <span class="${pv.center_key ? "s-ok" : "s-warn"}">${ic(pv.center_key ? "lock" : "alert")}</span><span>${pv.center_key ? "Ключ шифрования центра получен — пакет прочитает только центр" : "Шифрование в центре не включено — пакет будет открытым"}</span>
+   <span class="faint">${ic("usb")}</span><span>Каталог аудита <span class="mono">${esc(st.dir)}</span></span></div>` : ""}
+  <div style="display:flex;gap:8px;border-top:1px solid var(--line2);padding-top:14px"><span class="sp"></span><button class="btn p" id="initb" ${busy() || !pv?.site ? "disabled" : ""}>Подготовить носитель ${ic("chev")}</button></div>
+ </div>
+ <details class="card pad"><summary class="muted">Без строки — ввести идентификаторы вручную</summary>
+  <div class="row" style="margin-top:10px"><div class="field"><label>tenant_id</label><input class="in mono" id="t"></div><div class="field"><label>site_id</label><input class="in mono" id="s"></div><div class="field"><label>scope_id</label><input class="in mono" id="sc"></div></div>
+  <div class="field" style="margin-top:10px"><label>Ключ шифрования центра (необязательно)</label><input class="in mono" id="ck0" autocomplete="off"></div>
+  <button class="btn s" style="margin-top:10px" id="initm" ${busy() ? "disabled" : ""}>Подготовить вручную</button></details>
+ <div class="sub" style="display:flex;gap:10px">${ic("shield")}<span>Ключ подписи создаётся на носителе и не покидает его. Пакет читает только центр. Пароли на диск не пишутся.</span></div>
+ ${jobView("init", "Подготовка")}</div>`;
+}
+
+// 2. Обследование
+function stepDiscover() {
+ const d = st.discovery || {}; const hs = d.hosts || [];
+ const k = (x) => hs.filter((h) => h.kind === x).length;
+ return `<div class="top"><div><h1>Обследование сети</h1><div class="sub">Учётные данные не используются · порты 22, 23, 80, 135, 443, 445, 5985, 5986</div></div><span class="sp"></span>
+  <button class="btn p" id="db" ${busy() || !st.initialized ? "disabled" : ""}>${ic("radar")}Начать обследование</button></div>
+ ${st.initialized ? "" : `<div class="msg">Сначала подготовьте носитель (шаг 1).</div>`}
+ <div class="kpis"><div class="kpi"><b>${hs.length}</b><span>найдено узлов</span></div><div class="kpi"><b>${k("linux_ssh")}</b><span>${ic("term")}Linux / SSH</span></div><div class="kpi"><b>${k("windows_winrm")}</b><span>${ic("win")}Windows</span></div><div class="kpi"><b>${k("network_snmp")}</b><span>сетевые</span></div><div class="kpi"><b>${k("unknown")}</b><span>не определены</span></div></div>
+ <div class="grid2"><div class="col"><div class="card"><div class="ch"><h3>Диапазоны</h3></div><div class="pad row">
+  <div class="field"><label for="rg">Подсети — по одной в строке</label><textarea class="in mono" id="rg" rows="5" placeholder="10.20.1.0/24">${esc((d.ranges || []).join("\n"))}</textarea></div>
+  <div class="field"><label for="ex">Исключить</label><textarea class="in mono" id="ex" rows="5" placeholder="10.20.1.0/28">${esc((d.excluded || []).join("\n"))}</textarea></div>
+  <div class="field" style="flex:0 1 220px"><label for="rt">Не более подключений в секунду</label><input class="in" id="rt" type="number" min="1" max="5000" value="200"></div></div></div>
+  ${hs.length ? `<div class="card"><div class="ch"><h3>Найденные узлы</h3><span class="sp"></span><span class="muted small">${esc(when(d.finished_at))}</span></div><table><thead><tr><th>Адрес</th><th>Вид</th><th>Открытые порты</th></tr></thead><tbody>${hs.slice(0, 200).map((h) => `<tr><td class="mono">${esc(h.ip)}</td><td>${esc(KIND[h.kind] || h.kind)}</td><td class="muted mono">${esc((h.ports || []).join(", "))}</td></tr>`).join("")}</tbody></table>${hs.length > 200 ? `<div class="pad muted small">показаны первые 200 из ${hs.length}</div>` : ""}</div>` : ""}
+ </div><div class="col">${jobView("discover", "Ход обследования")}
+  <div class="card pad"><b>Дальше</b><p class="muted small" style="margin:6px 0 0">Найденные узлы попадут в пакет даже без доступа: центр покажет их как «найден, доступа нет», без пустых активов.</p>${hs.length ? `<button class="btn p" style="margin-top:10px" data-step="2">Профили учёток ${ic("chev")}</button>` : ""}</div></div></div>`;
+}
+
+// 3. Профили
+function opt(v, list) { return list.map(([k, t]) => `<option value="${esc(k)}" ${k === (v || "") ? "selected" : ""}>${esc(t)}</option>`).join(""); }
+function stepProfiles() {
+ const P = draft.profiles, R = draft.rules, hs = st.discovery?.hosts || [];
+ const cover = {}; let none = 0; hs.forEach((h, i) => { const b = st.bound[i]; if (b) cover[b] = (cover[b] || 0) + 1; else none++; });
+ const unmatched = {}; hs.forEach((h, i) => { if (!st.bound[i]) { const k = KIND[h.kind] || h.kind; (unmatched[k] = unmatched[k] || []).push(h.ip); } });
+ const prows = P.map((p, i) => `<tr><td style="width:30px" class="muted">${ic(p.kind === "winrm" ? "win" : "term")}</td>
+  <td><input data-p="${i}" data-f="name" value="${esc(p.name)}" placeholder="linux-ro" aria-label="Имя профиля"></td>
+  <td><select data-p="${i}" data-f="kind" aria-label="Вид">${opt(p.kind, [["ssh", "SSH (Linux)"], ["winrm", "WinRM (Windows)"]])}</select></td>
+  <td><select data-p="${i}" data-f="auth" aria-label="Вход">${opt(p.auth, p.kind === "winrm" ? [["password", "пароль"], ["current_user", "текущая учётка Windows"]] : [["password", "пароль"], ["key", "ключ SSH"]])}</select></td>
+  <td><input data-p="${i}" data-f="user" value="${esc(p.user)}" ${p.auth === "current_user" ? "disabled" : ""} placeholder="${p.kind === "winrm" ? "DOMAIN\\audit" : "audit"}" aria-label="Учётка"></td>
+  <td>${p.auth === "key" ? `<input data-p="${i}" data-f="key_file" value="${esc(p.key_file)}" placeholder="путь к ключу" aria-label="Ключ">` : p.auth === "current_user" ? '<span class="muted small">Kerberos, без пароля</span>' : `<input type="password" data-secret="${esc(p.name)}" value="${esc(secrets[p.name] || "")}" placeholder="пароль — только в памяти" autocomplete="off" aria-label="Пароль профиля ${esc(p.name)}">`}</td>
+  <td style="width:90px"><input data-p="${i}" data-f="port" type="number" value="${esc(p.port)}" placeholder="${p.kind === "winrm" ? 5985 : 22}" aria-label="Порт"></td>
+  <td style="width:70px;text-align:right"><b>${cover[p.name] || 0}</b></td><td style="width:36px"><button class="btn g sm" data-del-p="${i}" aria-label="Удалить профиль">✕</button></td></tr>`).join("");
+ const rrows = R.map((r, i) => `<tr><td class="faint" style="width:30px">${i + 1}</td>
+  <td><select data-r="${i}" data-f="kind" aria-label="Вид узла">${opt(r.kind, [["", "любой"], ["linux_ssh", "Linux / SSH"], ["windows_winrm", "Windows"], ["network_snmp", "сетевое"]])}</select></td>
+  <td><input data-r="${i}" data-f="subnet" value="${esc(r.subnet)}" placeholder="любая" aria-label="Подсеть"></td>
+  <td><input data-r="${i}" data-f="domain" value="${esc(r.domain)}" placeholder="—" aria-label="Домен"></td>
+  <td><select data-r="${i}" data-f="profile" aria-label="Профиль правила">${opt(r.profile, P.map((p) => [p.name, p.name]))}</select></td>
+  <td style="width:110px"><button class="btn g sm" data-up="${i}" aria-label="Выше">↑</button><button class="btn g sm" data-del-r="${i}" aria-label="Удалить правило">✕</button></td></tr>`).join("");
+ const t = testRes;
+ return `<div class="top"><div><h1>Профили учёток</h1><div class="sub">Пароли держатся только в памяти мастера · перебора учёток нет</div></div><span class="sp"></span>
+  <button class="btn g" id="ap">${ic("plus")}Профиль</button><button class="btn p" id="sp">Сохранить и дальше ${ic("chev")}</button></div>
+ <div class="grid2"><div class="col">
+  <div class="card"><div class="ch"><h3>Профили</h3><span class="sp"></span><span class="muted small">узлов по правилам</span></div><table><thead><tr><th></th><th>Имя</th><th>Вид</th><th>Вход</th><th>Учётка</th><th>Пароль / ключ</th><th>Порт</th><th style="text-align:right">Узлов</th><th></th></tr></thead><tbody>${prows || `<tr><td colspan="9" class="muted">Добавьте профиль: SSH для Linux, WinRM для Windows.</td></tr>`}</tbody></table></div>
+  <div class="card"><div class="ch"><h3>Правила привязки</h3><span class="sp"></span><span class="muted small">сверху вниз, первое подходящее</span><button class="btn g sm" id="ar">${ic("plus")}Правило</button></div><table><thead><tr><th>№</th><th>Вид узла</th><th>Подсеть</th><th>Домен</th><th>Профиль</th><th></th></tr></thead><tbody>${rrows || `<tr><td colspan="6" class="muted">Без правил узлы не собираются (в пакете — «найден, доступа нет»).</td></tr>`}</tbody></table></div>
+  ${none ? `<div class="card"><div class="ch"><h3>Без правила</h3><span class="s-warn stt">${none}</span><span class="sp"></span><span class="muted small">попадут в пакет как «найден, доступа нет»</span></div><table><thead><tr><th>Вид</th><th>Пример</th><th style="text-align:right">Узлов</th></tr></thead><tbody>${Object.entries(unmatched).map(([k, ips]) => `<tr><td>${esc(k)}</td><td class="mono">${esc(ips.slice(0, 3).join(", "))}</td><td style="text-align:right">${ips.length}</td></tr>`).join("")}</tbody></table></div>` : ""}
+ </div><div class="col">
+  <div class="card pad"><h3 style="font-size:14px;margin-bottom:10px">Покрытие</h3>
+   <div style="display:grid;grid-template-columns:1fr auto;gap:6px;font-size:13px">${Object.entries(cover).map(([n, c]) => `<span class="muted">${esc(n)}</span><b>${c}</b>`).join("")}<span class="muted">без правила</span><b class="${none ? "s-warn" : ""}">${none}</b></div>
+   <p class="muted small" style="margin:8px 0 0">Счёт — по сохранённым правилам; после правки нажмите «Сохранить».</p></div>
+  <div class="card pad"><h3 style="font-size:14px;margin-bottom:8px">Проверка на одном узле</h3>
+   <div class="field"><label for="tip">Адрес узла</label><input class="in mono" id="tip" value="${esc(t?.ip || (hs.find((h, i) => st.bound[i]) || {}).ip || "")}"></div>
+   <button class="btn s" style="margin-top:10px" id="tb" ${busy() ? "disabled" : ""}>${ic("key")}Проверить вход</button>
+   ${testOutcome()}</div>
+  ${jobView("test", "Проверка узла")}
+  <div class="card pad"><b>Без перебора</b><p class="muted small" style="margin:6px 0 0">Каждому узлу — ровно один профиль по правилам, поэтому доменные учётки не блокируются.</p></div>
+ </div></div>`;
+}
+function testOutcome() {
+ if (!job || job.kind !== "test" || job.running) return "";
+ const out = (job.lines || []).join("\n"); const m = /FAILED: ([A-Z_]+)/.exec(out);
+ if (job.ok && /DRY RUN: 1 target\(s\) ok/.test(out)) return `<div class="msg ok" style="margin-top:10px">${ic("okc")} Вход выполнен, сбор пробный — пакет не записан.</div>`;
+ const w = m && WHY[m[1]];
+ return `<div class="msg" style="margin-top:10px"><b>${ic("lock")} ${esc(w ? w[0] : "Проверка не прошла")}</b><div style="color:var(--fg);margin-top:4px">${esc(w ? w[1] : "См. журнал проверки ниже.")}</div></div>`;
+}
+
+// 4. Узлы и сбор
+function stepCollect() {
+ const c = counts(), nodes = allNodes(); const r = results();
+ const needs = draft.profiles.filter((p) => p.auth === "password" && nodes.some((n) => n.profile === p.name && selected.has(n.ip)));
+ const show = nodes.filter((n) => { const v = verdict(n.r); if (filter.kpi === "problems" && !["partial", "failed"].includes(v.k)) return false; if (filter.kpi !== "all" && filter.kpi !== "problems" && v.k !== filter.kpi) return false; return !filter.q || (n.ip + " " + (n.r?.hostname || "")).toLowerCase().includes(filter.q.toLowerCase()); });
+ const problemsView = filter.kpi === "problems" || filter.kpi === "partial" || filter.kpi === "failed";
+ let body;
+ if (problemsView) {
+  const groups = {}; for (const n of show) { const g = reasonGroup(reasonOf(n.r)); (groups[g] = groups[g] || []).push(n); }
+  body = `<table><thead><tr><th>Адрес</th><th>Имя</th><th>Итог</th><th>Причина</th><th>Что сделать</th><th></th></tr></thead><tbody>${Object.entries(groups).map(([g, list]) => `<tr class="gh"><td colspan="6">${esc(g)} · ${list.length}</td></tr>` + list.map((n) => { const v = verdict(n.r), code = reasonOf(n.r), w = WHY[code]; const bad = sectionsBad(n.r);
+   return `<tr class="click" data-node="${esc(n.ip)}"><td class="mono">${esc(n.ip)}</td><td>${esc(n.r?.hostname || "—")}</td><td><span class="stt ${v.c}">${ic(v.i)}${n.r?.sections ? sectionsOk(n.r) + " / " + n.r.sections.length : esc(v.t)}</span></td><td class="muted">${esc(w ? w[0] : code || "—")}${bad.length ? ": " + esc(bad.map((s) => SECTION[s.name] || s.name).join(", ")) : ""}</td><td class="muted small">${esc(w ? w[1].split(/[.;]/)[0] : "")}</td><td class="faint">${ic("chev")}</td></tr>`; }).join("")).join("") || `<tr><td colspan="6" class="muted">Проблем нет.</td></tr>`}</tbody></table>`;
+ } else {
+  body = `<table><thead><tr><th style="width:34px"><input type="checkbox" class="chk" id="all" aria-label="Выбрать все" ${nodes.every((n) => n.own || !n.profile || selected.has(n.ip)) ? "checked" : ""}></th><th>Адрес</th><th>Имя</th><th>Вид</th><th>Профиль</th><th>Итог</th><th>Разделы</th><th></th></tr></thead><tbody>${show.slice(0, 500).map((n) => { const v = verdict(n.r); const bad = sectionsBad(n.r);
+   return `<tr class="${n.r ? "click" : ""}" ${n.r ? `data-node="${esc(n.ip)}"` : ""}><td>${n.own ? "" : `<input type="checkbox" class="chk" data-sel="${esc(n.ip)}" ${selected.has(n.ip) ? "checked" : ""} ${n.profile ? "" : "disabled"} aria-label="Собирать ${esc(n.ip)}">`}</td><td class="mono">${esc(n.ip)}</td><td>${esc(n.r?.hostname || "—")}</td><td class="muted">${esc(KIND[n.kind] || n.kind)}</td><td class="muted">${esc(n.profile || "нет правила")}</td><td><span class="stt ${v.c}">${ic(v.i)}${esc(v.t)}</span></td><td class="muted">${n.r?.sections ? sectionsOk(n.r) + " / " + n.r.sections.length : "—"}</td><td class="faint">${n.r && v.k !== "ok" ? ic("chev") : ""}</td></tr>`; }).join("")}</tbody></table>${show.length > 500 ? `<div class="pad muted small">показаны первые 500 из ${show.length} — уточните фильтр</div>` : ""}`;
+ }
+ return `<div class="top"><div><h1>Узлы и сбор</h1><div class="sub">${st.center_key ? "Шифрование ключом центра" : "Пакет без шифрования — задайте ключ центра на шаге 1"} · один узел — один профиль по правилам</div></div><span class="sp"></span>
+  ${c.partial + c.failed ? `<button class="btn s" id="rf" ${busy() ? "disabled" : ""}>${ic("retry")}Повторить неудачные (${c.partial + c.failed})</button>` : ""}
+  <button class="btn p" id="cb" ${busy() || !st.initialized ? "disabled" : ""}>Собрать выбранные (${[...selected].length}) и этот ПК</button></div>
+ <div class="kpis"><button class="kpi ${filter.kpi === "all" ? "sel" : ""}" data-kpi="all"><b>${c.all}</b><span>найдено</span></button><button class="kpi ${filter.kpi === "ok" ? "sel" : ""}" data-kpi="ok"><b>${c.ok}</b><span class="s-ok">${ic("okc")}собрано</span></button><button class="kpi ${filter.kpi === "partial" ? "sel" : ""}" data-kpi="partial"><b>${c.partial}</b><span class="s-warn">${ic("alert")}частично</span></button><button class="kpi ${filter.kpi === "failed" ? "sel" : ""}" data-kpi="failed"><b>${c.failed}</b><span class="s-bad">${ic("lock")}не собрано</span></button><button class="kpi ${filter.kpi === "noprofile" ? "sel" : ""}" data-kpi="noprofile"><b>${c.noprofile}</b><span>${ic("minus")}доступа нет</span></button></div>
+ ${needs.filter((p) => !secrets[p.name]).length ? `<div class="card pad"><b>${ic("key")} Пароли профилей</b> <span class="muted small">— только в памяти мастера, на диск не пишутся</span><div class="row" style="margin-top:8px">${needs.map((p) => `<div class="field"><label>${esc(p.name)} · ${esc(p.user)}</label><input class="in" type="password" data-secret="${esc(p.name)}" value="${esc(secrets[p.name] || "")}" autocomplete="off"></div>`).join("")}</div></div>` : ""}
+ <div class="grid2"><div class="card"><div class="ch"><h3>${problemsView ? "Узлы с проблемами" : "Узлы"}</h3><span class="sp"></span><span class="muted small">${problemsView ? "сгруппировано по причине · строка открывает страницу узла" : `выбрано ${[...selected].length} из ${nodes.filter((n) => n.profile && !n.own).length} с профилем`}</span></div>
+  <div style="display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line2)"><input class="in mono" id="q" placeholder="адрес или имя" value="${esc(filter.q)}" aria-label="Фильтр узлов"><button class="btn s" data-kpi="problems">Только проблемы</button></div>
+  ${nodes.length ? body : `<div class="pad muted">Нет узлов: проведите обследование (шаг 2) или соберите только этот ПК.</div>`}</div>
+  <div class="col">${jobView("collect", "Ход сбора")}${r.length ? `<div class="card pad small muted">Итоги последнего сбора: ${esc(when(st.results.finished_at))}${st.results.dry_run ? " (пробный)" : ""}. Строка узла открывает разделы, причину и «как исправить».</div>` : ""}</div></div>`;
+}
+
+// страница узла
+function nodePage(ip) {
+ const n = allNodes().find((x) => x.ip === ip); const r = n?.r; if (!r) { page = null; return stepCollect(); }
+ const v = verdict(r), code = reasonOf(r), w = WHY[code];
+ const failedAt = r.outcome === "unreachable" ? 0 : r.outcome === "no_access" ? 1 : 3;
+ const chain = [["plug", r.transport === "host" ? "локально" : `порт ${r.transport === "winrm" ? "5985" : r.transport === "ssh" ? "22" : ""}`], ["key", "вход"], ["shield", "шифрование"], ["alert", "сбор"], ["package", "в пакете"]].map(([i, t], k) => {
+  let c = "s-ok", ii = i; if (r.outcome !== "collected" && k === failedAt) { c = "s-bad"; } else if (r.outcome !== "collected" && k > failedAt) { c = "s-n"; } else if (k === 3 && sectionsBad(r).length) { c = "s-warn"; } else if (k === 3) ii = "okc";
+  if (r.transport === "host" && (k === 1 || k === 2)) c = "s-n";
+  return `<span class="stt ${c}">${ic(ii)}<span class="l">${t}</span></span>`; }).join('<span class="faint">—</span>');
+ const secs = (r.sections || []).map((s) => { const k = secKind(s), ww = WHY[s.reason_code]; const bad = k === "bad" || k === "partial";
+  const label = { ok: s.status === "collected" ? "собрано" : "собрано (базовый состав)", na: "не собирается этим способом", partial: "частично", bad: "не собрано" }[k];
+  const cls = { ok: "s-ok", na: "s-n", partial: "s-warn", bad: "s-bad" }[k], icon = { ok: "okc", na: "minus", partial: "alert", bad: "lock" }[k];
+  return `<tr ${bad ? 'style="background:#FFF8F8"' : ""}><td ${bad ? 'style="font-weight:600"' : ""}>${esc(SECTION[s.name] || s.name)}</td><td><span class="stt ${cls}">${ic(icon)}${label}</span></td><td class="muted">${k === "ok" ? s.rows + " строк" : k === "na" ? "полный состав — агентом на узле" : esc((ww ? ww[0] : "") + (s.reason_code ? " · " + s.reason_code : ""))}</td></tr>`; }).join("");
+ const same = allNodes().filter((x) => x.r && reasonOf(x.r) === code && code).length;
+ const list = allNodes().filter((x) => x.r && ["partial", "failed"].includes(verdict(x.r).k)); const idx = list.findIndex((x) => x.ip === ip);
+ return `<div class="top"><div class="crumb"><button data-back>Узлы и сбор</button> › ${esc(reasonGroup(code))} › ${esc(r.hostname || ip)}</div><span class="sp"></span>
+  ${list.length > 1 ? `<button class="btn g" data-node="${esc(list[(idx - 1 + list.length) % list.length].ip)}" aria-label="Предыдущий">${ic("left")}</button><span class="muted">${idx + 1} из ${list.length}</span><button class="btn g" data-node="${esc(list[(idx + 1) % list.length].ip)}" aria-label="Следующий">${ic("chev")}</button>` : ""}</div>
+ <div class="card pad" style="display:flex;gap:18px;align-items:flex-start"><div style="width:44px;height:44px;border-radius:10px;background:#EEF3F8;color:var(--blue);display:grid;place-items:center">${ic(r.transport === "winrm" ? "win" : r.transport === "ssh" ? "term" : "server")}</div>
+  <div style="flex:1"><h1 style="font-size:22px">${esc(r.hostname || ip)} <span class="faint" style="font-weight:600">${esc(ip)}</span></h1><div class="sub">${esc(r.os || KIND[r.transport] || "")}${r.profile ? " · профиль " + esc(r.profile) : ""} · собран ${esc(when(st.results.finished_at))}</div>
+  <div class="chain">${chain}<span class="sp"></span><span class="stt ${v.c}">${ic(v.i)}${r.sections ? sectionsOk(r) + " из " + r.sections.length + " собрано" : esc(v.t)}</span></div></div></div>
+ <div class="grid2"><div class="card"><div class="ch"><h3>Разделы</h3></div>${secs ? `<table><thead><tr><th>Раздел</th><th>Итог</th><th>Подробно</th></tr></thead><tbody>${secs}</tbody></table>` : `<div class="pad muted">Разделов нет: до сбора дело не дошло.</div>`}</div>
+ <div class="col">${code ? `<div class="card pad"><div class="s-bad stt" style="margin-bottom:6px">${ic("lock")}${esc(w ? w[0] : "Не собрано")}</div><div style="margin-bottom:14px" class="small">${esc(r.outcome === "collected" ? "Остальные разделы — в пакете; этот будет помечен как не собранный, а не «пусто»." : "Узел попадёт в пакет как «найден, доступа нет».")} <span class="mono faint">${esc(code)}</span></div>
+   <div class="stt" style="color:var(--blue);margin-bottom:6px">${ic("wrench")}Как исправить</div><div class="small" style="margin-bottom:14px">${esc(w ? w[1] : "Повторите узел; если не поможет — передайте журнал в поддержку.")}${same > 1 ? ` Та же причина — ещё на ${same - 1} узл.` : ""}</div>
+   ${r.transport !== "host" ? `<button class="btn p" data-retry="${esc(ip)}" ${busy() ? "disabled" : ""}>${ic("retry")}Повторить узел</button>` : ""}</div>` : `<div class="card pad"><span class="stt s-ok">${ic("okc")}Все разделы собраны</span></div>`}
+  <div class="card pad"><dl class="kv"><dt>Способ</dt><dd>${esc(KIND[r.transport] || r.transport)}</dd><dt>Профиль</dt><dd>${esc(r.profile || "—")}</dd><dt>Попыток</dt><dd>1 · без перебора учёток</dd></dl><p class="muted small" style="margin:10px 0 0">Повтор создаёт отдельный пакет — загрузите в центр все пакеты со страницы «Пакет».</p></div></div></div>`;
+}
+
+// 5. Пакет
+function stepPackage() {
+ const c = counts(), r = results();
+ const bySec = {}; for (const h of r) for (const s of (h.sections || [])) { const b = (bySec[s.name] = bySec[s.name] || { ok: 0, bad: 0, why: {} }); const k = secKind(s); if (k === "ok") b.ok++; else if (k !== "na") { b.bad++; if (s.reason_code) b.why[s.reason_code] = (b.why[s.reason_code] || 0) + 1; } }
+ const pk = st.packages || [];
+ return `<div class="top"><div><h1>Пакет</h1><div class="sub">${st.center_key ? "Зашифрован ключом центра — прочитает только центр" : "Без шифрования — задайте ключ центра на шаге 1"}</div></div></div>
+ <div class="kpis"><div class="kpi"><b>${c.all}</b><span>узлов найдено</span></div><div class="kpi"><b class="s-ok">${c.ok}</b><span>собрано полностью</span></div><div class="kpi"><b class="s-warn">${c.partial}</b><span>частично</span></div><div class="kpi"><b class="s-bad">${c.failed}</b><span>не собрано</span></div><div class="kpi"><b>${c.noprofile}</b><span>найден, доступа нет</span></div></div>
+ <div class="grid2"><div class="card"><div class="ch"><h3>Разделы</h3><span class="sp"></span><span class="muted small">по последнему сбору</span></div>${Object.keys(bySec).length ? `<table><thead><tr><th>Раздел</th><th>Узлов с данными</th><th>Не собрано</th><th>Причина</th></tr></thead><tbody>${Object.entries(bySec).map(([n, b]) => `<tr><td>${esc(SECTION[n] || n)}</td><td>${b.ok}</td><td class="${b.bad ? "s-warn" : ""}">${b.bad}</td><td class="muted small">${esc(Object.entries(b.why).map(([k, x]) => (WHY[k] ? WHY[k][0] : k) + " ×" + x).join("; ") || "—")}</td></tr>`).join("")}</tbody></table>` : `<div class="pad muted">Сбора ещё не было (шаг 4).</div>`}</div>
+ <div class="col"><div class="card"><div class="ch"><h3>Файлы на носителе</h3></div>${pk.length ? `<table><tbody>${pk.map((p) => `<tr><td><b class="mono">${esc(p.name)}</b><div class="faint small mono">SHA-256 ${esc((p.sha256 || "").slice(0, 12))}…${esc((p.sha256 || "").slice(-6))} · ${(p.bytes / 1048576).toFixed(1).replace(".", ",")} МБ</div></td></tr>`).join("")}</tbody></table><div class="pad muted small">Каталог: <span class="mono">${esc(st.dir)}${st.platform === "windows" ? "\\" : "/"}packages</span></div>` : `<div class="pad muted">Пакетов нет: соберите узлы (шаг 4).</div>`}</div>
+  <div class="card pad"><b>Как загрузить</b><p class="muted small" style="margin:6px 0 0;line-height:1.7">Web → «Portable-аудит» → «Загрузить пакет». Повторная загрузка того же пакета ничего не меняет. Узлы «доступа нет» появятся в «Найденных узлах». Секретов в пакете нет.</p></div></div></div>`;
+}
+
+function bind() {
+ document.querySelectorAll("[data-step]").forEach((b) => b.onclick = () => { step = +b.dataset.step; page = null; render(); });
+ document.querySelectorAll("[data-copy]").forEach((b) => b.onclick = async () => { const t = $(b.dataset.copy); const v = t.value ?? t.innerText; try { await navigator.clipboard.writeText(v); } catch (e) { if (t.select) { t.select(); document.execCommand("copy"); } } b.innerHTML = ic("check") + "Скопировано"; });
+ document.querySelectorAll("[data-node]").forEach((tr) => tr.onclick = (e) => { if (e.target.closest("input")) return; page = tr.dataset.node; render(); window.scrollTo(0, 0); });
+ document.querySelectorAll("[data-back]").forEach((b) => b.onclick = () => { page = null; render(); });
+ document.querySelectorAll("[data-kpi]").forEach((b) => b.onclick = () => { filter.kpi = filter.kpi === b.dataset.kpi && b.dataset.kpi !== "all" ? "all" : b.dataset.kpi; render(); });
+ document.querySelectorAll("[data-secret]").forEach((i) => i.oninput = () => { secrets[i.dataset.secret] = i.value; });
+ document.querySelectorAll("[data-sel]").forEach((c) => c.onchange = () => { if (c.checked) selected.add(c.dataset.sel); else selected.delete(c.dataset.sel); const b = $("cb"); if (b) b.textContent = `Собрать выбранные (${selected.size}) и этот ПК`; });
+ const all = $("all"); if (all) all.onchange = () => { allNodes().forEach((n) => { if (!n.own && n.profile) { if (all.checked) selected.add(n.ip); else selected.delete(n.ip); } }); render(); };
+ const q = $("q"); if (q) q.onchange = () => { filter.q = q.value; render(); };
+ document.querySelectorAll("[data-p]").forEach((el) => el.onchange = () => { const p = draft.profiles[+el.dataset.p]; p[el.dataset.f] = el.dataset.f === "port" ? (el.value ? +el.value : undefined) : el.value; if (el.dataset.f === "kind") p.auth = "password"; render(); });
+ document.querySelectorAll("[data-r]").forEach((el) => el.onchange = () => { const r = draft.rules[+el.dataset.r]; r[el.dataset.f] = el.value || undefined; });
+ document.querySelectorAll("[data-del-p]").forEach((b) => b.onclick = () => { draft.profiles.splice(+b.dataset.delP, 1); render(); });
+ document.querySelectorAll("[data-del-r]").forEach((b) => b.onclick = () => { draft.rules.splice(+b.dataset.delR, 1); render(); });
+ document.querySelectorAll("[data-up]").forEach((b) => b.onclick = () => { const i = +b.dataset.up; if (i > 0) { const R = draft.rules; [R[i - 1], R[i]] = [R[i], R[i - 1]]; render(); } });
+ const on = (id, f) => { const e = $(id); if (e) e.onclick = f; };
+ const prep = $("prep");
+ if (prep) prep.oninput = async () => { const text = prep.value.trim(); if (!text) { prepView = null; render(); return; } try { prepView = { text, ...(await api("POST", "/api/prep", { prep: text })) }; } catch (e) { prepView = { text, error: e.message }; } const pos = prep.selectionStart; render(); const p2 = $("prep"); p2.focus(); p2.setSelectionRange(pos, pos); };
+ on("initb", () => run("/api/init", { prep: prepView.text }));
+ on("initm", () => run("/api/init", { tenant: $("t").value, site: $("s").value, scope: $("sc").value, center_key: $("ck0").value }));
+ on("ckb", async () => { try { await api("POST", "/api/center-key", { center_key: $("ck").value }); await refresh(); } catch (e) { flash(e.message); } });
+ const lines = (id) => $(id).value.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+ on("db", () => run("/api/discover", { ranges: lines("rg"), excluded: lines("ex"), rate: +$("rt").value || 200 }));
+ on("ap", () => { draft.profiles.push({ name: "профиль-" + (draft.profiles.length + 1), kind: "ssh", auth: "password", user: "" }); render(); });
+ on("ar", () => { if (!draft.profiles.length) return flash("Сначала добавьте профиль."); draft.rules.push({ profile: draft.profiles[0].name }); render(); });
+ on("sp", async () => { try { await api("PUT", "/api/profiles", draft); await refresh(); step = 3; render(); } catch (e) { flash(e.message); } });
+ on("tb", async () => { try { await api("PUT", "/api/profiles", draft); } catch (e) { return flash(e.message); } testRes = { ip: $("tip").value.trim() }; run("/api/test", { ip: testRes.ip, secrets }); });
+ const collect = (ips) => run("/api/collect", { ips, host: true, secrets });
+ on("cb", () => collect([...selected]));
+ on("rf", () => collect(allNodes().filter((n) => !n.own && ["partial", "failed"].includes(verdict(n.r).k)).map((n) => n.ip)));
+ document.querySelectorAll("[data-retry]").forEach((b) => b.onclick = () => run("/api/collect", { ips: [b.dataset.retry], host: false, secrets }));
+}
+refresh(true).then(() => { if (busy()) watch(); }).catch((e) => { document.body.innerHTML = `<div style="padding:40px;font:14px Inter,sans-serif"><h2>Мастер недоступен</h2><p>${esc(e.message)}. Откройте адрес из окна программы заново.</p></div>`; });
 </script>
 </body>
 </html>

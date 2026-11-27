@@ -5,9 +5,10 @@
 
 ## Коротко
 
-- **Сейчас:** **C52.04** (установщики) — 04.1 deb/rpm, 04.2 MSI и 04.3 скачивание из Web сделаны и проверены (CI:
-  контейнеры 8 дистрибутивов, systemd на раннере, чистая Windows Server 2022; integration и браузер); макеты мастера
-  portable утверждены (версия 2). Дальше 04.4 — стенд (MSI на win-ar, deb collector, portable с флешки, Astra) и мастер. [C52, разделы C52.08 и 04.2](plans/surveyscan-v2/decisions/C52-rust-agents-and-installers.md).
+- **Сейчас:** **C52.04** (установщики) — deb/rpm, MSI, скачивание из Web сделаны и проверены в CI и на стенде (№27–28:
+  MSI на win-ar — тот же актив, Astra, collector из сети, portable принят); **мастер Rust-portable по макетам версии 2 —
+  сделан** (строка подготовки из Web, страница узла с причиной и «как исправить», шрифты в exe). Дальше — задание стенду
+  №29 (мастер на ПК пользователя, правило брандмауэра №126), затем C52.04 — на приёмку. [C52, разделы C52.08 и 04.2](plans/surveyscan-v2/decisions/C52-rust-agents-and-installers.md).
   C53/C54 приняты пользователем 26.11 ([что принято](plans/surveyscan-v2/decisions/C53-C54-acceptance.md)).
 - **Как работаем (25.11):** один чат — один этап, этапы поочерёдно; стартовые сообщения —
   [handoffs/chat-starts.md](plans/surveyscan-v2/handoffs/chat-starts.md).
