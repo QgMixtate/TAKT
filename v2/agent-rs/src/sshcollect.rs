@@ -4,6 +4,8 @@
 
 use crate::linuxparse as p;
 use russh::client::{self, Handle, KeyboardInteractiveAuthResponse};
+use russh::client::AuthResult;
+use russh::MethodKind;
 use russh::keys::{HashAlg, PrivateKeyWithHashAlg};
 use russh::ChannelMsg;
 use serde_json::{json, Value};
@@ -156,8 +158,17 @@ async fn connect(t: &Target, known: &KnownHosts) -> Result<Handle<Checker>, Fail
         h.authenticate_publickey(&t.user, PrivateKeyWithHashAlg::new(Arc::new(key), hash)).await.map_err(|_| Failure::Unreachable)?.success()
     } else {
         let r = h.authenticate_password(&t.user, &t.secret).await.map_err(|_| Failure::Unreachable)?;
-        if r.success() {
+        // №142: пароль принят, но сервер требует ещё метод (AuthenticationMethods password,…) — это второй фактор;
+        // если keyboard-interactive сервер не предлагает — пароль отклонён, второй попытки нет (риск блокировки)
+        let ki = match &r {
+            AuthResult::Success => None,
+            AuthResult::Failure { partial_success: true, .. } => return Err(Failure::SecondFactor),
+            AuthResult::Failure { remaining_methods, .. } => Some(remaining_methods.contains(&MethodKind::KeyboardInteractive)),
+        };
+        if ki.is_none() {
             true
+        } else if ki == Some(false) {
+            false
         } else {
             // PAM-вход: один вопрос о пароле — отвечаем один раз; любой иной вопрос — второй фактор
             match h.authenticate_keyboard_interactive_start(&t.user, None::<String>).await.map_err(|_| Failure::Unreachable)? {
