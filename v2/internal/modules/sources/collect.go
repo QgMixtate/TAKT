@@ -26,7 +26,7 @@ type CollectCredential struct {
 	PublicKey *string `json:"public_key"`
 }
 
-func validKind(k string) bool { return k == "ssh" || k == "winrm" || k == "snmp" }
+func validKind(k string) bool { return k == "ssh" || k == "winrm" || k == "snmp" || k == "vsphere" }
 
 func cleanText(s string, max int) (string, bool) {
 	s = strings.TrimSpace(s)

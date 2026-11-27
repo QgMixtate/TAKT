@@ -29,7 +29,7 @@ import (
 
 // CollectSecret — секретная часть учётки по типу.
 type CollectSecret struct {
-	Password     string `json:"password,omitempty"`      // ssh, winrm
+	Password     string `json:"password,omitempty"`      // ssh, winrm, vsphere
 	PrivateKey   string `json:"private_key,omitempty"`   // ssh (PEM/OpenSSH)
 	Passphrase   string `json:"passphrase,omitempty"`    // ssh, к ключу
 	AuthProtocol string `json:"auth_protocol,omitempty"` // snmp: SHA|SHA256|SHA512
@@ -51,7 +51,7 @@ func (s CollectSecret) valid(kind string) bool {
 			return s.Password == "" && s.PrivateKey == "" && s.Passphrase == "" && s.AuthKey == "" && s.PrivKey == ""
 		}
 		return (s.Password != "") != (s.PrivateKey != "") && s.AuthKey == "" && s.PrivKey == "" && (s.PrivateKey == "" || strings.Contains(s.PrivateKey, "PRIVATE KEY"))
-	case "winrm":
+	case "winrm", "vsphere": // vsphere (C57.03): учётка vCenter/ESXi с ролью «Read-only»
 		return s.Password != "" && s.PrivateKey == "" && s.AuthKey == "" && s.PrivKey == ""
 	case "snmp":
 		auth := s.AuthProtocol == "SHA" || s.AuthProtocol == "SHA256" || s.AuthProtocol == "SHA512"

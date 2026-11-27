@@ -126,7 +126,7 @@ func (c *Manager) Tick(ctx, task context.Context) error {
 	defer set.mu.Unlock()
 	seen := map[string]bool{}
 	for _, t := range got.Items {
-		if !identifier.Valid(t.ID) || (t.Kind != "ssh" && t.Kind != "winrm" && t.Kind != "snmp") {
+		if !identifier.Valid(t.ID) || (t.Kind != "ssh" && t.Kind != "winrm" && t.Kind != "snmp" && t.Kind != "vsphere") {
 			continue
 		}
 		seen[t.ID] = true
@@ -212,6 +212,10 @@ func (c *Manager) runTarget(ctx context.Context, t machineTarget) {
 			})
 		}
 	}()
+	if t.Kind == "vsphere" { // C57.03: без личности агента — только снимок платформы
+		c.runVSphere(ctx, t)
+		return
+	}
 	platform := contracts.InventoryPlatformLinux12
 	if t.Kind == "winrm" {
 		platform = contracts.InventoryPlatform12

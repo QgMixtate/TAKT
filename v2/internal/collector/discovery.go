@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/netip"
 	"os"
 	"sort"
@@ -43,6 +44,7 @@ type foundHost struct {
 	MAC   *string `json:"mac,omitempty"`
 	Ports []int   `json:"ports"`
 	ICMP  bool    `json:"icmp"`
+	PTR   string  `json:"ptr,omitempty"` // C57.03: имя по обратному DNS (PTR), пусто — нет записи
 }
 
 type discoveryResult struct {
@@ -64,6 +66,9 @@ var arpTable = func() (string, error) {
 	b, e := os.ReadFile("/proc/net/arp")
 	return string(b), e
 }
+
+// reverseLookup — PTR-запрос к системному резолверу collector; подменяется в тестах.
+var reverseLookup discovery.LookupAddr = net.DefaultResolver.LookupAddr
 
 // runDiscovery выполняет задание. Ошибки вида «проба:причина» не прерывают другие пробы.
 func runDiscovery(ctx context.Context, job discoveryJob) (addresses int, hosts []foundHost, errs []string, e error) {
@@ -136,7 +141,14 @@ func runDiscovery(ctx context.Context, job discoveryJob) (addresses int, hosts [
 			}
 		}
 	}
+	// C57.03: обратный DNS для найденных узлов (только запросы к DNS-серверу collector, к узлам — ничего)
+	found := make([]netip.Addr, 0, len(byIP))
+	for ip := range byIP {
+		found = append(found, ip)
+	}
+	names := discovery.ReverseNames(ctx, reverseLookup, found, 16, 2*time.Second, time.Minute)
 	for ip, f := range byIP {
+		f.PTR = names[ip]
 		f.Ports = append(f.Ports, ports[ip]...)
 		sort.Ints(f.Ports)
 		f.ICMP = icmpSeen[ip]

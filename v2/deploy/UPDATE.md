@@ -109,6 +109,11 @@ Real systemd controller и две свежие Debian12 VM проверены; p
 - **0071 (состояние РСМ, C54.03):** таблицы cmdb.host_states и cmdb.node_states — производные агрегаты светофора,
   пересчитываются фоновой задачей раз в 5 минут (роль worker / all); данные не переносятся. Приватная фикстура
   update_smoke сдвинута на 0072.
+- **0076 (цели vSphere, C57.03):** новый вид учётки и цели сбора `vsphere` (ограничения kind и проверки сертификата
+  в sources.collect_credentials / remote_targets; у цели vSphere нет источника-агента). Данные не меняются.
+- **0077 (обратный DNS, C57.03):** sources.discovery_hosts.ptr_name — имя узла по PTR из обследования. Порядок
+  обновления прежний: сначала центр, потом collector (новый collector присылает поле `ptr`, старый центр его не
+  примет). Приватная фикстура update_smoke сдвинута на 0078.
 - **0075 (снимки платформ, C57.01):** новые таблицы cmdb.platform_instances, platform_snapshots, platform_objects,
   platform_relations — экземпляры платформ (KVM, vSphere, oVirt/zVirt, Redfish, AD…), их объекты и связи; данные
   приходят от collector, существующие таблицы не меняются. Приватная фикстура update_smoke сдвинута на 0076.

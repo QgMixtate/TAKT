@@ -2,6 +2,7 @@ package collector
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -19,6 +20,14 @@ func TestRunDiscoveryLimitsAndMerge(t *testing.T) {
 	arpTable = func() (string, error) {
 		return "IP address       HW type     Flags       HW address            Mask     Device\n127.0.0.2        0x1         0x2         AA:BB:CC:DD:EE:02     *        lo\n10.9.9.9         0x1         0x2         aa:bb:cc:dd:ee:09     *        eth0\n", nil
 	}
+	oldLookup := reverseLookup
+	defer func() { reverseLookup = oldLookup }()
+	reverseLookup = func(_ context.Context, addr string) ([]string, error) {
+		if addr == "127.0.0.2" {
+			return []string{"Node2.Lab."}, nil
+		}
+		return nil, errors.New("no such host")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	n, hosts, errs, err := runDiscovery(ctx, discoveryJob{CIDR: "127.0.0.0/30", Probes: []string{"tcp", "arp"}, Ports: []int{22, 80}, Rate: 50, TimeoutMS: 300})
@@ -26,7 +35,8 @@ func TestRunDiscoveryLimitsAndMerge(t *testing.T) {
 		t.Fatalf("run: n=%d errs=%v err=%v", n, errs, err)
 	}
 	// loopback отвечает RST на закрытые порты — узлы .1 и .2 живы; 10.9.9.9 из ARP вне подсети отброшен
-	if len(hosts) != 2 || hosts[0].IP != "127.0.0.1" || hosts[1].IP != "127.0.0.2" || hosts[1].MAC == nil || *hosts[1].MAC != "aa:bb:cc:dd:ee:02" {
+	if len(hosts) != 2 || hosts[0].IP != "127.0.0.1" || hosts[1].IP != "127.0.0.2" || hosts[1].MAC == nil || *hosts[1].MAC != "aa:bb:cc:dd:ee:02" ||
+		hosts[0].PTR != "" || hosts[1].PTR != "node2.lab" {
 		t.Fatalf("hosts %+v", hosts)
 	}
 }

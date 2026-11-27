@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -28,6 +29,9 @@ const (
 )
 
 // DiscoveryPorts — TCP-порты пробы (D-13).
+// ptrName — имя по обратному DNS в том виде, в каком его присылает collector (discovery.CleanPTR).
+var ptrName = regexp.MustCompile(`^[a-z0-9_]([a-z0-9_-]{0,62})(\.[a-z0-9_]([a-z0-9_-]{0,62}))*$`)
+
 var DiscoveryPorts = []int{22, 80, 135, 161, 443, 445, 3389, 5985, 5986}
 
 type DiscoveryNetwork struct {
@@ -88,6 +92,8 @@ type DiscoveryHost struct {
 	// C21: подряд засчитанные пропуски (полные обследования без узла); missing — при DiscoveryMissAfter.
 	Misses       int        `json:"misses"`
 	MissingSince *time.Time `json:"missing_since"`
+	// PTR — имя по обратному DNS из последнего обследования, где оно было (C57.03); nil — имени нет
+	PTR *string `json:"ptr_name"`
 	// Asset — актив реестра с этим адресом (по сетевым фактам инвентаризации); nil — узла в реестре нет (стенд №14)
 	Asset *string `json:"asset_uid"`
 }
@@ -121,6 +127,7 @@ type FoundHost struct {
 	MAC   *string `json:"mac,omitempty"`
 	Ports []int   `json:"ports"`
 	ICMP  bool    `json:"icmp"`
+	PTR   string  `json:"ptr,omitempty"` // C57.03: имя по обратному DNS
 }
 
 func validProbes(p []string) bool {
@@ -304,7 +311,7 @@ FROM sources.discovery_runs WHERE tenant_id=$1 AND network_id=$2 ORDER BY reques
 }
 
 func (Store) DiscoveryHosts(ctx context.Context, tx pgx.Tx, tenant, network string) ([]DiscoveryHost, error) {
-	rows, e := tx.Query(ctx, `SELECT host(h.ip),h.mac,h.ports,h.icmp,h.first_seen,h.last_seen,h.state,h.misses,h.missing_since,
+	rows, e := tx.Query(ctx, `SELECT host(h.ip),h.mac,h.ports,h.icmp,h.first_seen,h.last_seen,h.state,h.misses,h.missing_since,h.ptr_name,
  COALESCE((SELECT f.asset_uid::text FROM inventory.record_facts12 f JOIN assets.assets a ON a.tenant_id=f.tenant_id AND a.asset_uid=f.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
   WHERE f.tenant_id=h.tenant_id AND f.section_name='network' AND f.field_name='addresses' AND jsonb_typeof(f.value)='array' AND f.value @> jsonb_build_array(jsonb_build_object('ip',host(h.ip))) LIMIT 1),
  (SELECT f.asset_uid::text FROM inventory.current_facts f JOIN assets.assets a ON a.tenant_id=f.tenant_id AND a.asset_uid=f.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
@@ -317,7 +324,7 @@ FROM sources.discovery_hosts h WHERE h.tenant_id=$1 AND h.network_id=$2 ORDER BY
 	out := []DiscoveryHost{}
 	for rows.Next() {
 		var h DiscoveryHost
-		if e = rows.Scan(&h.IP, &h.MAC, &h.Ports, &h.ICMP, &h.FirstSeen, &h.LastSeen, &h.State, &h.Misses, &h.MissingSince, &h.Asset); e != nil {
+		if e = rows.Scan(&h.IP, &h.MAC, &h.Ports, &h.ICMP, &h.FirstSeen, &h.LastSeen, &h.State, &h.Misses, &h.MissingSince, &h.PTR, &h.Asset); e != nil {
 			return nil, e
 		}
 		out = append(out, h)
@@ -473,6 +480,11 @@ WHERE r.tenant_id=$1 AND r.run_id=$2 AND n.collector_id=$3 FOR UPDATE OF r`, ten
 				h.MAC = &m
 			}
 		}
+		if h.PTR != "" {
+			if len(h.PTR) > 253 || !ptrName.MatchString(h.PTR) {
+				h.PTR = "" // имя не по правилам DNS (collector присылает строчными, без точки в конце) — не храним
+			}
+		}
 		ports := []int{}
 		for _, p := range h.Ports {
 			if slices.Contains(DiscoveryPorts, p) && !slices.Contains(ports, p) {
@@ -500,10 +512,10 @@ WHERE r.tenant_id=$1 AND r.run_id=$2 AND n.collector_id=$3 FOR UPDATE OF r`, ten
 	for ip, h := range clean {
 		var inserted, returned bool
 		if e = tx.QueryRow(ctx, `WITH prev AS (SELECT state FROM sources.discovery_hosts WHERE tenant_id=$1 AND network_id=$2 AND ip=$3)
-INSERT INTO sources.discovery_hosts(tenant_id,network_id,ip,mac,ports,icmp,first_seen,last_seen,last_run_id,state) VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8,'present')
-ON CONFLICT (tenant_id,network_id,ip) DO UPDATE SET mac=COALESCE(excluded.mac,sources.discovery_hosts.mac),ports=excluded.ports,icmp=excluded.icmp,last_seen=excluded.last_seen,last_run_id=excluded.last_run_id,state='present',
+INSERT INTO sources.discovery_hosts(tenant_id,network_id,ip,mac,ports,icmp,first_seen,last_seen,last_run_id,state,ptr_name) VALUES($1,$2,$3,$4,$5,$6,$7,$7,$8,'present',NULLIF($9,''))
+ON CONFLICT (tenant_id,network_id,ip) DO UPDATE SET mac=COALESCE(excluded.mac,sources.discovery_hosts.mac),ptr_name=COALESCE(excluded.ptr_name,sources.discovery_hosts.ptr_name),ports=excluded.ports,icmp=excluded.icmp,last_seen=excluded.last_seen,last_run_id=excluded.last_run_id,state='present',
  misses=0,missing_since=NULL,returns=sources.discovery_hosts.returns+CASE WHEN sources.discovery_hosts.state='missing' THEN 1 ELSE 0 END
-RETURNING (xmax=0),COALESCE((SELECT state FROM prev),'')='missing'`, tenant, network, ip, h.MAC, h.Ports, h.ICMP, now, run).Scan(&inserted, &returned); e != nil {
+RETURNING (xmax=0),COALESCE((SELECT state FROM prev),'')='missing'`, tenant, network, ip, h.MAC, h.Ports, h.ICMP, now, run, h.PTR).Scan(&inserted, &returned); e != nil {
 			return out, discoveryConflict(e)
 		}
 		switch {

@@ -196,7 +196,7 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 		return post("/api/v1/machine/discovery-results", body)
 	}
 	mac := "AA:BB:CC:00:00:01"
-	hosts := []sources.FoundHost{{IP: "10.51.0.10", MAC: &mac, Ports: []int{22, 9999, 22}, ICMP: true}, {IP: "10.51.0.20", Ports: []int{445, 3389}}, {IP: "192.168.1.1", Ports: []int{80}}}
+	hosts := []sources.FoundHost{{IP: "10.51.0.10", MAC: &mac, Ports: []int{22, 9999, 22}, ICMP: true, PTR: "linux01.lab51.local"}, {IP: "10.51.0.20", Ports: []int{445, 3389}}, {IP: "192.168.1.1", Ports: []int{80}}}
 	_, foreign, _ := ed25519.GenerateKey(rand.Reader)
 	if code, _ := submit(hosts, nil, foreign); code < 400 {
 		t.Fatal("result signed by another key accepted")
@@ -213,7 +213,8 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 	hostsRaw := call("view51", "GET", "/api/v1/discovery/networks/"+n.ID+"/hosts", "", 200)
 	valid("DiscoveryHostPage", hostsRaw)
 	_ = json.Unmarshal(hostsRaw, &hl)
-	if len(hl.Items) != 2 || hl.Items[0].IP != "10.51.0.10" || *hl.Items[0].MAC != "aa:bb:cc:00:00:01" || len(hl.Items[0].Ports) != 1 || !hl.Items[0].ICMP {
+	if len(hl.Items) != 2 || hl.Items[0].IP != "10.51.0.10" || *hl.Items[0].MAC != "aa:bb:cc:00:00:01" || len(hl.Items[0].Ports) != 1 || !hl.Items[0].ICMP ||
+		hl.Items[0].PTR == nil || *hl.Items[0].PTR != "linux01.lab51.local" || hl.Items[1].PTR != nil {
 		t.Fatalf("hosts %+v", hl.Items)
 	}
 	// второе обследование: .20 пропал, .30 новый
@@ -258,6 +259,10 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 			t.Fatalf("pass %d %s", code, raw)
 		}
 		return o
+	}
+	// C57.03: обследование без ответа DNS имя не стирает
+	if h := hostState("10.51.0.10"); h.PTR == nil || *h.PTR != "linux01.lab51.local" {
+		t.Fatalf("PTR name must survive a run without DNS answer: %+v", h)
 	}
 	if h := hostState("10.51.0.20"); h.State != "present" || h.Misses != 1 || h.MissingSince != nil {
 		t.Fatalf("one miss: %+v", h)
@@ -731,6 +736,45 @@ func TestC51DiscoveryPolicyRightsJobAndSignedResult(t *testing.T) {
 		t.Fatalf("unmatched hosts and vms %s", unmatched)
 	}
 	call("view51", "GET", "/api/v1/platforms/"+ip.Items[0].ID+"/objects?kind=bogus", "", 422)
+	// C57.03: цель vSphere — учётка vsphere (только пароль), порт 443, без источника-агента (grant не выдаётся);
+	// сертификат запоминается при первом подключении, смена — 409; первый успешный отчёт — цель активна
+	var vcred sources.CollectCredential
+	_ = json.Unmarshal(call("admin", "POST", "/api/v1/discovery/credentials", `{"name":"vCenter RO","kind":"vsphere","username":"ro@vsphere.local","secret":{"password":"vsphere-secret-57"}}`, 201), &vcred)
+	call("admin", "POST", "/api/v1/discovery/credentials", `{"name":"vCenter key","kind":"vsphere","username":"ro","secret":{"private_key":"-----BEGIN OPENSSH PRIVATE KEY-----"}}`, 422)
+	call("admin", "POST", "/api/v1/discovery/targets", fmt.Sprintf(`{"collector_id":%q,"address":"10.51.0.40","kind":"vsphere","credential_id":%q,"tls_trust":"domain_ca"}`, collector, vcred.ID), 422)
+	call("admin", "POST", "/api/v1/discovery/targets", fmt.Sprintf(`{"collector_id":%q,"address":"10.51.0.40","kind":"vsphere","credential_id":%q}`, collector, wcred.ID), 422)
+	var vt sources.RemoteTarget
+	_ = json.Unmarshal(call("admin", "POST", "/api/v1/discovery/targets", fmt.Sprintf(`{"collector_id":%q,"address":"10.51.0.40","kind":"vsphere","credential_id":%q}`, collector, vcred.ID), 201), &vt)
+	if vt.Port != 443 || vt.State != "pending" || vt.Transport != nil || vt.CertSHA256 != nil {
+		t.Fatalf("vsphere target %+v", vt)
+	}
+	if code, raw = post("/api/v1/machine/collect-targets", []byte("{}")); code != 200 || !strings.Contains(string(raw), `"kind":"vsphere"`) {
+		t.Fatalf("collector must see the vsphere target: %d", code)
+	}
+	if code, _ = post("/api/v1/machine/collect-targets/"+vt.ID+"/grant", []byte(`{"source_id":"`+identifier.New()+`","csr_sha256":"`+strings.Repeat("0", 64)+`","signing_public_key":"x"}`)); code == 200 {
+		t.Fatal("vsphere target must not get an agent grant")
+	}
+	if code, _ = post("/api/v1/machine/collect-targets/"+vt.ID+"/tlscert", []byte(`{"tls_cert_sha256":"`+firstCert+`"}`)); code != 204 {
+		t.Fatal("vsphere certificate pin on first use", code)
+	}
+	if code, _ = post("/api/v1/machine/collect-targets/"+vt.ID+"/tlscert", []byte(`{"tls_cert_sha256":"`+otherCert+`"}`)); code != 409 {
+		t.Fatal("changed vsphere certificate must be refused", code)
+	}
+	if code, raw = post("/api/v1/machine/collect-targets/"+vt.ID+"/secret", []byte("{}")); code != 200 || !strings.Contains(string(raw), `"password":"vsphere-secret-57"`) {
+		t.Fatal("vsphere secret must be issued to its collector", code)
+	}
+	if code, _ = post("/api/v1/machine/collect-targets/"+vt.ID+"/report", []byte(`{"ok":true,"problem":""}`)); code != 204 {
+		t.Fatal("vsphere report", code)
+	}
+	_ = json.Unmarshal(call("view51", "GET", "/api/v1/discovery/targets", "", 200), &tl)
+	for _, x := range tl.Items {
+		if x.ID == vt.ID {
+			vt = x
+		}
+	}
+	if vt.State != "active" || vt.Source != nil || vt.CertOrigin == nil || *vt.CertOrigin != "first_use" || vt.LastCollected == nil {
+		t.Fatalf("vsphere target after first snapshot %+v", vt)
+	}
 }
 
 // C51.03 (A): учётки сбора — вводит только администратор, секрет уходит в хранилище секретов и нигде не

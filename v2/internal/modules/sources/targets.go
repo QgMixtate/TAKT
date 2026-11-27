@@ -83,11 +83,11 @@ type MachineTarget struct {
 
 func (Store) CreateTarget(ctx context.Context, tx pgx.Tx, tenant string, in RemoteTargetInput) (RemoteTarget, error) {
 	addr, e := netip.ParseAddr(in.Address)
-	if e != nil || !addr.Is4() || !identifier.Valid(in.Collector) || !identifier.Valid(in.Credential) || (in.Kind != "ssh" && in.Kind != "winrm" && in.Kind != "snmp") {
+	if e != nil || !addr.Is4() || !identifier.Valid(in.Collector) || !identifier.Valid(in.Credential) || (in.Kind != "ssh" && in.Kind != "winrm" && in.Kind != "snmp" && in.Kind != "vsphere") {
 		return RemoteTarget{}, domain.Invalid
 	}
 	if in.Port == 0 {
-		in.Port = map[string]int{"ssh": 22, "winrm": 5986, "snmp": 161}[in.Kind]
+		in.Port = map[string]int{"ssh": 22, "winrm": 5986, "snmp": 161, "vsphere": 443}[in.Kind]
 		if in.Kind == "winrm" && in.Transport != nil && *in.Transport == "http_kerberos" {
 			in.Port = 5985
 		}
@@ -142,6 +142,18 @@ func (Store) CreateTarget(ctx context.Context, tx pgx.Tx, tenant string, in Remo
 	case "snmp": // SNMPv3 authPriv: подлинность и шифрование — ключами учётки, отпечатков и сертификатов нет
 		if in.HostKey != nil || in.CAPEM != nil || in.ServerName != nil || in.Trust != nil || in.Transport != nil {
 			return RemoteTarget{}, domain.Invalid
+		}
+	case "vsphere":
+		// C57.03: API vCenter/ESXi по HTTPS. PEM необязателен: пусто — сертификат запоминается при первом подключении;
+		// с PEM имя сервера обязательно. «CA домена» и Kerberos — только для WinRM.
+		if in.HostKey != nil || in.Transport != nil || in.Trust != nil && (in.CAPEM != nil || *in.Trust != "first_use") ||
+			in.ServerName != nil && (len(*in.ServerName) == 0 || len(*in.ServerName) > 253) || in.CAPEM != nil && (in.ServerName == nil || len(*in.CAPEM) > 16384) {
+			return RemoteTarget{}, domain.Invalid
+		}
+		if in.CAPEM != nil {
+			if _, err := contractsCA(*in.CAPEM); err != nil {
+				return RemoteTarget{}, domain.Invalid
+			}
 		}
 	}
 	var active bool
@@ -307,6 +319,9 @@ func (s *MachineService) TargetGrant(ctx context.Context, fp, target string, req
 	if e != nil {
 		return contracts.EnrollmentGrant{}, e
 	}
+	if kind == "vsphere" { // C57.03: у цели vSphere нет источника-агента — только снимок платформы от collector
+		return contracts.EnrollmentGrant{}, domain.Invalid
+	}
 	if bound != nil && *bound != req.Source {
 		return contracts.EnrollmentGrant{}, domain.Conflict
 	}
@@ -345,7 +360,8 @@ func (s *MachineService) TargetReport(ctx context.Context, fp, target string, ok
 	if len(problem) > 128 {
 		problem = problem[:128]
 	}
-	tag, e := tx.Exec(ctx, `UPDATE sources.remote_targets SET state=CASE WHEN state='pending' AND agent_source_id IS NOT NULL AND EXISTS(SELECT 1 FROM sources.sources s WHERE s.tenant_id=$1 AND s.source_id=agent_source_id AND s.state='active') THEN 'active' ELSE state END,
+	// vSphere (C57.03): агента нет — цель активна после первого успешного снимка
+	tag, e := tx.Exec(ctx, `UPDATE sources.remote_targets SET state=CASE WHEN state='pending' AND kind='vsphere' AND $4 THEN 'active' WHEN state='pending' AND agent_source_id IS NOT NULL AND EXISTS(SELECT 1 FROM sources.sources s WHERE s.tenant_id=$1 AND s.source_id=agent_source_id AND s.state='active') THEN 'active' ELSE state END,
 last_collected_at=CASE WHEN $4 THEN now() ELSE last_collected_at END,last_error=NULLIF($5,'') WHERE tenant_id=$1 AND target_id=$2 AND collector_id=$3 AND state<>'disabled'`, actor.Tenant, target, actor.Source, ok, problem)
 	if e != nil {
 		return e
@@ -435,7 +451,7 @@ func (s *MachineService) PinHostKey(ctx context.Context, fp, target, fingerprint
 	return true, actor.Tenant, actor.Source, tx.Commit(ctx)
 }
 
-// PinCert — collector сообщает отпечаток сертификата WinRM, прочитанный при первом подключении (цель без PEM).
+// PinCert — collector сообщает отпечаток сертификата WinRM или vSphere (C57.03), прочитанный при первом подключении (цель без PEM).
 // Пустой — запоминается (first_use); совпадающий — подтверждается; другой — Conflict и last_error=cert_changed.
 func (s *MachineService) PinCert(ctx context.Context, fp, target, sha string) (pinned bool, tenant, collector string, err error) {
 	if !identifier.Valid(target) || !certPinRe.MatchString(sha) {
@@ -451,7 +467,7 @@ func (s *MachineService) PinCert(ctx context.Context, fp, target, sha string) (p
 		return false, "", "", e
 	}
 	var current *string
-	e = tx.QueryRow(ctx, "SELECT tls_cert_sha256 FROM sources.remote_targets WHERE tenant_id=$1 AND target_id=$2 AND collector_id=$3 AND kind='winrm' AND winrm_transport='https' AND tls_ca_pem IS NULL AND tls_cert_origin IS DISTINCT FROM 'domain_ca' AND state<>'disabled' FOR UPDATE", actor.Tenant, target, actor.Source).Scan(&current)
+	e = tx.QueryRow(ctx, "SELECT tls_cert_sha256 FROM sources.remote_targets WHERE tenant_id=$1 AND target_id=$2 AND collector_id=$3 AND (kind='winrm' AND winrm_transport='https' OR kind='vsphere') AND tls_ca_pem IS NULL AND tls_cert_origin IS DISTINCT FROM 'domain_ca' AND state<>'disabled' FOR UPDATE", actor.Tenant, target, actor.Source).Scan(&current)
 	if errors.Is(e, pgx.ErrNoRows) {
 		return false, "", "", domain.NotFound
 	}
