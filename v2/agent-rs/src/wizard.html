@@ -120,7 +120,7 @@ const reasonGroup = (code) => ({ HOST_UNREACHABLE: "Узел недоступе�
 const SECTION = { identity: "Идентификация", os: "ОС", network: "Сеть", hardware: "Оборудование", software: "ПО", updates: "Обновления", services: "Службы", users_groups: "Пользователи и группы", routes_ports: "Маршруты и порты", resources: "Ресурсы", protection: "Средства защиты", neighbors: "Сетевые соседи" };
 const KIND = { linux_ssh: "Linux / SSH", windows_winrm: "Windows", network_snmp: "Сетевое", unknown: "не определён", host: "этот ПК", ssh: "Linux / SSH", winrm: "Windows" };
 
-let st = null, job = null, poll = null, step = 0, page = null, draft = null, secrets = {}, selected = null, filter = { q: "", kpi: "all" }, testRes = null, prepView = null;
+let st = null, job = null, poll = null, step = 0, page = null, draft = null, secrets = {}, selected = null, filter = { q: "", kpi: "all" }, testRes = null, prepView = null, disc = {};
 
 async function api(method, path, body) {
  const r = await fetch(path, { method, headers: { "X-Token": token, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
@@ -180,11 +180,12 @@ const when = (t) => { if (!t) return ""; const d = new Date(t); return isNaN(d) 
 function verdict(r) {
  if (!r) return { t: "в очереди", c: "s-n", i: "clock", k: "queued" };
  if (r.outcome === "collected") { const b = sectionsBad(r); return b.length ? { t: "частично", c: "s-warn", i: "alert", k: "partial" } : { t: "собрано", c: "s-ok", i: "okc", k: "ok" }; }
- if (r.outcome === "no_access") return { t: r.reason === "AUTH_FAILED" ? "вход отклонён" : "нет доступа", c: "s-bad", i: "lock", k: "failed" };
+ if (r.outcome === "no_access") return { t: r.reason === "AUTH_FAILED" ? "вход отклонён" : r.reason === "SECOND_FACTOR_REQUIRED" ? "вход отклонён / второй фактор" : "нет доступа", c: "s-bad", i: "lock", k: "failed" };
  if (r.outcome === "unreachable") return { t: "недоступен", c: "s-bad", i: "plug", k: "failed" };
  if (r.outcome === "skipped") return { t: "снят аудитором", c: "s-n", i: "minus", k: "skipped" };
  return { t: "доступа нет (нет правила)", c: "s-n", i: "minus", k: "noprofile" };
 }
+const nodesWord = (n) => { const a = n % 10, b = n % 100; return n + " " + (a === 1 && b !== 11 ? "узле" : "узлах"); };
 function reasonOf(r) {
  if (!r) return null;
  if (r.reason) return r.reason;
@@ -262,9 +263,9 @@ function stepDiscover() {
  ${st.initialized ? "" : `<div class="msg">Сначала подготовьте носитель (шаг 1).</div>`}
  <div class="kpis"><div class="kpi"><b>${hs.length}</b><span>найдено узлов</span></div><div class="kpi"><b>${k("linux_ssh")}</b><span>${ic("term")}Linux / SSH</span></div><div class="kpi"><b>${k("windows_winrm")}</b><span>${ic("win")}Windows</span></div><div class="kpi"><b>${k("network_snmp")}</b><span>сетевые</span></div><div class="kpi"><b>${k("unknown")}</b><span>не определены</span></div></div>
  <div class="grid2"><div class="col"><div class="card"><div class="ch"><h3>Диапазоны</h3></div><div class="pad row">
-  <div class="field"><label for="rg">Подсети — по одной в строке</label><textarea class="in mono" id="rg" rows="5" placeholder="10.20.1.0/24">${esc((d.ranges || []).join("\n"))}</textarea></div>
-  <div class="field"><label for="ex">Исключить</label><textarea class="in mono" id="ex" rows="5" placeholder="10.20.1.0/28">${esc((d.excluded || []).join("\n"))}</textarea></div>
-  <div class="field" style="flex:0 1 220px"><label for="rt">Не более подключений в секунду</label><input class="in" id="rt" type="number" min="1" max="5000" value="200"></div></div></div>
+  <div class="field"><label for="rg">Подсети — по одной в строке</label><textarea class="in mono" id="rg" rows="5" placeholder="10.20.1.0/24">${esc(disc.ranges ?? (d.ranges || []).join("\n"))}</textarea></div>
+  <div class="field"><label for="ex">Исключить</label><textarea class="in mono" id="ex" rows="5" placeholder="10.20.1.0/28">${esc(disc.excluded ?? (d.excluded || []).join("\n"))}</textarea></div>
+  <div class="field" style="flex:0 1 220px"><label for="rt">Не более подключений в секунду</label><input class="in" id="rt" type="number" min="1" max="5000" value="${esc(disc.rate ?? d.rate ?? 200)}"></div></div></div>
   ${hs.length ? `<div class="card"><div class="ch"><h3>Найденные узлы</h3><span class="sp"></span><span class="muted small">${esc(when(d.finished_at))}</span></div><table><thead><tr><th>Адрес</th><th>Вид</th><th>Открытые порты</th></tr></thead><tbody>${hs.slice(0, 200).map((h) => `<tr><td class="mono">${esc(h.ip)}</td><td>${esc(KIND[h.kind] || h.kind)}</td><td class="muted mono">${esc((h.ports || []).join(", "))}</td></tr>`).join("")}</tbody></table>${hs.length > 200 ? `<div class="pad muted small">показаны первые 200 из ${hs.length}</div>` : ""}</div>` : ""}
  </div><div class="col">${jobView("discover", "Ход обследования")}
   <div class="card pad"><b>Дальше</b><p class="muted small" style="margin:6px 0 0">Найденные узлы попадут в пакет даже без доступа: центр покажет их как «найден, доступа нет», без пустых активов.</p>${hs.length ? `<button class="btn p" style="margin-top:10px" data-step="2">Профили учёток ${ic("chev")}</button>` : ""}</div></div></div>`;
@@ -330,7 +331,7 @@ function stepCollect() {
    return `<tr class="click" data-node="${esc(n.ip)}"><td class="mono">${esc(n.ip)}</td><td>${esc(n.r?.hostname || "—")}</td><td><span class="stt ${v.c}">${ic(v.i)}${n.r?.sections ? sectionsOk(n.r) + " / " + n.r.sections.length : esc(v.t)}</span></td><td class="muted">${esc(w ? w[0] : code || "—")}${bad.length ? ": " + esc(bad.map((s) => SECTION[s.name] || s.name).join(", ")) : ""}</td><td class="muted small">${esc(w ? w[1].split(/[.;]/)[0] : "")}</td><td class="faint">${ic("chev")}</td></tr>`; }).join("")).join("") || `<tr><td colspan="6" class="muted">Проблем нет.</td></tr>`}</tbody></table>`;
  } else {
   body = `<table><thead><tr><th style="width:34px"><input type="checkbox" class="chk" id="all" aria-label="Выбрать все" ${nodes.every((n) => n.own || !n.profile || selected.has(n.ip)) ? "checked" : ""}></th><th>Адрес</th><th>Имя</th><th>Вид</th><th>Профиль</th><th>Итог</th><th>Разделы</th><th></th></tr></thead><tbody>${show.slice(0, 500).map((n) => { const v = verdict(n.r); const bad = sectionsBad(n.r);
-   return `<tr class="${n.r ? "click" : ""}" ${n.r ? `data-node="${esc(n.ip)}"` : ""}><td>${n.own ? "" : `<input type="checkbox" class="chk" data-sel="${esc(n.ip)}" ${selected.has(n.ip) ? "checked" : ""} ${n.profile ? "" : "disabled"} aria-label="Собирать ${esc(n.ip)}">`}</td><td class="mono">${esc(n.ip)}</td><td>${esc(n.r?.hostname || "—")}</td><td class="muted">${esc(KIND[n.kind] || n.kind)}</td><td class="muted">${esc(n.profile || "нет правила")}</td><td><span class="stt ${v.c}">${ic(v.i)}${esc(v.t)}</span></td><td class="muted">${n.r?.sections ? sectionsOk(n.r) + " / " + n.r.sections.length : "—"}</td><td class="faint">${n.r && v.k !== "ok" ? ic("chev") : ""}</td></tr>`; }).join("")}</tbody></table>${show.length > 500 ? `<div class="pad muted small">показаны первые 500 из ${show.length} — уточните фильтр</div>` : ""}`;
+   return `<tr class="${n.r ? "click" : ""}" ${n.r ? `data-node="${esc(n.ip)}"` : ""}><td>${n.own ? "" : `<input type="checkbox" class="chk" data-sel="${esc(n.ip)}" ${selected.has(n.ip) ? "checked" : ""} ${n.profile ? "" : `disabled title="Нет правила для узла — добавьте правило на шаге 3"`} aria-label="Собирать ${esc(n.ip)}">`}</td><td class="mono">${esc(n.ip)}</td><td>${esc(n.r?.hostname || "—")}</td><td class="muted">${esc(KIND[n.kind] || n.kind)}</td><td class="muted">${esc(n.profile || "нет правила")}</td><td><span class="stt ${v.c}">${ic(v.i)}${esc(v.t)}</span></td><td class="muted">${n.r?.sections ? sectionsOk(n.r) + " / " + n.r.sections.length : "—"}</td><td class="faint">${n.r && v.k !== "ok" ? ic("chev") : ""}</td></tr>`; }).join("")}</tbody></table>${show.length > 500 ? `<div class="pad muted small">показаны первые 500 из ${show.length} — уточните фильтр</div>` : ""}`;
  }
  return `<div class="top"><div><h1>Узлы и сбор</h1><div class="sub">${st.center_key ? "Шифрование ключом центра" : "Пакет без шифрования — задайте ключ центра на шаге 1"} · один узел — один профиль по правилам</div></div><span class="sp"></span>
   ${c.partial + c.failed ? `<button class="btn s" id="rf" ${busy() ? "disabled" : ""}>${ic("retry")}Повторить неудачные (${c.partial + c.failed})</button>` : ""}
@@ -339,6 +340,7 @@ function stepCollect() {
  ${needs.filter((p) => !secrets[p.name]).length ? `<div class="card pad"><b>${ic("key")} Пароли профилей</b> <span class="muted small">— только в памяти мастера, на диск не пишутся</span><div class="row" style="margin-top:8px">${needs.map((p) => `<div class="field"><label>${esc(p.name)} · ${esc(p.user)}</label><input class="in" type="password" data-secret="${esc(p.name)}" value="${esc(secrets[p.name] || "")}" autocomplete="off"></div>`).join("")}</div></div>` : ""}
  <div class="grid2"><div class="card"><div class="ch"><h3>${problemsView ? "Узлы с проблемами" : "Узлы"}</h3><span class="sp"></span><span class="muted small">${problemsView ? "сгруппировано по причине · строка открывает страницу узла" : `выбрано ${[...selected].length} из ${nodes.filter((n) => n.profile && !n.own).length} с профилем`}</span></div>
   <div style="display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line2)"><input class="in mono" id="q" placeholder="адрес или имя" value="${esc(filter.q)}" aria-label="Фильтр узлов"><button class="btn s" data-kpi="problems">Только проблемы</button></div>
+  ${nodes.some((n) => !n.own && !n.profile) ? `<div class="pad small muted" style="border-bottom:1px solid var(--line2)">${ic("alert")}Узлы «нет правила» отметить нельзя: добавьте правило привязки на шаге 3 <button class="btn g sm" data-step="2">Профили учёток</button></div>` : ""}
   ${nodes.length ? body : `<div class="pad muted">Нет узлов: проведите обследование (шаг 2) или соберите только этот ПК.</div>`}</div>
   <div class="col">${jobView("collect", "Ход сбора")}${r.length ? `<div class="card pad small muted">Итоги последнего сбора: ${esc(when(st.results.finished_at))}${st.results.dry_run ? " (пробный)" : ""}. Строка узла открывает разделы, причину и «как исправить».</div>` : ""}</div></div>`;
 }
@@ -365,7 +367,7 @@ function nodePage(ip) {
   <div class="chain">${chain}<span class="sp"></span><span class="stt ${v.c}">${ic(v.i)}${r.sections ? sectionsOk(r) + " из " + r.sections.length + " собрано" : esc(v.t)}</span></div></div></div>
  <div class="grid2"><div class="card"><div class="ch"><h3>Разделы</h3></div>${secs ? `<table><thead><tr><th>Раздел</th><th>Итог</th><th>Подробно</th></tr></thead><tbody>${secs}</tbody></table>` : `<div class="pad muted">Разделов нет: до сбора дело не дошло.</div>`}</div>
  <div class="col">${code ? `<div class="card pad"><div class="s-bad stt" style="margin-bottom:6px">${ic("lock")}${esc(w ? w[0] : "Не собрано")}</div><div style="margin-bottom:14px" class="small">${esc(r.outcome === "collected" ? "Остальные разделы — в пакете; этот будет помечен как не собранный, а не «пусто»." : "Узел попадёт в пакет как «найден, доступа нет».")} <span class="mono faint">${esc(code)}</span></div>
-   <div class="stt" style="color:var(--blue);margin-bottom:6px">${ic("wrench")}Как исправить</div><div class="small" style="margin-bottom:14px">${esc(w ? w[1] : "Повторите узел; если не поможет — передайте журнал в поддержку.")}${same > 1 ? ` Та же причина — ещё на ${same - 1} узл.` : ""}</div>
+   <div class="stt" style="color:var(--blue);margin-bottom:6px">${ic("wrench")}Как исправить</div><div class="small" style="margin-bottom:14px">${esc(w ? w[1] : "Повторите узел; если не поможет — передайте журнал в поддержку.")}${same > 1 ? ` Та же причина — ещё на ${nodesWord(same - 1)}.` : ""}</div>
    ${r.transport !== "host" ? `<button class="btn p" data-retry="${esc(ip)}" ${busy() ? "disabled" : ""}>${ic("retry")}Повторить узел</button>` : ""}</div>` : `<div class="card pad"><span class="stt s-ok">${ic("okc")}Все разделы собраны</span></div>`}
   <div class="card pad"><dl class="kv"><dt>Способ</dt><dd>${esc(KIND[r.transport] || r.transport)}</dd><dt>Профиль</dt><dd>${esc(r.profile || "—")}</dd><dt>Попыток</dt><dd>1 · без перебора учёток</dd></dl><p class="muted small" style="margin:10px 0 0">Повтор создаёт отдельный пакет — загрузите в центр все пакеты со страницы «Пакет».</p></div></div></div>`;
 }
@@ -392,7 +394,10 @@ function bind() {
  document.querySelectorAll("[data-sel]").forEach((c) => c.onchange = () => { if (c.checked) selected.add(c.dataset.sel); else selected.delete(c.dataset.sel); const b = $("cb"); if (b) b.textContent = `Собрать выбранные (${selected.size}) и этот ПК`; });
  const all = $("all"); if (all) all.onchange = () => { allNodes().forEach((n) => { if (!n.own && n.profile) { if (all.checked) selected.add(n.ip); else selected.delete(n.ip); } }); render(); };
  const q = $("q"); if (q) q.onchange = () => { filter.q = q.value; render(); };
- document.querySelectorAll("[data-p]").forEach((el) => el.onchange = () => { const p = draft.profiles[+el.dataset.p]; p[el.dataset.f] = el.dataset.f === "port" ? (el.value ? +el.value : undefined) : el.value; if (el.dataset.f === "kind") p.auth = "password"; render(); });
+ document.querySelectorAll("[data-p]").forEach((el) => { const set = () => { const p = draft.profiles[+el.dataset.p], f = el.dataset.f, old = p[f]; p[f] = f === "port" ? (el.value ? +el.value : undefined) : el.value;
+   if (f === "name") { draft.rules.forEach((r) => { if (r.profile === old) r.profile = el.value; }); document.querySelectorAll('select[data-f="profile"]').forEach((sel) => { const o = sel.options[+el.dataset.p]; if (o) { o.value = el.value; o.textContent = el.value; } }); const sec = document.querySelector(`[data-secret="${CSS.escape(old || "")}"]`); if (sec) { secrets[el.value] = secrets[old]; delete secrets[old]; sec.dataset.secret = el.value; } }
+   return f; };
+  if (el.tagName === "SELECT") el.onchange = () => { if (set() === "kind") draft.profiles[+el.dataset.p].auth = "password"; render(); }; else el.oninput = set; });
  document.querySelectorAll("[data-r]").forEach((el) => el.onchange = () => { const r = draft.rules[+el.dataset.r]; r[el.dataset.f] = el.value || undefined; });
  document.querySelectorAll("[data-del-p]").forEach((b) => b.onclick = () => { draft.profiles.splice(+b.dataset.delP, 1); render(); });
  document.querySelectorAll("[data-del-r]").forEach((b) => b.onclick = () => { draft.rules.splice(+b.dataset.delR, 1); render(); });
@@ -404,7 +409,8 @@ function bind() {
  on("initm", () => run("/api/init", { tenant: $("t").value, site: $("s").value, scope: $("sc").value, center_key: $("ck0").value }));
  on("ckb", async () => { try { await api("POST", "/api/center-key", { center_key: $("ck").value }); await refresh(); } catch (e) { flash(e.message); } });
  const lines = (id) => $(id).value.split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
- on("db", () => run("/api/discover", { ranges: lines("rg"), excluded: lines("ex"), rate: +$("rt").value || 200 }));
+ ["rg", "ex", "rt"].forEach((id) => { const e = $(id); if (e) e.oninput = () => { disc[{ rg: "ranges", ex: "excluded", rt: "rate" }[id]] = e.value; }; });
+ on("db", () => { disc = { ranges: $("rg").value, excluded: $("ex").value, rate: $("rt").value }; run("/api/discover", { ranges: lines("rg"), excluded: lines("ex"), rate: +$("rt").value || 200 }); });
  on("ap", () => { draft.profiles.push({ name: "профиль-" + (draft.profiles.length + 1), kind: "ssh", auth: "password", user: "" }); render(); });
  on("ar", () => { if (!draft.profiles.length) return flash("Сначала добавьте профиль."); draft.rules.push({ profile: draft.profiles[0].name }); render(); });
  on("sp", async () => { try { await api("PUT", "/api/profiles", draft); await refresh(); step = 3; render(); } catch (e) { flash(e.message); } });

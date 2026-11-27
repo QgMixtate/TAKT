@@ -47,6 +47,11 @@ try{
   await row.click();await expect(page.getByRole('heading',{name:host})).toBeVisible();await expect(page.locator('table tbody tr')).toHaveCount(12);
   await expect(page.locator('.chain')).toContainText('в пакете');await page.screenshot({path:'../.local/wizard-4-node.png'});
   await page.getByRole('button',{name:'Узлы и сбор',exact:true}).click();
+  // №135: правка поля и сразу «Сохранить и дальше» — одно нажатие (перерисовка по blur не съедает клик)
+  await page.locator('nav [data-step="2"]').click();await page.getByRole('button',{name:/^Профиль/}).click();
+  await page.getByLabel('Учётка').first().fill('audit');await page.getByRole('button',{name:/Сохранить и дальше/}).click();
+  await expect(page.getByRole('heading',{name:'Узлы и сбор'})).toBeVisible();
+  checks.push('wizard step 3: field edit followed by one click on «Сохранить и дальше» moves on (no lost click)');
   await page.locator('nav [data-step="4"]').click();await expect(page.getByRole('heading',{name:'Пакет',exact:true})).toBeVisible();await expect(page.locator('main')).toContainText('audit-ci.zip');await expect(page.locator('main')).toContainText('Разделы');
   await page.screenshot({path:'../.local/wizard-5-package.png'});
   checks.push('wizard steps 4–5: this PC collected — node row opens the node page (chain, 12 sections with status), package file with SHA-256 listed');

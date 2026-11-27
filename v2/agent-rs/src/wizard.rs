@@ -332,7 +332,7 @@ fn state(w: &Wizard) -> R {
         Some(json!({"name": name, "bytes": m.len(), "sha256": sha, "path": e.path().display().to_string()}))
     }).collect()).unwrap_or_default();
     Ok(json!({"dir": w.dir.display().to_string(), "initialized": identity.is_some(), "source_id": identity, "public_key": public, "init_block": block, "center_key": center,
-        "profiles": profiles, "discovery": discovery, "bound": bound, "results": results, "packages": packages, "platform": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION")}))
+        "profiles": profiles, "discovery": discovery, "bound": bound, "results": results, "packages": packages, "platform": std::env::consts::OS, "version": crate::VERSION}))
 }
 
 fn start(w: &Wizard, kind: &str, args: Vec<String>, stdin: String, package: Option<String>) -> R {

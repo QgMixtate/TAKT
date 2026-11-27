@@ -25,7 +25,7 @@ build:
 # Rust-агент и Rust-portable (C52): Linux (musl, статически) и Windows — в .dist/rust; нужны rustup-цели
 # x86_64-unknown-linux-musl, x86_64-pc-windows-gnu, musl-tools и gcc-mingw-w64-x86-64.
 rust:
-	cd agent-rs && cargo build --release --locked --target x86_64-unknown-linux-musl && cargo build --release --locked --target x86_64-pc-windows-gnu
+	cd agent-rs && export SURVEYSCAN_VERSION=$(VERSION) && cargo build --release --locked --target x86_64-unknown-linux-musl && cargo build --release --locked --target x86_64-pc-windows-gnu
 	mkdir -p .dist/rust/linux .dist/rust/windows
 	cp agent-rs/target/x86_64-unknown-linux-musl/release/surveyscan-agent agent-rs/target/x86_64-unknown-linux-musl/release/surveyscan-portable .dist/rust/linux/
 	cp agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-agent.exe agent-rs/target/x86_64-pc-windows-gnu/release/surveyscan-portable.exe .dist/rust/windows/

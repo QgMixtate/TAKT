@@ -305,6 +305,10 @@ Match User scanprobe Address 10.170.108.2
    --config "%ProgramData%\SurveyScan\agent\config.json"`. Удаление оставляет регистрацию в `%ProgramData%\SurveyScan`;
    `msiexec /x … REMOVE_DATA=1` — удаляет и её. Файлы без подписи Authenticode (решение C52.05): при ручном запуске
    SmartScreen может предупредить — сверьте SHA-256 из Web; для GPO предупреждения нет.
+4. **Порт центра для установщиков в сети** (collector регистрируется по `https://<центр>:<порт>`): сузьте его до сети
+   площадок, **не трогая loopback** — Web-прокси и службы на самой ВМ ходят к центру по 127.0.0.1 (№132):
+   `sudo iptables -I INPUT -p tcp --dport <порт> ! -i lo ! -s <сеть площадок> -j DROP`. Правило без `! -i lo` останавливает
+   Web и приём наблюдений. Сохранение после перезагрузки (`iptables-persistent`/`nftables`) — по решению администратора.
 
 ## 17. Portable-аудит мастером (C52.04) [CI: Chromium, SSH-стенд в CI; на стенде — задание №29]
 

@@ -11,7 +11,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
     let r = match args.first().map(String::as_str) {
         Some("version") | Some("--version") => {
-            println!("surveyscan-agent (rust) {}", env!("CARGO_PKG_VERSION"));
+            println!("surveyscan-agent (rust) {}", ssagent::VERSION);
             Ok(())
         }
         // установщик (MSI, C52.04): повторная установка/обновление поверх зарегистрированного агента — не ошибка

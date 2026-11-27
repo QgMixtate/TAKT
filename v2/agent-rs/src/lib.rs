@@ -2,6 +2,9 @@
 //! RFC 8785, подписи Ed25519 с доменным префиксом, mTLS к collector площадки. Модули добавляются по шагам
 //! с проверкой побайтного совпадения с Go (testdata/).
 
+/// Версия выпуска (№139): `make rust VERSION=…` передаёт SURVEYSCAN_VERSION; без неё — версия крейта.
+pub const VERSION: &str = match option_env!("SURVEYSCAN_VERSION") { Some(v) => v, None => env!("CARGO_PKG_VERSION") };
+
 pub mod canonical;
 pub mod sign;
 pub mod der;

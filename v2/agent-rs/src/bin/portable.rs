@@ -69,7 +69,7 @@ fn main() -> ExitCode {
     let state = || arg(&args, "--state").map(PathBuf::from).ok_or_else(|| "--state КАТАЛОГ".to_string());
     let r: Result<(), String> = match args.first().map(String::as_str) {
         Some("version") => {
-            println!("surveyscan-portable (rust) {}", env!("CARGO_PKG_VERSION"));
+            println!("surveyscan-portable (rust) {}", ssagent::VERSION);
             Ok(())
         }
         #[cfg(windows)]
