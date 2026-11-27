@@ -6,8 +6,11 @@ const c=JSON.parse(readFileSync(process.argv[2]));const out=process.argv[3];
 const browser=await chromium.launch({headless:true,...(process.env.SURVEYSCAN_CHROMIUM?{executablePath:process.env.SURVEYSCAN_CHROMIUM}:{})});
 try{
  const ctx=await browser.newContext({viewport:{width:1600,height:1000},deviceScaleFactor:1});const page=await ctx.newPage();
- const shot=async n=>{await page.waitForTimeout(700);await page.screenshot({path:`${out}/${n}.png`})};
- await page.goto(c.origin);await expect(page.getByRole('heading',{name:'Вход',exact:true})).toBeVisible();await shot('readme-login');
+ // ширины сверки с макетами: раздел рядом с макетом при 1440 и 1280 px (доводка C53)
+ const widths=(process.env.SURVEYSCAN_AUDIT_WIDTHS||'1440,1280').split(',').map(Number);let W=widths[0];
+ const shot=async n=>{await page.waitForTimeout(700);await page.screenshot({path:`${out}/${W}-${n}.png`})};
+ await page.goto(c.origin);await expect(page.getByRole('heading',{name:'Вход',exact:true})).toBeVisible();
+ for(W of widths){await page.setViewportSize({width:W,height:900});await shot('00-login')}
  const sessionReply=page.waitForResponse(r=>r.url().endsWith('/api/v1/auth/sessions')&&r.status()===201);
  await page.getByLabel('Логин').fill(c.username);await page.getByLabel('Пароль',{exact:true}).fill(c.password);await page.getByRole('button',{name:'Войти',exact:true}).click();
  const s=await (await sessionReply).json();const H={Origin:c.origin,'X-CSRF-Token':s.csrf_token};
@@ -32,6 +35,7 @@ try{
  const go=async(name)=>{await nav.getByRole('button',{name:new RegExp('^'+name)}).click();await page.waitForTimeout(1500)};
  const tab=async(name)=>{await page.getByRole('tab',{name}).first().click();await page.waitForTimeout(1000)};
  const safe=async(n,fn)=>{try{await fn();await shot('audit-'+n)}catch(e){console.error('audit '+n+': '+e.message.split('\n')[0])}};
+ for(W of widths){await page.setViewportSize({width:W,height:900});
  await page.reload();await page.waitForTimeout(1500);
  await safe('01-systems',async()=>{await go('Системы');await page.getByRole('button',{name:'Расчёт зарплаты',exact:true}).click();await page.waitForTimeout(800)});
  await safe('02-system-card',async()=>{await page.getByRole('button',{name:'Карточка системы →'}).click();await page.waitForTimeout(1200)});
@@ -55,4 +59,10 @@ try{
  await safe('19-search',async()=>{await page.getByLabel('Общий поиск').fill('demo');await page.getByLabel('Общий поиск').press('Enter');await page.waitForTimeout(2000)});
  await safe('20-unassigned',async()=>{await go('Системы');await page.getByRole('button',{name:/хостов вне систем/}).click()});
  await safe('21-wizard',async()=>{await go('Системы');await page.locator('summary',{hasText:'Действия'}).click();await page.getByRole('button',{name:'Новая система…'}).click();await page.getByLabel('Название').fill('Кадровый портал');await page.getByRole('button',{name:/Далее: среды/}).click();await page.getByRole('button',{name:/Далее: компоненты/}).click()});
+ await safe('22-platforms',async()=>{await page.keyboard.press('Escape');await go('Платформы')});
+ await safe('23-sources-install',async()=>{await go('Источники');await tab(/Установка/)});
+ await safe('24-hosts-full',async()=>{await go('Хосты');await page.screenshot({path:`${out}/${W}-24-hosts-fullpage.png`,fullPage:true})});
+ await safe('25-org-full',async()=>{await go('Оргструктура');await page.screenshot({path:`${out}/${W}-25-org-fullpage.png`,fullPage:true})});
+ await safe('26-hooks-full',async()=>{await go('Уведомления');await page.screenshot({path:`${out}/${W}-26-hooks-fullpage.png`,fullPage:true})});
+ }
 }finally{await browser.close()}

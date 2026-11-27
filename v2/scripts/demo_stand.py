@@ -63,4 +63,6 @@ def scenario(**s):
     finally:
         web_smoke.subprocess.run = orig_run
 
+# web_smoke задаёт INSTALLER только в __main__ (C52.04): демо-стенд берёт тот же поддельный выпуск
+web_smoke.RELEASE, web_smoke.INSTALLER = web_smoke.fake_release(); os.environ['SURVEYSCAN_V2_RELEASE_DIR'] = str(web_smoke.RELEASE)
 harness(web_scenario=scenario, browser_origin=f'http://127.0.0.1:{freeport()}', inventory12=True)
