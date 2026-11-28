@@ -121,6 +121,9 @@ type loop12Timing struct {
 	Tick, ProfileOK, ProfileRetry, WaitingProfile time.Duration
 }
 
+// failedRetry12 — повтор сбора после неудачи (№148).
+const failedRetry12 = 15 * 60 // секунд, как интервалы цикла
+
 var defaultLoop12Timing = loop12Timing{Tick: time.Second, ProfileOK: time.Minute, ProfileRetry: 20 * time.Second, WaitingProfile: 20 * time.Second}
 
 // runLoop12 — цикл Windows-агента: те же heartbeat/продление/профиль, что у Linux, но сбор
@@ -205,7 +208,13 @@ func runLoop12(ctx context.Context, cl client12, report func(string), collect fu
 				} else {
 					report("inventory_queued")
 				}
-				inventoryAt = time.Now().Add(jitter(inv, jit))
+				next := inv
+				if result.err != nil && inv > failedRetry12 {
+					// №148: неудачный сбор (отказ входа, сеть) — повтор не через весь период (у цели сбора — час), а через
+					// 15 мин: исправление на узле подхватывается быстро, а частых неудачных входов (fail2ban) нет
+					next = failedRetry12
+				}
+				inventoryAt = time.Now().Add(jitter(next, jit))
 			default:
 				if collection.ctx.Err() != nil && !collection.reported {
 					report("inventory_collection_deadline")

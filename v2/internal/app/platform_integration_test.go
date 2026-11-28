@@ -3,6 +3,7 @@
 package app_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +85,41 @@ func TestC57PlatformSnapshotMatchRepeatAndRemoval(t *testing.T) {
 	tx.Rollback(f.ctx)
 	if e != nil || len(list) != 1 || list[0].Objects["host"] != 1 || list[0].Objects["cluster"] != 1 || list[0].Removed != 1 || list[0].LastCompleteAt == nil {
 		t.Fatalf("instances %+v %v", list, e)
+	}
+	// №151: хост KVM (ref "host") снимка цели сбора — сам узел цели: сопоставляется с активом её источника-агента без
+	// BIOS UUID; у снимка без цели или другой платформы — нет
+	collectorID, credID, targetID := identifier.New(), identifier.New(), identifier.New()
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{"INSERT INTO sources.sources(tenant_id,source_id,source_kind,site_id,state,generation_id) VALUES($1,$2,'collector',$3,'active',$4)", []any{tenant, collectorID, siteID, identifier.New()}},
+		{"INSERT INTO sources.collect_credentials(tenant_id,credential_id,name,kind,username) VALUES($1,$2,'kvm ro','ssh','scanprobe')", []any{tenant, credID}},
+		{"INSERT INTO sources.remote_targets(tenant_id,target_id,collector_id,address,kind,port,credential_id,host_key_sha256,host_key_origin,agent_source_id,state) VALUES($1,$2,$3,'10.0.0.2','ssh',22,$4,$5,'first_use',$6,'active')",
+			[]any{tenant, targetID, collectorID, credID, "SHA256:" + strings.Repeat("A", 43), sourceID}},
+	} {
+		if _, e := f.pool.Exec(f.ctx, q.sql, q.args...); e != nil {
+			t.Fatal(q.sql, e)
+		}
+	}
+	kvm := func(target *string, platform string) cmdb.PlatformSnapshot {
+		return cmdb.PlatformSnapshot{Major: 1, SnapshotID: identifier.New(), Tenant: tenant, Source: sourceID, Generation: generationID, Target: target, Platform: platform,
+			Instance: "ssh:10.0.0.2:22:" + platform, InstanceName: "mvp", CollectedAt: time.Now().UTC().Truncate(time.Microsecond), Complete: true, Errors: []string{},
+			Objects: []cmdb.PlatformObject{{Ref: "host", Kind: "host", Name: "mvp", MACs: []string{}, Attrs: map[string]any{}}}, Relations: []cmdb.PlatformRelation{}}
+	}
+	if got := save(kvm(&targetID, "kvm")); got.Matched != 1 {
+		t.Fatalf("kvm host of the target must match its asset: %+v", got)
+	}
+	var hostAsset string
+	_ = f.pool.QueryRow(f.ctx, "SELECT asset_uid::text FROM cmdb.platform_objects o JOIN cmdb.platform_instances i USING(tenant_id,instance_id) WHERE i.instance_key='ssh:10.0.0.2:22:kvm' AND o.ref='host'").Scan(&hostAsset)
+	if hostAsset != asset {
+		t.Fatalf("kvm host asset %q want %q", hostAsset, asset)
+	}
+	if got := save(kvm(nil, "kvm")); got.Matched != 0 {
+		t.Fatalf("snapshot without target must not match the host: %+v", got)
+	}
+	if got := save(kvm(&targetID, "vsphere")); got.Matched != 0 {
+		t.Fatalf("vsphere host is not the target node: %+v", got)
 	}
 	// неполный снимок не считает пропуски; ВМ вернулась — снова на месте
 	if got := save(snap(false, true)); got.Removed != 0 || got.Matched != 1 {

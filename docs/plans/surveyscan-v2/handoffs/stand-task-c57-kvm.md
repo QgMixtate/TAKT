@@ -22,9 +22,9 @@ KVM видна в «Платформах» и в карточке хоста.
 Как в №23: копия БД (`pg_backup.py backup`) → центр → collector → Web, `version.json` = sha. В журнале — без ошибок.
 
 ## 3. KVM на Linux-ВМ стенда
-1. Узел — **.5 (mvp)**; если на .5 нельзя (мало ресурсов/запрет) — спросить пользователя, на какой. Вложенная
+1. Узел — **mvp (10.170.108.2)** (№147); если на mvp нельзя (мало ресурсов/запрет) — спросить пользователя, на какой. Вложенная
    виртуализация не нужна: проверяем по **выключенным** ВМ (libvirt показывает их в `list --all`).
-2. Установить (с «да» — дано): `apt-get install -y --no-install-recommends libvirt-daemon-system libvirt-clients qemu-system-x86`
+2. Установить (с «да» — дано): `apt-get install -y --no-install-recommends libvirt-daemon-system libvirt-clients qemu-system-x86` (диск — raw, `virsh vol-create-as … --format raw`; для qcow2 нужен `qemu-utils`, №150)
    (или аналог для ОС узла). Сеть `default` libvirt — оставить выключенной (`virsh net-autostart default --disable`),
    чтобы не появился мост 192.168.122.0/24 и NAT на узле; если сеть уже запущена пакетом — `virsh net-destroy default`.
 3. Учётке SSH-цели .5 (та, под которой собирает collector) дать **только чтение libvirt**: группа `libvirt`

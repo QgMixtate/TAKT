@@ -225,12 +225,16 @@ SELECT $1,$2,x.ref,x.kind,x.name,NULLIF(x.bios->>0,''),NULLIF(x.serial,''),NULLI
   (SELECT CASE WHEN count(DISTINCT i.asset_uid)=1 THEN (array_agg(i.asset_uid))[1] END FROM assets.asset_identifiers i
    JOIN assets.assets a ON a.tenant_id=i.tenant_id AND a.asset_uid=i.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
    WHERE i.tenant_id=$1 AND x.kind='computer' AND x.hostname<>'' AND i.kind='hostname' AND i.valid_to IS NULL
-   AND i.normalized_value IN (x.hostname, split_part(x.hostname,'.',1)))),
+   AND i.normalized_value IN (x.hostname, split_part(x.hostname,'.',1))),
+  -- №151: хост KVM/Hyper-V — сам узел цели сбора (ref "host"): актив источника-агента этой цели
+  (SELECT r.asset_uid FROM sources.remote_targets t JOIN assets.source_records r ON r.tenant_id=t.tenant_id AND r.source_id=t.agent_source_id AND r.resolution_state='resolved'
+   JOIN assets.assets a ON a.tenant_id=r.tenant_id AND a.asset_uid=r.asset_uid AND a.merged_into IS NULL AND a.retired_at IS NULL
+   WHERE t.tenant_id=$1 AND t.target_id=$5::uuid AND x.ref='host' AND x.kind='host' AND $6 IN ('kvm','hyperv') ORDER BY r.source_record_key LIMIT 1)),
  $3,$3
 FROM jsonb_to_recordset($4::jsonb) AS x(ref text,kind text,name text,bios jsonb,serial text,hostname text,macs jsonb,attrs jsonb)
 ON CONFLICT (tenant_id,instance_id,ref) DO UPDATE SET kind=excluded.kind,name=excluded.name,bios_uuid=excluded.bios_uuid,serial=excluded.serial,hostname=excluded.hostname,
  macs=excluded.macs,attrs=excluded.attrs,asset_uid=excluded.asset_uid,last_seen=GREATEST(cmdb.platform_objects.last_seen,excluded.last_seen),missing_snapshots=0,removed_at=NULL`,
-		s.Tenant, out.InstanceID, s.CollectedAt, string(payload)); e != nil {
+		s.Tenant, out.InstanceID, s.CollectedAt, string(payload), s.Target, s.Platform); e != nil {
 		return out, e
 	}
 	rels, e := json.Marshal(s.Relations)
